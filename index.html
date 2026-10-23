@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.10.3';
+const VERSION = 'v1.10.4';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -3767,6 +3767,12 @@ const SFX = (() => {
 
   return {
     init, update,
+    // Pause / resume the whole audio graph (sounds freeze in place and continue on resume)
+    setActive(on) {
+      if (!ctx) return;
+      if (on && ctx.state === 'suspended') ctx.resume();
+      else if (!on && ctx.state === 'running') ctx.suspend();
+    },
     play(name, ...args) { if (ctx && S[name]) S[name](...args); },
     toggleMute() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : AU.master, ctx.currentTime, 0.05); return muted; },
     get ctx() { return ctx; },
@@ -5102,6 +5108,8 @@ function loop() {
     if (state.statueHp <= 0) endGame(false);
   }
   updateCamera(dt);
+  // Silence everything while paused / tabbed out (game-over stings still play)
+  SFX.setActive((document.pointerLockElement === renderer.domElement || AUTOPLAY || state.over) && !document.hidden && document.hasFocus());
   SFX.update(dt);
   updatePopups(playing ? dt : 0);
   updateHud(playing ? dt : 0);
