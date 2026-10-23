@@ -87,8 +87,8 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   player HP (+ AI teammate bar above it); bottom-center abilities; bottom-right ammo. All HP bars use `setHudBar()`:
   white lag chip that drains after a hit, shake + flash on damage, red pulse < 30%, glow while regenerating.
 - Passive regen: heroes (player + AI teammate) heal `regenRate` hp/s after `regenDelay` s without damage (`h.lastHurt`).
-- Audio (section "Audio", tuning `CONFIG.audio`): `SFX` = procedural WebAudio, no sample files. `SFX.init()` on the overlay click, `SFX.setActive` suspends all audio while paused / unfocused; on the
-  overlay click; `SFX.play(name, pos?, ...)` (pos = 3D: distance roll-off, air low-pass, camera pan, more reverb far;
+- Audio (section "Audio", tuning `CONFIG.audio`): `SFX` = procedural WebAudio, no sample files. `SFX.init()` on the
+  overlay click; `SFX.setActive` suspends all audio while paused / unfocused; `SFX.play(name, pos?, ...)` (pos = 3D: distance roll-off, air low-pass, camera pan, more reverb far;
   null = 2D) with per-name throttling; buses sfx/ui/ambience → compressor → limiter, convolver reverb. Helpers
   `tone`/`hiss`/`crackle`/`vocal` (formant-synth moans/roars)/`brass`. `SFX.update(dt)`: footsteps, wind rush, breeze
   bed, low-hp heartbeat, random zombie moans, burrow rumble, birdsong when calm, ability-ready pings, countdown ticks.
