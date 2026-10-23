@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.10.6)
+## Current state (v1.10.7)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -29,14 +29,15 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   ground slam), F Butter Barrage (target area → falling butter, damage + stun; stunned zombies show butter).
 - AI teammate (`CONFIG.TEAMMATE_AI`, section "Teammate AI"): statue guard within `guardRadius`. `thinkTeammate` at
   `thinkRate`: `pickTarget` (needs `shotClear`; priority Bomber near statue → Spitter → Banner → nearest to statue;
-  retarget cooldown) → state station / engage / reposition (`findVantage`) / retreat (low hp) / downed / reviveWait →
+  retarget cooldown + aim-weighted selection within a threat tier) → state station / engage / reposition (`findVantage`) / retreat (low hp) / downed / reviveWait →
   A* `findPath` on the nav grid + `smoothPath` string pulling, repath every `repathInterval` → abilities (Husk Hop to
   escape or travel via `pendingHop`, Butter on a big pack near the statue when safe, Shuck on clusters/tough targets).
   Never static: station = patrol random points out to `patrol.radius` + base check every `baseCheckEvery` s; engage =
   `orbitSteer` circle-strafe (flips direction, `dodge` repels zombies, `steerWalkable` keeps it on ground) + jump/hop flair.
   Fires only when `shotClear` from the next muzzle to the aim point is clear (`eyeOf` = muzzle height).
-  Per frame: path following, stuck → jump, reaction delay, aim wobble shrinking with tracking
-  time, target lead, turn-speed limit, `difficulty` multiplier. Downed: hold X near it 5 s → revive at half hp, else
+  Per frame: path following, stuck → jump, immediate replacement of dead/buried targets, eased aim with a turn-speed
+  limit, target lead, and `difficulty` multiplier. Reaction delay applies at fight start; `combatMemory` carries readiness
+  through short gaps, nearby targets inherit settled aim, and idle reload waits for a real lull. Downed: hold X near it 5 s → revive at half hp, else
   respawn after 20 s (`#revive` prompt + ring). `ZOMBIE_SCALE_PER_HERO` scales non-boss wave counts (`scaledCount`).
 - Feedback: hitmarkers, damage numbers, particles (`spawnParticle`), rings/decals, camera shake, hurt vignette.
   Zombie damage goes through `damageZombie()`; area damage through `explodeAt()`.

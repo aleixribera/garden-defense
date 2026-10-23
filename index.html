@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.10.6';
+const VERSION = 'v1.10.7';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -384,10 +384,15 @@ const CONFIG = {
     engageRange: 48,             // looks for targets within this (needs a clear shot)
     bomberAlertRange: 35,        // Bombers this close to the statue are priority #1 (then Spitters, Banners, nearest to statue)
     retargetCooldown: 1.2,       // s before switching to a better target (a lost / dead target is replaced at once)
-    reactionTime: 0.3,           // s from acquiring a target to the first shot
+    reactionTime: 0.3,           // s to react at the start of a fight; not repeated between kills
+    combatMemory: 1.2,          // s without a target before reacting / topping up again
+    targetAimWeight: 16,        // same threat tier: prefer targets near the current aim (score per radian)
+    targetSwitchMargin: 6,      // same tier: a replacement must score this much better to interrupt a living target
+    aimTransferAngle: 0.6,      // rad: carry settled accuracy into nearby targets, tapering to zero at this angle
     aimError: [0.1, 0.012],      // rad of aim wobble: fresh target → fully tracked…
     aimSettleTime: 1.6,          // …over this many seconds of tracking
     turnSpeed: 5,                // rad/s the aim can swing
+    aimResponse: 18,            // exponential aim smoothing; turnSpeed still limits large turns
     fireCone: 0.12,              // pulls the trigger only with the aim this close (rad) to where it wants it
     leadSkill: 0.85,             // fraction of the true lead (target velocity × kernel flight time) it aims ahead
     zoomRange: 16,               // aims down the sights (tighter spread, slower walk) at targets farther than this
@@ -4266,7 +4271,7 @@ function updateProjectiles(dt) {
 // =====================================================================
 // Brain (TM.thinkRate, ~10 Hz): pick a target → choose a state → set a goal → path to it → decide abilities.
 // Every frame: follow the path, swing the aim toward the target (limited turn speed, shrinking aim error),
-// pull the trigger once the reaction delay has passed and the aim is on target.
+// Replace a lost target immediately, carry combat readiness between kills, and ease the aim onto each target.
 // States: station (hold a post near the statue facing the threat) · engage (shoot from where it stands) ·
 //         reposition (walk to a spot with a clear shot, or back inside the guard radius) ·
 //         retreat (low hp: fall back to the statue, away from the threat) · downed · reviveWait.
@@ -4401,7 +4406,8 @@ const validTarget = z => z && !z.dead && !z.buried;
 function resetBrain(h) {
   const b = h.brain;
   b.state = 'station'; b.stateT = 0; b.target = null; b.threat = null;
-  b.retargetT = 0; b.reactT = 0; b.trackT = 0; b.clearShot = false;
+  b.retargetT = 0; b.reactT = 0; b.trackT = 0; b.combatT = 0; b.clearShot = false; b.aimOk = false;
+  b.tgtSeen = null; b.tgtVel.set(0, 0, 0); b.err.set(0, 0); b.errTo.set(0, 0); b.errT = 0;
   b.path = []; b.pathT = 0; b.goalKind = ''; b.vantageT = 0;
   b.pendingHop = null; b.stuckT = 0; b.lastPos.copy(h.mesh.position);
   b.aimYaw = h.yaw; b.aimPitch = 0;
@@ -4421,6 +4427,13 @@ function setMateState(h, s) {
 // Choose who to shoot (needs a clear shot), and the top threat overall (to go find a shot on it)
 function pickTarget(h) {
   const b = h.brain, eye = eyeOf(h), pos = h.mesh.position;
+  const aimAngle = z => {
+    const p = z.mesh.position;
+    const yaw = Math.atan2(pos.x - p.x, pos.z - p.z) - b.aimYaw;
+    const pitch = Math.atan2(p.y - eye.y, flatDist(p, pos)) - b.aimPitch;
+    return Math.hypot(Math.atan2(Math.sin(yaw), Math.cos(yaw)), pitch);
+  };
+  const score = z => threatKey(z) + aimAngle(z) * TM.targetAimWeight;
   const cand = [];
   b.threat = null;
   let threatK = Infinity;
@@ -4429,23 +4442,32 @@ function pickTarget(h) {
     const k = threatKey(z);
     // Threats the guard should deal with: inside the guard area, or a bomber on its way in
     if (statueFaceDist(z.mesh.position) < TM.guardRadius + 10 && k < threatK) { threatK = k; b.threat = z; }
-    if (flatDist(z.mesh.position, pos) < TM.engageRange) cand.push([k, z]);
+    if (flatDist(z.mesh.position, pos) < TM.engageRange) cand.push([score(z), z]);
   }
   cand.sort((a, c) => a[0] - c[0]);
   let best = null;
-  for (let i = 0; i < cand.length && i < 10; i++) {
+  for (let i = 0; i < cand.length; i++) {
     if (shotClear(eye, zombieCenter(cand[i][1], tmAim))) { best = cand[i][1]; break; }
   }
   const cur = b.target;
   const curOk = validTarget(cur) && flatDist(cur.mesh.position, pos) < TM.engageRange && shotClear(eye, zombieCenter(cur, tmAim));
-  if (curOk && (best === cur || b.retargetT > 0)) { b.clearShot = true; return; }   // keep it (retarget cooldown)
+  // Finish a living target unless another is clearly better; dead / hidden targets never hold up the next shot.
+  if (curOk && (!best || best === cur || b.retargetT > 0 ||
+      (threatTier(best) === threatTier(cur) && score(best) + TM.targetSwitchMargin >= score(cur)))) {
+    b.clearShot = true; return;
+  }
   b.clearShot = !!best;
   if (best !== cur) {
     b.target = best;
     if (best) {
       b.retargetT = TM.retargetCooldown;
-      b.reactT = TM.reactionTime / tmDiff();   // human-ish: a beat before the first shot
-      b.trackT = 0;
+      // A new fight needs a reaction, a follow-up target only needs the aim to get there.
+      // Keep an unfinished initial reaction so rapid switches cannot bypass it.
+      const inCombat = b.combatT > 0;
+      if (!inCombat) b.reactT = TM.reactionTime / tmDiff();
+      b.trackT = inCombat ? b.trackT * Math.max(0, 1 - aimAngle(best) / TM.aimTransferAngle) : 0;
+      b.combatT = TM.combatMemory;
+      b.aimOk = false;   // abilities must wait until this frame's aim has been checked
     }
   }
 }
@@ -4690,6 +4712,9 @@ function driveTeammate(h, dt) {
   inp.fire = false; inp.zoom = false;
   if (!h.active || h.dead) { inp.move.set(0, 0, 0); inp.jumpHeld = false; return; }
   b.reactT -= dt;
+  b.combatT = Math.max(0, b.combatT - dt);
+  // Kills / burrowing can happen after our previous decision. Reacquire before movement, aim or idle reload.
+  if (b.target && !validTarget(b.target)) pickTarget(h);
   b.thinkT -= dt;
   if (b.thinkT <= 0) { b.thinkT += 1 / TM.thinkRate; thinkTeammate(h, 1 / TM.thinkRate); }
 
@@ -4725,6 +4750,7 @@ function driveTeammate(h, dt) {
   const eye = eyeOf(h);
   let dYaw, dPitch, dist = 30;
   if (t) {
+    b.combatT = TM.combatMemory;
     b.trackT += dt;
     // watch how the target moves (smoothed), to lead it like a player would
     if (b.tgtSeen !== t) { b.tgtSeen = t; b.tgtVel.set(0, 0, 0); }
@@ -4741,28 +4767,33 @@ function driveTeammate(h, dt) {
     dist = Math.hypot(dx, dz);
     dYaw = Math.atan2(-dx, -dz) + b.err.x * mag;
     dPitch = Math.atan2(dy, dist) + b.err.y * mag * 0.6;
-    // Real line of fire: from the muzzle that shoots next to the point it aims at (cover, ground crests, statue)
-    h.mesh.updateMatrixWorld(true);
-    b.muzzleClear = shotClear(h.corn.arms[h.nextArm].muzzle.getWorldPosition(new THREE.Vector3()), c.clone());
   } else {
     // nothing to shoot: look where we're going, else toward the threat
-    if (move.lengthSq() > 0) dYaw = Math.atan2(-move.x, -move.z);
+    if (b.combatT > 0) { dYaw = b.aimYaw; dPitch = b.aimPitch; }   // keep looking at the fight during a brief gap
+    else if (move.lengthSq() > 0) dYaw = Math.atan2(-move.x, -move.z);
     else { const a = threatAngle(); dYaw = Math.atan2(-Math.cos(a), -Math.sin(a)); }
-    dPitch = 0;
+    if (b.combatT <= 0) dPitch = 0;
   }
   const turn = TM.turnSpeed * tmDiff() * dt;
+  const ease = 1 - Math.exp(-TM.aimResponse * tmDiff() * dt);
   let dy2 = dYaw - b.aimYaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2));
-  b.aimYaw += THREE.MathUtils.clamp(dy2, -turn, turn);
-  b.aimPitch += THREE.MathUtils.clamp(dPitch - b.aimPitch, -turn, turn);
+  b.aimYaw += THREE.MathUtils.clamp(dy2 * ease, -turn, turn);
+  b.aimPitch += THREE.MathUtils.clamp((dPitch - b.aimPitch) * ease, -turn, turn);
   inp.yaw = b.aimYaw;
   const cp = Math.cos(b.aimPitch);
   inp.aimPoint.set(-Math.sin(b.aimYaw) * cp, Math.sin(b.aimPitch), -Math.cos(b.aimYaw) * cp).multiplyScalar(Math.max(4, dist)).add(eye);
 
-  // ---- Trigger: reaction delay passed, aim close enough, clear shot ----
+  // Check the remaining error AFTER turning, and the actual aim ray from the next muzzle.
+  dy2 = dYaw - b.aimYaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2));
   b.aimOk = !!t && Math.abs(dy2) < TM.fireCone && Math.abs(dPitch - b.aimPitch) < TM.fireCone;
+  b.muzzleClear = false;
+  if (b.aimOk && b.clearShot) {
+    h.mesh.updateMatrixWorld(true);
+    b.muzzleClear = shotClear(h.corn.arms[h.nextArm].muzzle.getWorldPosition(new THREE.Vector3()), inp.aimPoint);
+  }
   inp.fire = !!t && b.clearShot && b.muzzleClear && b.reactT <= 0 && b.aimOk;
   inp.zoom = !!t && b.clearShot && dist > TM.zoomRange && b.state === 'engage' && move.lengthSq() === 0;
-  if (!t && !h.reloading && h.ammo < W.clip * 0.5) inp.reload = true;   // top up between fights
+  if (!t && b.combatT <= 0 && !h.reloading && h.ammo < W.clip * 0.5) inp.reload = true;   // top up after a real lull
 }
 
 // ---- Downed / revive ----
