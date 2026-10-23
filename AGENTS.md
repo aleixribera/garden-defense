@@ -4,12 +4,18 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.6.0)
+## Current state (v1.7.0)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
-- Player = **Kernel Corn** (125 HP, respawns at statue after 3s). `playerMesh` is a group at capsule center
-  (collision is still the capsule); `buildKernelCorn()` builds the model procedurally: `makeLeaf` (bent/folded
+- Heroes: `heroes = [player, mate]`, both Kernel Corn made by `makeHero()` (mesh group at capsule center, corn model,
+  hp/vel/ammo/cooldowns/anim, per-hero zombie info + flow fields + surround `slots`). **Every hero is driven by
+  `h.input`** (`newInput()`: move, yaw, aimPoint, zoom, fire, jump/jumpHeld, reload, shuck, hop, butter point, interact);
+  `readPlayerInput` fills the human's from keys/mouse (`pressed` queues edge presses), `driveTeammate` fills the AI's;
+  `updateHero(h)` runs movement/weapon/abilities identically for both. Hero functions take `h` (`fireKernel(h)`,
+  `useHuskHop(h)`, `callButterBarrage(h, point)`, `damageHero(h, n)`, `animateCorn(h)`); camera/recoil/shake/hitmarkers
+  are the human's only. `targetable(h)` = active and not dead/downed. `state` keeps only global game state.
+- Player (125 HP) respawns at the statue after 3 s. `playerMesh`/`corn` alias the player's hero. `buildKernelCorn()` builds the model procedurally: `makeLeaf` (bent/folded
   vertex-colored planes), `makeCob` (lathe core + instanced kernels, `skip` carves the face), `placeLeaf` pivots
   keep their rest rotation in `userData.base`. `animateCorn()` is the procedural rig (waddle, lean, squash/stretch,
   leaf feet, collar flutter, aiming arms, recoil, spinning cob barrels, blink).
@@ -17,13 +23,22 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   Weapon `CONFIG.weapon`: Cob Busters — alternating-arm kernel shots, clip/reload, spread + bloom.
   Abilities `CONFIG.abilities`: Q Shuck Shot (cob missile volley, AoE), E Husk Hop (leap, hold Space to glide,
   ground slam), F Butter Barrage (target area → falling butter, damage + stun; stunned zombies show butter).
+- AI teammate (`CONFIG.TEAMMATE_AI`, section "Teammate AI"): statue guard within `guardRadius`. `thinkTeammate` at
+  `thinkRate`: `pickTarget` (needs `shotClear`; priority Bomber near statue → Spitter → Banner → nearest to statue;
+  retarget cooldown) → state station / engage / reposition (`findVantage`) / retreat (low hp) / downed / reviveWait →
+  A* `findPath` on the nav grid + `smoothPath` string pulling, repath every `repathInterval` → abilities (Husk Hop to
+  escape or travel via `pendingHop`, Butter on a big pack near the statue when safe, Shuck on clusters/tough targets).
+  Per frame: path following, personal-space backoff, stuck → jump, reaction delay, aim wobble shrinking with tracking
+  time, target lead, turn-speed limit, `difficulty` multiplier. Downed: hold X near it 5 s → revive at half hp, else
+  respawn after 20 s (`#revive` prompt + ring). `ZOMBIE_SCALE_PER_HERO` scales non-boss wave counts (`scaledCount`).
 - Feedback: hitmarkers, damage numbers, particles (`spawnParticle`), rings/decals, camera shake, hurt vignette.
   Zombie damage goes through `damageZombie()`; area damage through `explodeAt()`.
 - Zombies: roster in `CONFIG.ZOMBIE_TYPES` (shambler, sprinter, plated, spitter, bomber, banner, climber, howler,
   burrower), each a colored capsule plus small primitive extras (`makeZombieMesh` returns `{ mesh, parts }`).
-  Shared brain tuned in `CONFIG.AI` (section "Zombie AI"). Per frame: banner buffs → `updateHeroInfo` (hero
+  Shared brain tuned in `CONFIG.AI` (section "Zombie AI"). Per frame: banner buffs → `updateHeroInfo` (each hero
   reachable by ground? standing on a prop = no) → spatial hash (`forNeighbors`) → per zombie: knockback, stun,
-  `think` (perception/targeting at 5–10 Hz, staggered) → `resolveTarget` (fills `z.tgt`) → `BEHAVIORS[def.behavior]`
+  `think` (perception/targeting at 5–10 Hz, staggered; picks a hero into `z.heroTgt` by `heroScore` = distance minus a
+  bonus for whoever hurt it recently (`z.lastHitBy`), switching only past `heroSwitchMargin`) → `resolveTarget` (fills `z.tgt`) → `BEHAVIORS[def.behavior]`
   → `checkStuck`; then hard separation and `constrainZombie`. `z.mode` = stunned/distracted/special/attack/chase/advance.
   `targetPreference` (`z.pref`): statue / player / statueOnly / none / highGround / closest. Flags: `noLos`,
   `ignoreLeash`, `canClimb`, `reachesHighGround`.
@@ -53,20 +68,23 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   Water Tower (jump-only), Well Mound (in the road). Kite loops: Fountain, Tool Shed, Hedge Wall.
 - Aggro: acquire with LOS within aggroRange, drop past deaggroRange / 4 s unseen (search last known pos) /
   10 s chase without a hit; retarget + re-aggro cooldowns; pack alert (0.2–0.8 s delay); unreachable hero is
-  ignored except by Spitters/Climbers; hero death drops all aggro. Distractions (`distractAt`) beat all but stun.
-- Attack slots: `STATUE_SLOTS` ring on the statue faces (extras queue), `HERO_SLOTS` ring to surround the hero.
+  ignored except by Spitters/Climbers; a hero's death/downing/removal drops all aggro on that hero. Distractions (`distractAt`) beat all but stun.
+- Attack slots: `STATUE_SLOTS` ring on the statue faces (extras queue), `h.slots` ring to surround each hero.
 - Waves: `resolvePacks` turns each pack into { spawn, route }: `spawn` or the wave's `lanes` in turn; `route`
   'A' | 'B' | 'split' (alternates through the pack) or `CONFIG.routeCycle` rotation. Packs spawn in order; `delay` is
   a hidden timer shrunk per wave by `packDelayTighten` (floor `packDelayMin`).
 - Telegraphs: countdown shows spawn beacons + pulsing ground chevrons along each active route + HUD `#laneArrow`
   to the first pack's spawn; each pack drops a primitive ghost skull (`spawnSkull`, `skullTime` 20 s) at its spawn.
-- HUD: wave, zombies remaining (alive + queued), boss bar, statue/player HP.
+- HUD (minimal, CSS tokens on `:root`): top-center Garden (statue) bar + wave/zombie line + boss bar; bottom-left
+  player HP (+ AI teammate bar above it); bottom-center abilities; bottom-right ammo. All HP bars use `setHudBar()`:
+  white lag chip that drains after a hit, shake + flash on damage, red pulse < 30%, glow while regenerating.
+- Passive regen: heroes (player + AI teammate) heal `regenRate` hp/s after `regenDelay` s without damage (`h.lastHurt`).
 - HUD corners: FPS counter top-right, `VERSION` bottom-right.
 - Nav fields are Float64 (`buildFlowField`): Float32 rounding made Dijkstra re-push cells forever (freeze).
-- Debug: keys 1–9 spawn `debugPackSize` of a type at a random lane; N next wave; B Brute; V Zombie King; G test distraction at aim point; M top-down map
+- Debug: T spawn/remove teammate; F1 teammate overlay (state, target, threat, path line, cooldowns); keys 1–9 spawn `debugPackSize` of a type at a random lane; N next wave; B Brute; V Zombie King; G test distraction at aim point; M top-down map
   (tiers, both routes per spawn + walk times, statue flow-field arrows, landmarks, live zombies; times also console.table); K spawns a 120-zombie stress horde. `?autoplay` runs
   without pointer lock (headless playtests).
-  `window.__game` exposes state/corn/camera/CONFIG/explodeAt for console inspection.
+  `window.__game` exposes state/heroes/player/mate/camera/CONFIG/explodeAt/findPath/damageHero for console inspection.
 
 ## Code rules
 - All tuning numbers live in the `CONFIG` object at the top of the file.
@@ -75,7 +93,8 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 
 ## Direction
 - New zombie types: add an entry to `ZOMBIE_TYPES`; new special abilities get their own behavior function.
-- Likely next: special waves (via `modifiers`), a Chili Bean Bomb (`distractAt`), boss models, more plant heroes (same builder helpers), audio.
+- Likely next: special waves (via `modifiers`), a Chili Bean Bomb (`distractAt`), boss models, more plant heroes / AI roles
+  (new hero = `makeHero` + something that fills its `input`), audio.
 - "Primitive shapes only" now means procedural geometry built in code (no external models/textures).
 
 ## Maintaining this file

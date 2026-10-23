@@ -5,81 +5,151 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Garden Defense</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-  #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-size: 18px; text-shadow: 1px 1px 2px #000; pointer-events: none; }
-  #hud .bar { width: 200px; height: 14px; background: #400; border: 1px solid #fff; margin: 4px 0 10px; }
-  #hud .fill { height: 100%; background: #3c3; transition: width 0.15s; }
+  /* ---- Design tokens: one dark glass panel style, one accent per meaning ---- */
+  :root {
+    --panel: rgba(12, 18, 14, 0.55); --line: rgba(255,255,255,0.12); --text: #f4f7ef; --dim: rgba(244,247,239,0.6);
+    --accent: #ffd84a; --hp: #7ddc4a; --garden: #5fd0a0; --mate: #49b8e8; --boss: #ff5a4a; --armor: #9cc4e4; --danger: #ff5a4a;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; color: var(--text); }
+  .hudtext, #hud, #abilities, #ammo, #banner, #message, #laneArrow, #targetHint { -webkit-user-select: none; user-select: none; }
+  .label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+
+  /* ---- Health bars (shared): .lag is the white "chip" that drains after a hit ---- */
+  .hbar { position: relative; height: 10px; border-radius: 6px; background: rgba(0,0,0,0.45); overflow: hidden;
+          box-shadow: inset 0 0 0 1px var(--line); }
+  .hbar .lag, .hbar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; }
+  .hbar .lag { background: #fff; opacity: 0.85; }
+  .hbar .fill { background: var(--c, var(--hp)); transition: background 0.3s; }
+  .hbar .fill::after { content: ''; position: absolute; inset: 0 0 50% 0; background: rgba(255,255,255,0.18); border-radius: inherit; }
+  .hbar .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  .hbox.hit { animation: barShake 0.28s ease-out; }
+  .hbox.hit .flash { animation: barFlash 0.3s ease-out; }
+  .hbox.low .fill { background: var(--danger); animation: lowPulse 0.9s ease-in-out infinite; }
+  .hbox.regen .fill { box-shadow: 0 0 10px var(--c, var(--hp)); }
+  @keyframes barShake { 0% { transform: translate(0,0); } 20% { transform: translate(-4px,1px); } 45% { transform: translate(3px,-1px); }
+                        70% { transform: translate(-2px,0); } 100% { transform: translate(0,0); } }
+  @keyframes barFlash { from { opacity: 0.7; } to { opacity: 0; } }
+  @keyframes lowPulse { 50% { filter: brightness(1.6); } }
+
+  #hud, #ammo, #abilities { pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
+  #hud .label, #ammo .label { color: rgba(255,255,255,0.85); }
+  /* Top center: garden (statue) health + wave status + boss */
+  #top { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); width: min(420px, 70vw); text-align: center; pointer-events: none; }
+  #top .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  #top .num { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #gardenBox .hbar { height: 12px; --c: var(--garden); }
+  #waveLine { margin-top: 7px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #waveLine b { color: var(--text); font-weight: 700; }
+  #bossHud { margin-top: 14px; display: none; }
+  #bossHud .hbar { height: 8px; --c: var(--boss); }
+  #bossName { color: var(--boss); }
+
+  /* Bottom left: player (+ teammate) health */
+  #heroes { position: fixed; left: 24px; bottom: 24px; width: 260px; pointer-events: none; }
+  #heroes .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  #playerBox .hbar { height: 14px; }
+  #playerHpNum { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  #playerHpNum small { font-size: 13px; color: var(--dim); font-weight: 600; }
+  #mateHud { margin-bottom: 14px; width: 180px; }
+  #mateHud .hbar { height: 6px; --c: var(--mate); }
+  #mateHud .num { font-size: 12px; color: var(--dim); }
+
   #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-             color: #fff; background: rgba(0,0,0,0.6); font-size: 28px; text-align: center; cursor: pointer; z-index: 10; }
-  #overlay small { font-size: 16px; margin-top: 12px; opacity: 0.85; line-height: 1.6; }
-  #banner { position: fixed; top: 18%; width: 100%; text-align: center; color: #fff; text-shadow: 2px 2px 4px #000; pointer-events: none; }
-  #banner .title { font-size: 56px; font-weight: bold; }
-  #banner .sub { font-size: 20px; margin-top: 6px; }
-  #laneArrow { position: fixed; top: 6%; left: 50%; transform: translateX(-50%); text-align: center; color: #fff;
-               text-shadow: 2px 2px 4px #000; pointer-events: none; display: none; font-size: 15px; font-weight: bold; }
-  #laneArrow .arrow { font-size: 44px; line-height: 1; display: inline-block; }
-  #message { position: fixed; top: 30%; width: 100%; text-align: center; color: #fff; font-size: 32px; text-shadow: 2px 2px 4px #000; pointer-events: none; }
+             background: radial-gradient(ellipse at center, rgba(10,20,12,0.55), rgba(0,0,0,0.85)); text-align: center; cursor: pointer; z-index: 10; }
+  #overlayTitle { font-size: 44px; font-weight: 800; letter-spacing: 6px; }
+  #overlay small { font-size: 14px; margin-top: 18px; color: var(--dim); line-height: 1.9; max-width: 640px; }
+  #overlay small b { color: var(--accent); }
+  #banner { position: fixed; top: 22%; width: 100%; text-align: center; pointer-events: none; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+  #banner .title { font-size: 48px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; }
+  #banner .sub { font-size: 15px; margin-top: 6px; color: var(--dim); }
+  #bannerCount { color: var(--accent) !important; font-weight: 700; letter-spacing: 1px; }
+  #laneArrow { position: fixed; top: 120px; left: 50%; transform: translateX(-50%); text-align: center; color: var(--accent);
+               text-shadow: 0 1px 6px rgba(0,0,0,0.7); pointer-events: none; display: none; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+  #laneArrow .arrow { font-size: 32px; line-height: 1; display: inline-block; }
+  #message { position: fixed; top: 34%; width: 100%; text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 1px;
+             text-shadow: 0 2px 10px rgba(0,0,0,0.7); pointer-events: none; }
 
   /* Reticle: four ticks whose gap follows the current weapon spread */
   #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
-  #crosshair i { position: absolute; background: #fff; box-shadow: 0 0 2px #000; }
-  #crosshair .t, #crosshair .b { width: 2px; height: 9px; left: -1px; }
-  #crosshair .l, #crosshair .r { width: 9px; height: 2px; top: -1px; }
-  #crosshair .dot { width: 4px; height: 4px; left: -2px; top: -2px; border-radius: 50%; background: #ffe14a; }
+  #crosshair i { position: absolute; background: #fff; box-shadow: 0 0 2px rgba(0,0,0,0.8); }
+  #crosshair .t, #crosshair .b { width: 2px; height: 8px; left: -1px; }
+  #crosshair .l, #crosshair .r { width: 8px; height: 2px; top: -1px; }
+  #crosshair .dot { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; background: var(--accent); }
   #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px; pointer-events: none; opacity: 0; }
   #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 12px; top: 0; width: 2px; height: 26px;
     background: linear-gradient(to bottom, currentColor 0 34%, transparent 34% 66%, currentColor 66%); }
   #hitmarker::before { transform: rotate(45deg); } #hitmarker::after { transform: rotate(-45deg); }
   #vignette { position: fixed; inset: 0; pointer-events: none; opacity: 0;
-    background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.65) 100%); }
-  #popups .pop { position: fixed; font-weight: 800; font-size: 17px; pointer-events: none; transform: translate(-50%, -50%);
-    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.6) 100%); }
+  /* Camera feel overlays: red damage tint flash, sprint tunnel vignette */
+  #hurtTint { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: #ff1a10; mix-blend-mode: multiply; }
+  #speedFx { position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(10,14,8,0.55) 100%); }
+  #popups .pop { position: fixed; font-weight: 800; font-size: 16px; pointer-events: none; transform: translate(-50%, -50%);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
 
-  /* Ability bar */
-  #abilities { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; pointer-events: none; }
-  .ab { width: 70px; height: 70px; border-radius: 14px; background: linear-gradient(#2f5a1c, #183510); border: 2px solid #6b8a3a;
-        position: relative; overflow: hidden; color: #fff; text-align: center; box-shadow: 0 3px 8px rgba(0,0,0,0.5); transition: border-color 0.2s, box-shadow 0.2s; }
-  .ab .icon { font-size: 28px; margin-top: 9px; filter: drop-shadow(0 2px 2px #000); }
-  .ab .name { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px; }
-  .ab .key { position: absolute; top: 3px; left: 6px; font-size: 12px; font-weight: 800; color: #ffe680; }
-  .ab .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); }
-  .ab .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; text-shadow: 0 0 4px #000; }
-  .ab.ready { border-color: #ffd84a; box-shadow: 0 0 14px rgba(255,216,74,0.6), 0 3px 8px rgba(0,0,0,0.5); }
-  .ab.active { border-color: #fff; box-shadow: 0 0 20px #fff; }
-  #ammo { position: fixed; right: 28px; bottom: 22px; color: #fff; text-align: right; text-shadow: 2px 2px 3px #000; pointer-events: none; }
-  #ammo .n { font-size: 52px; font-weight: 800; }
-  #ammo .max { font-size: 20px; opacity: 0.75; }
-  #ammo .label { font-size: 12px; letter-spacing: 2px; color: #ffe680; }
-  #reloadBar { width: 150px; height: 6px; background: rgba(0,0,0,0.5); margin: 4px 0 4px auto; border-radius: 3px; overflow: hidden; }
-  #reloadFill { height: 100%; width: 0; background: #ffe14a; }
-  #fps { position: fixed; top: 8px; right: 10px; color: #fff; font: 12px monospace; opacity: 0.7; text-shadow: 1px 1px 1px #000; pointer-events: none; }
-  #version { position: fixed; bottom: 4px; right: 8px; color: #fff; font: 11px monospace; opacity: 0.5; text-shadow: 1px 1px 1px #000; pointer-events: none; }
-  #revive { position: fixed; transform: translate(-50%, -50%); text-align: center; pointer-events: none; display: none; color: #fff;
-            text-shadow: 1px 1px 3px #000; font-size: 14px; font-weight: 700; }
+  /* Ability bar (bottom center) */
+  #abilities { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: none; }
+  .ab { width: 56px; height: 56px; border-radius: 12px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line);
+        position: relative; overflow: hidden; text-align: center; transition: box-shadow 0.2s, transform 0.2s; }
+  .ab .icon { font-size: 24px; line-height: 56px; }
+  .ab .name { display: none; }
+  .ab .key { position: absolute; top: 3px; left: 6px; font-size: 10px; font-weight: 800; color: var(--dim); }
+  .ab .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); }
+  .ab .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; }
+  .ab.ready { box-shadow: inset 0 0 0 2px var(--accent); }
+  .ab.ready .key { color: var(--accent); }
+  .ab.active { box-shadow: inset 0 0 0 2px #fff, 0 0 16px rgba(255,255,255,0.5); transform: translateY(-3px); }
+  /* Ammo (bottom right) */
+  #ammo { position: fixed; right: 24px; bottom: 24px; text-align: right; pointer-events: none; }
+  #ammo .n { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  #ammo .max { font-size: 15px; color: var(--dim); font-weight: 600; }
+  #reloadBar { width: 120px; height: 3px; background: rgba(255,255,255,0.12); margin: 7px 0 6px auto; border-radius: 2px; overflow: hidden; }
+  #reloadFill { height: 100%; width: 0; background: var(--accent); }
+  #fps { position: fixed; top: 8px; right: 10px; font: 11px monospace; color: var(--dim); pointer-events: none; }
+  #version { position: fixed; bottom: 4px; right: 8px; font: 10px monospace; color: var(--dim); opacity: 0.6; pointer-events: none; }
+  #revive { position: fixed; transform: translate(-50%, -50%); text-align: center; pointer-events: none; display: none;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.8); font-size: 12px; font-weight: 700; letter-spacing: 1px; }
   #revive svg { display: block; margin: 0 auto 2px; transform: rotate(-90deg); }
-  #revive .bg { fill: rgba(0,0,0,0.35); stroke: rgba(255,255,255,0.35); stroke-width: 5; }
-  #revive .fg { fill: none; stroke: #9be05a; stroke-width: 5; stroke-linecap: round; stroke-dasharray: 163.4; stroke-dashoffset: 163.4; }
-  #revive.near .txt { color: #ffe680; }
+  #revive .bg { fill: rgba(0,0,0,0.35); stroke: rgba(255,255,255,0.25); stroke-width: 4; }
+  #revive .fg { fill: none; stroke: var(--hp); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 163.4; stroke-dashoffset: 163.4; }
+  #revive.near .txt { color: var(--accent); }
   #mateDebug { position: fixed; top: 34px; right: 10px; color: #bff; font: 12px/1.45 monospace; white-space: pre; background: rgba(0,20,30,0.7);
                padding: 8px 10px; border: 1px solid #30d0ff; border-radius: 6px; pointer-events: none; display: none; }
-  #targetHint { position: fixed; bottom: 110px; width: 100%; text-align: center; color: #ffe680; font-size: 18px; font-weight: 700;
-                text-shadow: 1px 1px 3px #000; pointer-events: none; display: none; }
+  #targetHint { position: fixed; bottom: 96px; width: 100%; text-align: center; color: var(--accent); font-size: 13px; font-weight: 700;
+                letter-spacing: 1px; text-shadow: 0 1px 4px rgba(0,0,0,0.8); pointer-events: none; display: none; }
+  @media (max-width: 700px) { #heroes { width: 180px; left: 16px; } #abilities { bottom: 90px; } #ammo { right: 16px; } }
 </style>
 </head>
 <body>
 <div id="hud">
-  <div id="waveText">Wave 1</div>
-  <div id="remainingText"></div>
-  <div id="bossHud" style="display:none"><div id="bossName">Boss</div><div class="bar"><div class="fill" id="bossBar" style="background:#c33"></div></div></div>
-  <div>Statue</div><div class="bar"><div class="fill" id="statueBar"></div></div>
-  <div>Kernel Corn</div><div class="bar"><div class="fill" id="playerBar"></div></div>
-  <div id="mateHud"><span id="mateLabel">Teammate</span><div class="bar"><div class="fill" id="mateBarHud" style="background:#30b0e0"></div></div></div>
+  <div id="top">
+    <div class="hbox" id="gardenBox">
+      <div class="row"><span class="label">Garden</span><span class="num" id="gardenNum"></span></div>
+      <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
+    </div>
+    <div id="waveLine"></div>
+    <div class="hbox" id="bossHud">
+      <div class="row"><span class="label" id="bossName">Boss</span><span class="num" id="bossNum"></span></div>
+      <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
+    </div>
+  </div>
+  <div id="heroes">
+    <div class="hbox" id="mateHud">
+      <div class="row"><span class="label" id="mateLabel">Teammate</span><span class="num" id="mateNum"></span></div>
+      <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
+    </div>
+    <div class="hbox" id="playerBox">
+      <div class="row"><span class="label">Kernel Corn</span><span id="playerHpNum"></span></div>
+      <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
+    </div>
+  </div>
 </div>
 <div id="revive"><svg width="64" height="64"><circle class="bg" cx="32" cy="32" r="26"/><circle class="fg" id="reviveRing" cx="32" cy="32" r="26"/></svg><div class="txt"></div></div>
 <div id="mateDebug"></div>
 <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
 <div id="hitmarker"></div>
-<div id="vignette"></div>
+<div id="vignette"></div><div id="hurtTint"></div><div id="speedFx"></div>
 <div id="popups"></div>
 <div id="abilities">
   <div class="ab" id="ab-shuckShot"><span class="key">Q</span><div class="icon">🌽</div><div class="name">Shuck Shot</div><div class="cd"></div><div class="cdt"></div></div>
@@ -95,7 +165,7 @@
 <div id="fps"></div>
 <div id="version"></div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
-  <small id="overlaySub">Click to play<br>WASD move · Mouse aim · LMB fire · RMB zoom · Space jump (hold to glide) · R reload<br>Q Shuck Shot · E Husk Hop · F Butter Barrage · hold X near a downed teammate to revive<br>Debug: T spawn/remove teammate · F1 teammate AI overlay</small></div>
+  <small id="overlaySub"><b>Click to play</b><br>WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump (hold to glide) · R reload<br>Q Shuck Shot · E Husk Hop · F Butter Barrage · hold X to revive a downed teammate<br>Debug: T teammate · F1 teammate AI overlay</small></div>
 
 <script type="importmap">
 { "imports": {
@@ -108,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.7.0';
+const VERSION = 'v1.8.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -122,7 +192,10 @@ const CONFIG = {
     airControl: 0.35,          // fraction of accel available while airborne
     jumpSpeed: 9, gravity: 26,
     aimSpeedMult: 0.65,        // move speed while zoomed (RMB)
+    sprintMult: 1.5,           // hold Shift: faster, forward-ish only; firing, zooming or reloading cancels it
     respawnDelay: 3,           // seconds
+    regenDelay: 6,             // seconds without taking damage before passive regen starts
+    regenRate: 1.5,            // hp per second (very slow; applies to the player and the AI teammate)
   },
   // Primary weapon: twin cob blasters that alternate kernel shots
   weapon: {
@@ -145,6 +218,16 @@ const CONFIG = {
     distance: 5.2, aimDistance: 3.4,  // hip / zoomed
     height: 1.0, shoulder: 1.05,      // pivot above player center, and to the right
     fov: 70, aimFov: 50, sensitivity: 0.0025,
+    // Dynamic feel (all small on purpose — readable, never dizzy)
+    follow: 16, followY: 9,           // pivot catch-up rate (1/s); vertical is softer so steps/jumps glide
+    sprintFov: 9, sprintDistance: 0.6, // extra FOV / pull-back at full sprint
+    speedFov: 3,                      // extra FOV from plain movement speed
+    bob: 0.035, bobSide: 0.025, sprintBob: 2.2,  // head bob (m) while walking; sprint multiplies it
+    strafeRoll: 0.022,                // roll (rad) leaning into sideways motion
+    landDip: 0.35,                    // camera dip on hard landings (m at max impact)
+    hurtRoll: 0.05, hurtFov: -3,      // flinch when hit: roll kick + quick FOV punch-in
+    shakeRot: 0.022, shakePos: 0.12,  // trauma shake amplitude (rad / m) at full trauma
+    lowHp: 0.35,                      // below this hp fraction the screen edges pulse red
   },
   // Zombie roster. Shared fields:
   //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (hero chase hysteresis),
@@ -904,7 +987,7 @@ const P = CONFIG.player;
 const PLAYER_CENTER_Y = P.radius + P.height / 2;
 // input = { move: world-space flat wish direction (length <= 1), yaw: body facing, aimPoint: world point the cobs aim at,
 //           zoom, fire, jumpHeld, interact (held); jump, reload, shuck, hop: pressed this frame; butter: ground point | null }
-const newInput = () => ({ move: new THREE.Vector3(), yaw: 0, aimPoint: new THREE.Vector3(), zoom: false, fire: false,
+const newInput = () => ({ move: new THREE.Vector3(), yaw: 0, aimPoint: new THREE.Vector3(), zoom: false, fire: false, sprint: false,
   jump: false, jumpHeld: false, interact: false, reload: false, shuck: false, hop: false, butter: null });
 function makeHero(name, isAI, spawnAt) {
   const mesh = new THREE.Group(), corn = buildKernelCorn();
@@ -917,7 +1000,7 @@ function makeHero(name, isAI, spawnAt) {
     hp: P.hp, dead: false, downed: false, respawnTimer: 0, yaw: 0,
     vel: new THREE.Vector3(), onGround: true, hopping: false,   // hopping = airborne from Husk Hop (slams on landing)
     ammo: W.clip, reloading: false, reloadT: 0, fireTimer: 0, bloom: 0, nextArm: 0,
-    zoom: 0, aimPoint: new THREE.Vector3(), aimElev: 0,
+    zoom: 0, sprint: 0, aimPoint: new THREE.Vector3(), aimElev: 0,
     cd: { shuckShot: 0, huskHop: 0, butterBarrage: 0 }, shuckQueue: 0, shuckTimer: 0,
     anim: { t: 0, phase: 0, leanF: 0, leanS: 0, squash: 0, air: 0, blink: 3 },
     // what the zombies know (updateHeroInfo), this hero's chase flow fields (rebuilt while needed), surround ring
@@ -1429,10 +1512,10 @@ const debugMap = (() => {
 })();
 
 // A simple world-space health bar (two planes) that faces the camera
-function makeWorldBar(width) {
+function makeWorldBar(width, color = 0x5fd0a0) {
   const group = new THREE.Group();
-  const bg = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.4), new THREE.MeshBasicMaterial({ color: 0x440000 }));
-  const fill = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.4), new THREE.MeshBasicMaterial({ color: 0x33dd33 }));
+  const bg = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.22), new THREE.MeshBasicMaterial({ color: 0x141a16, transparent: true, opacity: 0.7 }));
+  const fill = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.22), new THREE.MeshBasicMaterial({ color }));
   fill.position.z = 0.01;
   group.add(bg, fill);
   return { group, fill, width };
@@ -1476,6 +1559,8 @@ function resetGame() {
     targeting: false,   // the human is aiming a Butter Barrage
     barrages: [],
     shake: 0, fovKick: 0, hurt: 0, hitmarker: 0,
+    // camera feel: smoothed pivot, bob phase, roll, landing spring, hurt flinch, last airborne fall speed
+    cam: { pivot: null, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: 0, wasGround: true },
   };
   for (const h of heroes) {
     h.cd.shuckShot = h.cd.huskHop = h.cd.butterBarrage = 0;
@@ -1490,6 +1575,7 @@ function resetGame() {
 
 function respawnHero(h) {
   h.hp = P.hp;
+  h.lastHurt = -Infinity;
   h.dead = false; h.downed = false;
   h.vel.set(0, 0, 0);
   h.hopping = false;
@@ -1829,8 +1915,8 @@ function setMessage(text, duration = 0) {
 function endGame(won) {
   state.over = true;
   document.exitPointerLock();
-  document.getElementById('overlayTitle').textContent = won ? 'YOU WIN! The garden is safe.' : 'DEFEAT — the statue fell.';
-  document.getElementById('overlaySub').textContent = 'Click to restart';
+  document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
+  document.getElementById('overlaySub').innerHTML = (won ? 'The garden is safe.' : 'The statue fell.') + '<br><b>Click to restart</b>';
   overlay.style.display = 'flex';
 }
 
@@ -2001,6 +2087,7 @@ function readPlayerInput(h) {
   if (targetable(h)) inp.aimPoint.copy(getAimPoint());
   inp.zoom = rightDown && !state.targeting;
   inp.fire = mouseDown && !state.targeting;
+  inp.sprint = !!(keys.ShiftLeft || keys.ShiftRight);
   inp.jumpHeld = !!keys.Space;
   inp.interact = !!keys.KeyX;
   inp.jump = pressed.jump; inp.reload = pressed.reload; inp.shuck = pressed.shuck; inp.hop = pressed.hop; inp.butter = pressed.butter;
@@ -2016,6 +2103,9 @@ function updateHero(h, dt) {
     else if ((h.respawnTimer -= dt) <= 0) respawnHero(h);
     return;
   }
+  // Very slow passive regen once the hero hasn't been hurt for a while
+  h.regen = state.time - (h.lastHurt ?? -Infinity) > P.regenDelay && h.hp < P.hp;
+  if (h.regen) h.hp = Math.min(P.hp, h.hp + P.regenRate * dt);
   const inp = h.input, pos = h.mesh.position, v = h.vel;
   // Presses first (they used to run straight from the key handlers, before the movement step)
   if (inp.reload) startReload(h);
@@ -2026,7 +2116,11 @@ function updateHero(h, dt) {
 
   // Wished velocity, approached smoothly for weight
   const wish = inp.move;
-  const speed = P.speed * (1 - (1 - P.aimSpeedMult) * h.zoom);
+  // Sprint: only while moving forward-ish and not shooting / aiming / reloading
+  const fwdness = wish.lengthSq() > 0 ? wish.dot(new THREE.Vector3(-Math.sin(inp.yaw), 0, -Math.cos(inp.yaw))) : 0;
+  const sprinting = inp.sprint && fwdness > 0.5 && !inp.fire && !inp.zoom && !h.reloading;
+  h.sprint += ((sprinting ? 1 : 0) - h.sprint) * Math.min(1, dt * (sprinting ? 4 : 8));
+  const speed = P.speed * (1 - (1 - P.aimSpeedMult) * h.zoom) * (1 + (P.sprintMult - 1) * h.sprint);
   // In the air with no input, keep momentum (so Husk Hop carries you)
   if (h.onGround || wish.lengthSq() > 0) {
     const k = Math.min(1, dt * P.accel * (h.onGround ? 1 : P.airControl));
@@ -2368,9 +2462,13 @@ function explodeAt(pos, radius, damage, { color = 0xff8800, stun = 0, sphere = t
 function damageHero(h, amount) {
   if (!targetable(h)) return;
   h.hp -= amount;
+  h.lastHurt = state.time;   // pauses passive regen
   if (!h.isAI) {
     state.hurt = Math.min(1, state.hurt + amount / 40);
-    addShake(0.15);
+    state.cam.tint = Math.min(1, state.cam.tint + 0.35 + amount / 50);   // red flash
+    state.cam.flinch = (Math.random() < 0.5 ? -1 : 1) * Math.min(1, 0.4 + amount / 30);
+    state.fovKick += CONFIG.camera.hurtFov;
+    addShake(0.15 + Math.min(0.25, amount / 80));
   }
   if (h.hp > 0) return;
   h.hp = 0;
@@ -3877,7 +3975,7 @@ function setTeammate(on) {
 const activeHeroCount = () => heroes.filter(h => h.active).length;
 
 // World health bar over the teammate
-const mateBar = makeWorldBar(1.4);
+const mateBar = makeWorldBar(1.4, 0x49b8e8);
 scene.add(mateBar.group);
 
 // ---- Debug overlay (F1): state, target, path ----
@@ -4005,27 +4103,53 @@ const hud = id => document.getElementById(id);
 const crossTicks = { t: document.querySelector('#crosshair .t'), b: document.querySelector('#crosshair .b'),
                      l: document.querySelector('#crosshair .l'), r: document.querySelector('#crosshair .r') };
 hud('version').textContent = VERSION;
+// Animated HUD health bar: the fill snaps, a white "lag" chip shows recent damage and drains after a beat,
+// the box shakes + flashes on a hit, pulses red when low and glows while regenerating.
+const hudBars = {};
+function setHudBar(id, ratio, dt, regen) {
+  const box = hud(id);
+  let b = hudBars[id];
+  if (!b) b = hudBars[id] = { box, fill: box.querySelector('.fill'), lag: box.querySelector('.lag'), r: ratio, lagR: ratio, hold: 0 };
+  ratio = Math.max(0, Math.min(1, ratio));
+  if (ratio < b.r - 0.002) {
+    b.hold = 0.45;                                       // keep the chip visible a moment before it drains
+    box.classList.remove('hit'); void box.offsetWidth;   // restart the shake/flash animation
+    box.classList.add('hit');
+  }
+  if (ratio > b.lagR) b.lagR = ratio;                     // healing: the chip just follows
+  else if ((b.hold -= dt) <= 0) b.lagR = Math.max(ratio, b.lagR - dt * 0.6);
+  b.r = ratio;
+  b.fill.style.width = `${ratio * 100}%`;
+  b.lag.style.width = `${b.lagR * 100}%`;
+  box.classList.toggle('low', ratio > 0 && ratio < 0.3);
+  box.classList.toggle('regen', !!regen);
+}
 let fpsShownAt = 0;
 function updateHud(dt) {
   // FPS readout, refreshed a few times a second so it's readable
   const now = performance.now();
   if (now - fpsShownAt > 250) { fpsShownAt = now; hud('fps').textContent = `${Math.round(fpsAvg)} FPS`; }
-  hud('waveText').textContent = `Wave ${state.waveIndex + 1} / ${WAVES.length}`;
-  hud('remainingText').textContent =
-    state.phase === 'active' ? `Zombies remaining: ${zombies.length + state.spawnQueue.length}` : '';
+  const left = zombies.length + state.spawnQueue.length;
+  hud('waveLine').innerHTML = `Wave <b>${state.waveIndex + 1}</b> / ${WAVES.length}` +
+    (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'}` : '');
   const boss = zombies.find(z => z.def.boss);
   hud('bossHud').style.display = boss ? 'block' : 'none';
   if (boss) {
     const armored = boss.ai.armor > 0;
-    hud('bossName').textContent = boss.def.name + (armored ? ' — ARMORED' : '');
-    hud('bossBar').style.width = `${Math.max(0, armored ? boss.ai.armor / boss.def.armorHp : boss.hp / boss.def.hp) * 100}%`;
-    hud('bossBar').style.background = armored ? '#8ab4d8' : '#c33';
+    hud('bossName').textContent = boss.def.name + (armored ? ' · Armored' : '');
+    hud('bossHud').style.setProperty('--c', armored ? 'var(--armor)' : 'var(--boss)');
+    const r = armored ? boss.ai.armor / boss.def.armorHp : boss.hp / boss.def.hp;
+    setHudBar('bossHud', r, dt, false);
+    hud('bossNum').textContent = `${Math.ceil(Math.max(0, r) * 100)}%`;
   }
-  hud('statueBar').style.width = `${Math.max(0, state.statueHp / CONFIG.statue.hp) * 100}%`;
-  hud('playerBar').style.width = `${(player.hp / P.hp) * 100}%`;
+  setHudBar('gardenBox', state.statueHp / CONFIG.statue.hp, dt, false);
+  hud('gardenNum').textContent = `${Math.max(0, Math.ceil(state.statueHp))}`;
+  setHudBar('playerBox', player.hp / P.hp, dt, player.regen && !player.dead);
+  hud('playerHpNum').innerHTML = `${Math.ceil(player.hp)}<small> / ${P.hp}</small>`;
   hud('mateHud').style.display = mate.active ? 'block' : 'none';
-  hud('mateBarHud').style.width = `${(mate.hp / P.hp) * 100}%`;
-  hud('mateLabel').textContent = mate.downed ? `Teammate — DOWN (${Math.ceil(mate.downT)}s)` : 'Teammate';
+  setHudBar('mateHud', mate.hp / P.hp, dt, mate.regen && !mate.dead);
+  hud('mateLabel').textContent = mate.downed ? `Teammate · Down ${Math.ceil(mate.downT)}s` : 'Teammate';
+  hud('mateNum').textContent = Math.ceil(mate.hp);
   mateBar.group.visible = mate.active && !mate.downed;
   mateBar.group.position.copy(mate.mesh.position).setY(mate.mesh.position.y + 1.7);
   mateBar.group.quaternion.copy(camera.quaternion);
@@ -4035,7 +4159,7 @@ function updateHud(dt) {
 
   // Ammo + reload
   hud('ammoN').textContent = player.reloading ? '—' : player.ammo;
-  hud('ammoN').style.color = !player.reloading && player.ammo <= W.clip * 0.2 ? '#ff7050' : '#fff';
+  hud('ammoN').style.color = !player.reloading && player.ammo <= W.clip * 0.2 ? 'var(--danger)' : '';
   hud('ammoMax').textContent = ` / ${W.clip}`;
   hud('reloadFill').style.width = player.reloading ? `${(1 - player.reloadT / W.reloadTime) * 100}%` : '0';
 
@@ -4065,7 +4189,13 @@ function updateHud(dt) {
     state.hitmarker = Math.sign(state.hitmarker) * Math.max(0, Math.abs(state.hitmarker) - dt);
   } else hm.style.opacity = 0;
   state.hurt = Math.max(0, state.hurt - dt * 1.5);
-  hud('vignette').style.opacity = state.hurt;
+  // Low health: edges pulse red with a heartbeat that speeds up as hp drops
+  const low = player.dead ? 0 : THREE.MathUtils.clamp(1 - player.hp / (P.hp * CONFIG.camera.lowHp), 0, 1);
+  const beat = Math.pow(Math.max(0, Math.sin(state.time * (4 + 4 * low))), 8);
+  hud('vignette').style.opacity = Math.max(state.hurt, low * (0.35 + 0.35 * beat));
+  state.cam.tint = Math.max(0, state.cam.tint - dt * 3);
+  hud('hurtTint').style.opacity = state.cam.tint * 0.22;
+  hud('speedFx').style.opacity = player.sprint * 0.8;
 }
 
 const clock = new THREE.Clock();
