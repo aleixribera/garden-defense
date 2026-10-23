@@ -19,7 +19,11 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   vertex-colored planes), `makeCob` (lathe core + instanced kernels, `skip` carves the face), `placeLeaf` pivots
   keep their rest rotation in `userData.base`. `animateCorn()` is the procedural rig (waddle, lean, squash/stretch,
   leaf feet, collar flutter, aiming arms, recoil, spinning cob barrels, blink).
-- Controls: WASD (accelerated), Space jump, over-the-shoulder camera, RMB zoom, R reload.
+- Controls: WASD (accelerated), Shift sprint (`sprintMult`, forward only; fire/zoom/reload cancel), Space jump,
+  over-the-shoulder camera, RMB zoom, R reload.
+- Camera feel (`updateCamera`, tuning in `CONFIG.camera`, state in `state.cam`): smoothed pivot, speed/sprint FOV +
+  pull-back, head bob, strafe roll, landing spring dip, hurt flinch + FOV punch, layered-sine trauma shake. Overlays:
+  `#hurtTint` red flash on damage, `#vignette` hurt + low-HP heartbeat pulse, `#speedFx` sprint tunnel.
   Weapon `CONFIG.weapon`: Cob Busters — alternating-arm kernel shots, clip/reload, spread + bloom.
   Abilities `CONFIG.abilities`: Q Shuck Shot (cob missile volley, AoE), E Husk Hop (leap, hold Space to glide,
   ground slam), F Butter Barrage (target area → falling butter, damage + stun; stunned zombies show butter).
