@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.10.1';
+const VERSION = 'v1.10.2';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -534,86 +534,86 @@ const CONFIG = {
   //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
   // Lanes rotate between waves so no single spot covers everything.
   WAVES: [
-    // Pacing: packs every ~20 s early → ~11 s late; one longer lull (~22–28 s) mid-wave before a heavy pack.
+    // Pacing: packs every ~10 s early (keeps it busy) → ~11 s late; one longer lull (~22–28 s) mid-wave before a heavy pack.
     // 1 — tutorial: shamblers, Orchard Road both routes (4 packs)
     { packs: [
       { spawn: 'longRoad', route: 'A', zombies: { shambler: 5 } },
-      { spawn: 'longRoad', route: 'B', delay: 20, zombies: { shambler: 5 } },
-      { spawn: 'flank', route: 'A', delay: 22, zombies: { shambler: 4 } },
-      { spawn: 'longRoad', route: 'split', delay: 22, zombies: { shambler: 7 } },
+      { spawn: 'longRoad', route: 'B', delay: 10, zombies: { shambler: 5 } },
+      { spawn: 'flank', route: 'A', delay: 11, zombies: { shambler: 4 } },
+      { spawn: 'longRoad', route: 'split', delay: 11, zombies: { shambler: 7 } },
     ] },
     // 2 — sprinters appear (5)
     { packs: [
       { spawn: 'flank', route: 'split', zombies: { shambler: 5 } },
-      { spawn: 'longRoad', route: 'A', delay: 18, zombies: { shambler: 5, sprinter: 2 } },
-      { spawn: 'flank', route: 'B', delay: 18, zombies: { sprinter: 4 } },
-      { spawn: 'longRoad', route: 'B', delay: 20, zombies: { shambler: 6 } },
-      { spawn: 'flank', route: 'split', delay: 20, zombies: { shambler: 5, sprinter: 3 } },
+      { spawn: 'longRoad', route: 'A', delay: 9, zombies: { shambler: 5, sprinter: 2 } },
+      { spawn: 'flank', route: 'B', delay: 9, zombies: { sprinter: 4 } },
+      { spawn: 'longRoad', route: 'B', delay: 10, zombies: { shambler: 6 } },
+      { spawn: 'flank', route: 'split', delay: 10, zombies: { shambler: 5, sprinter: 3 } },
     ] },
     // 3 — West Gates + plated (7)
     { packs: [
       { spawn: 'choke', route: 'A', zombies: { shambler: 6 } },
-      { spawn: 'choke', route: 'B', delay: 16, zombies: { shambler: 5, plated: 1 } },
-      { spawn: 'flank', delay: 16, zombies: { sprinter: 4 } },
-      { spawn: 'longRoad', route: 'A', delay: 18, zombies: { shambler: 6, plated: 1 } },
-      { spawn: 'choke', route: 'split', delay: 16, zombies: { shambler: 6, sprinter: 2 } },
-      { spawn: 'flank', route: 'A', delay: 18, zombies: { shambler: 4, plated: 1 } },
-      { spawn: 'choke', route: 'A', delay: 20, zombies: { shambler: 7, plated: 2 } },
+      { spawn: 'choke', route: 'B', delay: 10, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'flank', delay: 10, zombies: { sprinter: 4 } },
+      { spawn: 'longRoad', route: 'A', delay: 11, zombies: { shambler: 6, plated: 1 } },
+      { spawn: 'choke', route: 'split', delay: 10, zombies: { shambler: 6, sprinter: 2 } },
+      { spawn: 'flank', route: 'A', delay: 11, zombies: { shambler: 4, plated: 1 } },
+      { spawn: 'choke', route: 'A', delay: 12, zombies: { shambler: 7, plated: 2 } },
     ] },
     // 4 — Quarry Top, spitters + climbers (8)
     { packs: [
       { spawn: 'climb', route: 'A', zombies: { shambler: 6 } },
-      { spawn: 'climb', route: 'B', delay: 16, zombies: { shambler: 4, spitter: 2 } },
-      { spawn: 'longRoad', delay: 16, zombies: { shambler: 5, sprinter: 2 } },
-      { spawn: 'choke', delay: 16, zombies: { shambler: 5, plated: 1 } },
-      { spawn: 'climb', route: 'split', delay: 18, zombies: { shambler: 4, climber: 2 } },
-      { spawn: 'flank', delay: 15, zombies: { sprinter: 4, spitter: 1 } },
-      { spawn: 'longRoad', route: 'B', delay: 16, zombies: { shambler: 6, spitter: 2 } },
-      { spawn: 'climb', route: 'A', delay: 20, zombies: { shambler: 6, climber: 2, plated: 1 } },
+      { spawn: 'climb', route: 'B', delay: 10, zombies: { shambler: 4, spitter: 2 } },
+      { spawn: 'longRoad', delay: 10, zombies: { shambler: 5, sprinter: 2 } },
+      { spawn: 'choke', delay: 10, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'climb', route: 'split', delay: 11, zombies: { shambler: 4, climber: 2 } },
+      { spawn: 'flank', delay: 9, zombies: { sprinter: 4, spitter: 1 } },
+      { spawn: 'longRoad', route: 'B', delay: 10, zombies: { shambler: 6, spitter: 2 } },
+      { spawn: 'climb', route: 'A', delay: 12, zombies: { shambler: 6, climber: 2, plated: 1 } },
     ] },
     // 5 — the Brute, after a lull (10)
     { packs: [
       { spawn: 'flank', route: 'split', zombies: { shambler: 5, sprinter: 2 } },
-      { spawn: 'longRoad', route: 'A', delay: 15, zombies: { shambler: 6 } },
-      { spawn: 'choke', delay: 14, zombies: { shambler: 5, plated: 1 } },
-      { spawn: 'climb', delay: 15, zombies: { shambler: 4, spitter: 2 } },
-      { spawn: 'longRoad', route: 'B', delay: 24, zombies: { miniBoss: 1, shambler: 6 } },
-      { spawn: 'flank', delay: 18, zombies: { sprinter: 4 } },
-      { spawn: 'choke', route: 'split', delay: 15, zombies: { shambler: 6, plated: 1 } },
-      { spawn: 'climb', route: 'B', delay: 15, zombies: { climber: 3, shambler: 3 } },
-      { spawn: 'longRoad', delay: 15, zombies: { shambler: 6, spitter: 2 } },
-      { spawn: 'flank', route: 'split', delay: 16, zombies: { shambler: 5, sprinter: 3, plated: 1 } },
+      { spawn: 'longRoad', route: 'A', delay: 11, zombies: { shambler: 6 } },
+      { spawn: 'choke', delay: 10, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'climb', delay: 11, zombies: { shambler: 4, spitter: 2 } },
+      { spawn: 'longRoad', route: 'B', delay: 17, zombies: { miniBoss: 1, shambler: 6 } },
+      { spawn: 'flank', delay: 13, zombies: { sprinter: 4 } },
+      { spawn: 'choke', route: 'split', delay: 11, zombies: { shambler: 6, plated: 1 } },
+      { spawn: 'climb', route: 'B', delay: 11, zombies: { climber: 3, shambler: 3 } },
+      { spawn: 'longRoad', delay: 11, zombies: { shambler: 6, spitter: 2 } },
+      { spawn: 'flank', route: 'split', delay: 11, zombies: { shambler: 5, sprinter: 3, plated: 1 } },
     ] },
     // 6 — howlers, lanes rotate (12)
     { lanes: ['choke', 'climb', 'flank', 'longRoad'], packs: [
       { zombies: { shambler: 6 } },
-      { delay: 14, zombies: { shambler: 5, plated: 1 } },
-      { delay: 14, zombies: { sprinter: 4, howler: 1 } },
-      { delay: 14, zombies: { shambler: 5, spitter: 2 } },
-      { delay: 15, zombies: { shambler: 6, climber: 2 } },
-      { delay: 14, zombies: { shambler: 4, plated: 2 } },
-      { delay: 22, zombies: { shambler: 8, howler: 1, sprinter: 2 } },
-      { delay: 14, zombies: { spitter: 3, shambler: 3 } },
-      { delay: 14, zombies: { sprinter: 5 } },
-      { delay: 14, zombies: { shambler: 6, plated: 1 } },
-      { delay: 15, zombies: { shambler: 5, climber: 2, howler: 1 } },
-      { delay: 16, zombies: { shambler: 7, plated: 2, spitter: 2 } },
+      { delay: 11, zombies: { shambler: 5, plated: 1 } },
+      { delay: 11, zombies: { sprinter: 4, howler: 1 } },
+      { delay: 11, zombies: { shambler: 5, spitter: 2 } },
+      { delay: 12, zombies: { shambler: 6, climber: 2 } },
+      { delay: 11, zombies: { shambler: 4, plated: 2 } },
+      { delay: 18, zombies: { shambler: 8, howler: 1, sprinter: 2 } },
+      { delay: 11, zombies: { spitter: 3, shambler: 3 } },
+      { delay: 11, zombies: { sprinter: 5 } },
+      { delay: 11, zombies: { shambler: 6, plated: 1 } },
+      { delay: 12, zombies: { shambler: 5, climber: 2, howler: 1 } },
+      { delay: 13, zombies: { shambler: 7, plated: 2, spitter: 2 } },
     ] },
     // 7 — bombers, banners, burrowers (13)
     { packs: [
       { spawn: 'longRoad', route: 'A', zombies: { shambler: 6 } },
-      { spawn: 'flank', delay: 14, zombies: { shambler: 4, bomber: 1 } },
-      { spawn: 'choke', route: 'A', delay: 14, zombies: { shambler: 6, banner: 1 } },
-      { spawn: 'climb', delay: 14, zombies: { shambler: 4, spitter: 2 } },
-      { spawn: 'longRoad', route: 'B', delay: 14, zombies: { burrower: 2, shambler: 4 } },
-      { spawn: 'flank', route: 'split', delay: 13, zombies: { sprinter: 5 } },
-      { spawn: 'choke', route: 'B', delay: 22, zombies: { shambler: 7, plated: 2, banner: 1 } },
-      { spawn: 'climb', route: 'A', delay: 14, zombies: { climber: 3, shambler: 3 } },
-      { spawn: 'longRoad', delay: 13, zombies: { shambler: 5, bomber: 2 } },
-      { spawn: 'flank', delay: 13, zombies: { shambler: 4, howler: 1, sprinter: 2 } },
-      { spawn: 'choke', route: 'split', delay: 14, zombies: { burrower: 3, shambler: 3 } },
-      { spawn: 'climb', route: 'B', delay: 13, zombies: { shambler: 5, spitter: 2 } },
-      { spawn: 'longRoad', route: 'split', delay: 15, zombies: { shambler: 8, plated: 2, bomber: 1, banner: 1 } },
+      { spawn: 'flank', delay: 13, zombies: { shambler: 4, bomber: 1 } },
+      { spawn: 'choke', route: 'A', delay: 13, zombies: { shambler: 6, banner: 1 } },
+      { spawn: 'climb', delay: 13, zombies: { shambler: 4, spitter: 2 } },
+      { spawn: 'longRoad', route: 'B', delay: 13, zombies: { burrower: 2, shambler: 4 } },
+      { spawn: 'flank', route: 'split', delay: 12, zombies: { sprinter: 5 } },
+      { spawn: 'choke', route: 'B', delay: 20, zombies: { shambler: 7, plated: 2, banner: 1 } },
+      { spawn: 'climb', route: 'A', delay: 13, zombies: { climber: 3, shambler: 3 } },
+      { spawn: 'longRoad', delay: 12, zombies: { shambler: 5, bomber: 2 } },
+      { spawn: 'flank', delay: 12, zombies: { shambler: 4, howler: 1, sprinter: 2 } },
+      { spawn: 'choke', route: 'split', delay: 13, zombies: { burrower: 3, shambler: 3 } },
+      { spawn: 'climb', route: 'B', delay: 12, zombies: { shambler: 5, spitter: 2 } },
+      { spawn: 'longRoad', route: 'split', delay: 14, zombies: { shambler: 8, plated: 2, bomber: 1, banner: 1 } },
     ] },
     // 8 — full roster, all lanes in rotation (15)
     { lanes: ['longRoad', 'choke', 'flank', 'climb'], packs: [

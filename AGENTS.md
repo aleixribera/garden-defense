@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.10.1)
+## Current state (v1.10.2)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -80,7 +80,7 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 - Waves: `resolvePacks` turns each pack into { spawn, route }: `spawn` or the wave's `lanes` in turn; `route`
   'A' | 'B' | 'split' (alternates through the pack) or `CONFIG.routeCycle` rotation. Packs spawn in order; `delay` is
   a hidden timer shrunk per wave by `packDelayTighten` (floor `packDelayMin`). Pack counts ramp 4 → 20 over waves 1–10
-  (gaps ~20 s → ~11 s, one longer lull before each wave's heaviest pack; bosses after it); 15 s countdown between waves.
+  (gaps ~10–13 s on every wave, one longer lull before each wave's heaviest pack; bosses after it); 15 s countdown between waves.
 - Telegraphs: countdown shows spawn beacons + pulsing ground chevrons along each active route + HUD `#laneArrow`
   to the first pack's spawn; each pack drops a primitive ghost skull (`spawnSkull`, `skullTime` 20 s) at its spawn.
 - HUD (minimal, CSS tokens on `:root`): top-center Garden (statue) bar + wave/zombie line + boss bar; bottom-left
