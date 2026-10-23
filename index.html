@@ -125,12 +125,17 @@ const CONFIG = {
     fov: 70, aimFov: 50, sensitivity: 0.0025,
   },
   // Zombie roster. Shared fields:
-  //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (player chase hysteresis),
-  //   radius, height, color, behavior (key into BEHAVIORS), targetPreference:
-  //     'statue'     — heads for the statue; chases the player if they come within aggroRange,
-  //                    but once it's attacking the statue it stays on it
-  //     'player'     — switches to the player whenever they're within aggroRange, even mid-attack
-  //     'statueOnly' — ignores the player entirely
+  //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (hero chase hysteresis),
+  //   radius, height, color, behavior (key into BEHAVIORS), knockbackResist (0..1), targetPreference:
+  //     'statue'     — advances on the statue; chases the hero if seen within aggroRange,
+  //                    but once it's hitting the statue it stays on it
+  //     'player'     — prefers the hero: switches whenever they're seen within aggroRange
+  //     'statueOnly' — ignores the hero entirely
+  //     'none'       — no target of its own (Banner: follows the pack)
+  //     'highGround' — hero only when they're up high / out of ground reach (Climber)
+  //     'closest'    — whichever of hero / statue is nearer, no sight needed (bosses)
+  //   Optional: noLos (senses the hero without sight), ignoreLeash (no chase timeout / sight loss),
+  //   canClimb (uses the climb nav layer), reachesHighGround (may target a hero with no ground path).
   ZOMBIE_TYPES: {
     shambler: {
       hp: 50, speed: 3.5, damage: 10, attackCooldown: 1.0,
@@ -139,54 +144,114 @@ const CONFIG = {
     },
     sprinter: {
       hp: 25, speed: 8, damage: 6, attackCooldown: 0.6,
-      aggroRange: 22, deaggroRange: 32, targetPreference: 'player',
+      aggroRange: 25, deaggroRange: 34, targetPreference: 'player',
       radius: 0.45, height: 0.9, color: 0xe0c020, behavior: 'melee',
+      weave: { amp: 0.45, freq: 3.2 },   // side-to-side wobble while running
+      lunge: { range: 4, speed: 17, time: 0.25, cooldown: 2.5 },
     },
     plated: {
       hp: 300, speed: 2.2, damage: 20, attackCooldown: 1.5,
-      aggroRange: 12, deaggroRange: 20, targetPreference: 'statue',
-      radius: 0.9, height: 1.6, color: 0x5a6f7f, behavior: 'melee',
-      frontDamageMult: 0.25,   // damage taken from shots hitting its front plate
-      frontArc: 0.5,           // cos of half-angle that counts as "front" (0.5 = ±60°)
+      aggroRange: 6, deaggroRange: 12, targetPreference: 'statue',
+      radius: 0.9, height: 1.6, color: 0x5a6f7f, behavior: 'melee', knockbackResist: 0.85,
+      frontArc: 0.5,                     // cos of half-angle that counts as "front" (0.5 = ±60°)
+      plateBreaks: [0.75, 0.5, 0.25],    // hp fractions where a plate piece falls off (one per piece)
+      frontMults: [0.25, 0.45, 0.7],     // front damage multiplier with 0 / 1 / 2 pieces broken
+      weakPointMult: 1.5,                // all plates gone: front hits strike the glowing core
     },
     spitter: {
       hp: 40, speed: 3, damage: 8, attackCooldown: 2.0,
-      aggroRange: 20, deaggroRange: 28, targetPreference: 'statue',
+      aggroRange: 20, deaggroRange: 28, targetPreference: 'statue', reachesHighGround: true,
       radius: 0.55, height: 1.1, color: 0x9a40c0, behavior: 'ranged',
-      range: 14,               // stops at this distance from its target and fires
-      projectileSpeed: 10, projectileRadius: 0.35, projectileLife: 4,
+      range: 18,               // stops this far from its target (with a clear shot) and fires
+      backoffRange: 7,         // backs away from a hero closer than this
+      projectileSpeed: 12, projectileRadius: 0.35, projectileLife: 4,
     },
     bomber: {
-      hp: 35, speed: 5, damage: 0, attackCooldown: 0,
+      hp: 35, speed: 6.5, damage: 0, attackCooldown: 0,
       aggroRange: 0, deaggroRange: 0, targetPreference: 'statueOnly',
       radius: 0.7, height: 0.6, color: 0xd03020, behavior: 'bomber',
       explosionDamage: 150,    // statue damage on contact
       explosionRadius: 5,      // player within this also takes playerExplosionDamage
       playerExplosionDamage: 40,
+      beepRange: 45,           // the hero hears the beeping within this
     },
     banner: {
       hp: 30, speed: 3.5, damage: 5, attackCooldown: 1.0,
-      aggroRange: 0, deaggroRange: 0, targetPreference: 'statueOnly',
+      aggroRange: 0, deaggroRange: 0, targetPreference: 'none',
       radius: 0.5, height: 1.0, color: 0xf08aa0, behavior: 'banner',
       buffRadius: 8,           // allies inside this circle are buffed
       speedMult: 1.4, damageMult: 1.5,
-      backOffset: 4,           // how far behind the pack centroid it hangs back
+      backOffset: 8,           // walking metres it hangs behind the pack average
+      fleeRange: 10,           // runs from a visible hero inside this
     },
-    // PLACEHOLDER BOSSES — scaled-up Plated (look: 'plated'). Real boss designs come later.
+    climber: {
+      hp: 45, speed: 4, damage: 9, attackCooldown: 0.9,
+      aggroRange: 35, deaggroRange: 45, targetPreference: 'highGround', canClimb: true, reachesHighGround: true,
+      radius: 0.5, height: 1.0, color: 0x3a6a6a, behavior: 'melee',
+      climbSpeed: 3,           // vertical metres per second up cliffs and props
+      highGround: 2.5,         // hero feet this far above the climber's feet counts as high ground
+    },
+    howler: {
+      hp: 20, speed: 7, damage: 4, attackCooldown: 0.8,
+      aggroRange: 40, deaggroRange: 55, targetPreference: 'player', noLos: true,
+      radius: 0.45, height: 0.9, color: 0xe08a30, behavior: 'howler',
+      scream: { range: 14, windup: 0.8, radius: 30, cooldown: 7 },
+    },
+    burrower: {
+      hp: 40, speed: 3.5, damage: 12, attackCooldown: 1.0,
+      aggroRange: 0, deaggroRange: 0, targetPreference: 'statueOnly',
+      radius: 0.6, height: 1.0, color: 0x7a5a3a, behavior: 'burrower',
+      tunnelSpeed: 6,          // underground: untargetable, ignores cover and cliffs
+      emergeRadius: [8, 12],   // pops up this far from the statue center
+    },
+    // BOSSES — they break the shared rules instead of being plain health sponges.
     miniBoss: {
-      name: 'Mini-boss', boss: true, look: 'plated',
-      hp: 3000, speed: 1.6, damage: 40, attackCooldown: 1.5,
-      aggroRange: 10, deaggroRange: 18, targetPreference: 'statue',
-      radius: 1.8, height: 3.2, color: 0x7a4f6f, behavior: 'melee',
+      name: 'Brute', boss: true, look: 'plated',
+      hp: 3000, speed: 1.8, damage: 40, attackCooldown: 1.5,
+      aggroRange: 60, deaggroRange: 80, targetPreference: 'closest', ignoreLeash: true, noLos: true,
+      radius: 1.8, height: 3.2, color: 0x7a4f6f, behavior: 'brute', knockbackResist: 1,
       frontDamageMult: 0.5, frontArc: 0.5,
+      // Telegraphed charge: wind-up (aim locks aimLock s before release), then a straight rush.
+      // Missing (running maxDist without hitting anything) or hitting a wall leaves it dazed.
+      charge: { range: [5, 22], windup: 1.5, aimLock: 0.4, speed: 20, maxDist: 26,
+                playerDamage: 45, statueDamage: 80, knock: 16, daze: 2.2, cooldown: 6 },
     },
     finalBoss: {
-      name: 'Final Boss', boss: true, look: 'plated',
-      hp: 8000, speed: 1.3, damage: 60, attackCooldown: 1.5,
-      aggroRange: 10, deaggroRange: 18, targetPreference: 'statue',
-      radius: 2.6, height: 4.5, color: 0x5a1f2f, behavior: 'melee',
+      name: 'Zombie King', boss: true, look: 'plated',
+      hp: 8000, speed: 1.4, damage: 60, attackCooldown: 1.5,
+      aggroRange: 60, deaggroRange: 80, targetPreference: 'statueOnly', ignoreLeash: true, noLos: true,
+      radius: 2.6, height: 4.5, color: 0x5a1f2f, behavior: 'overlord', knockbackResist: 1,
       frontDamageMult: 0.5, frontArc: 0.5,
+      // Phases begin below these hp fractions: statue-focused → 66% armored + hero-focused → 33% enraged + charges
+      phases: [0.66, 0.33],
+      phasePrefs: ['statueOnly', 'player', 'closest'],
+      armorHp: 700,            // phase 2 shell: only heavy hits (explosions, slams) chip it; hp is locked meanwhile
+      enrageSpeed: 1.5,
+      reinforcements: [{ shambler: 6, sprinter: 4 }, { shambler: 6, plated: 2, howler: 2 }],
+      charge: { range: [6, 24], windup: 1.2, aimLock: 0.4, speed: 18, maxDist: 26,
+                playerDamage: 60, statueDamage: 100, knock: 18, daze: 1.8, cooldown: 7 },
     },
+  },
+  // The shared zombie brain: perception, aggro, steering, attack slots, safety nets
+  AI: {
+    thinkRate: [5, 10],          // decisions per second (random per zombie, so updates are staggered)
+    loseSightTime: 4,            // seconds without sight before a chase is dropped
+    chaseTimeout: 10,            // seconds chasing without landing a hit → give up, go for the statue
+    retargetCooldown: 1.5,       // min seconds between target switches
+    reaggroCooldown: 4,          // ignore the hero this long after giving up a chase
+    packAlertRadius: 10, packAlertDelay: [0.2, 0.8],   // packmates join a spotted chase after a reaction delay
+    directChaseRange: 10,        // steer straight at a visible hero inside this, else use the hero flow field
+    playerFieldInterval: 0.4,    // hero flow field rebuild period while someone needs it
+    speedJitter: 0.1,            // ±10% speed per zombie
+    separation: 1.0,             // extra spacing (m) packmates try to keep
+    separationWeight: 1.2,
+    avoidLook: 2.2,              // obstacle feeler length (m)
+    knockback: 9,                // explosion push at the center (m/s), scaled by 1 - knockbackResist
+    heroRise: 1.6,               // hero feet this far above the terrain = on a prop (no ground path)
+    slots: { statueOffset: 0.75, statueSpacing: 1.5, statueClaim: 9, queueDist: 3.5,
+             heroRadius: 1.6, heroCount: 6, heroClaim: 5, heroHold: 3.2 },
+    stuck: { window: 2, minProgress: 0.6, nudgeTime: 0.7 },
+    distractionRadius: 14,       // default pull radius of a distraction (Chili Bean Bomb, etc.)
   },
   debugPackSize: 4,             // zombies spawned per debug key press (keys 1–6)
   // -------------------------------------------------------------------
@@ -200,6 +265,7 @@ const CONFIG = {
     tiers: { court: 0, mid: 3, high: 8, wall: 12 },
     bowl: { floorRadius: 14, rimRadius: 26 },   // flat court floor, then a smooth slope up to the mid tier
     maxSlope: 0.7,               // rise per metre zombies can walk (ramps yes, cliffs no)
+    climbCost: 5,                // Climbers' nav layer: a cliff step costs this many flat steps
     navClearance: 1.0,           // obstacles are inflated by this for the nav grid
     stepUp: 0.45,                // the hero walks up ledges this tall without jumping
     // Raised terrain. rect {x,z,w,d} (center + size) or circle {x,z,r}; edge = blend width (≈1 cliff, 4+ slope)
@@ -262,9 +328,6 @@ const CONFIG = {
       { name: 'Fountain',       x: -8,  z: 7,    note: 'kite loop' },
     ],
   },
-  // Aggro leash: zombies only notice the hero with line of sight, and give up the chase when
-  // they lose sight for loseSightTime, or get pulled maxChase metres from where the chase began.
-  leash: { loseSightTime: 2.5, maxChase: 35, cooldown: 4, losInterval: 0.2, playerFieldInterval: 0.4 },
   // Spawn lanes — each one a different tactical problem. Wave packs reference these by key.
   SPAWN_POINTS: {
     longRoad: { x: -20,  z: -138, label: 'Orchard Road',   note: 'long and open: you see them coming', color: '#ffd23a' },
@@ -288,32 +351,32 @@ const CONFIG = {
     { packs: [{ spawn: 'longRoad', zombies: { shambler: 8 } }, { spawn: 'longRoad', delay: 12, zombies: { shambler: 6 } }] },
     { packs: [{ spawn: 'flank', zombies: { shambler: 6, sprinter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8 } }] },
     { packs: [{ spawn: 'choke', zombies: { shambler: 10, plated: 2 } }, { spawn: 'choke', delay: 12, zombies: { shambler: 6, plated: 1 } }] },
-    { packs: [{ spawn: 'climb', zombies: { shambler: 8, spitter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8, spitter: 2 } }] },
+    { packs: [{ spawn: 'climb', zombies: { shambler: 8, spitter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8, spitter: 2, climber: 2 } }] },
     { packs: [{ spawn: 'longRoad', zombies: { miniBoss: 1, shambler: 10 } }, { spawn: 'flank', delay: 14, zombies: { sprinter: 6, shambler: 4 } }] },
     { packs: [
       { spawn: 'choke', zombies: { shambler: 8, plated: 3 } },
       { spawn: 'climb', delay: 10, zombies: { spitter: 4, shambler: 6 } },
-      { spawn: 'flank', delay: 10, zombies: { sprinter: 5 } },
+      { spawn: 'flank', delay: 10, zombies: { sprinter: 5, howler: 2 } },
     ] },
     { packs: [
       { spawn: 'longRoad', zombies: { shambler: 10, bomber: 2, banner: 1 } },
-      { spawn: 'choke', delay: 10, zombies: { shambler: 8, bomber: 2, banner: 1 } },
+      { spawn: 'choke', delay: 10, zombies: { shambler: 8, bomber: 2, banner: 1, burrower: 3 } },
     ] },
     { packs: [
       { spawn: 'climb', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
-      { spawn: 'flank', delay: 8, zombies: { shambler: 8, sprinter: 3 } },
+      { spawn: 'flank', delay: 8, zombies: { shambler: 8, sprinter: 3, climber: 2, howler: 1 } },
       { spawn: 'choke', delay: 8, zombies: { plated: 3, spitter: 3 } },
     ] },
     { packs: [
       { spawn: 'longRoad', zombies: { shambler: 15, plated: 3, spitter: 3, banner: 1 } },
       { spawn: 'flank', delay: 8, zombies: { sprinter: 6, bomber: 2 } },
-      { spawn: 'climb', delay: 8, zombies: { shambler: 10, spitter: 2 } },
+      { spawn: 'climb', delay: 8, zombies: { shambler: 10, spitter: 2, climber: 3, burrower: 3 } },
       { spawn: 'choke', delay: 8, zombies: { shambler: 8, plated: 3, bomber: 2, banner: 1 } },
     ] },
     { packs: [
       { spawn: 'longRoad', zombies: { finalBoss: 1, shambler: 12, plated: 3 } },
       { spawn: 'choke', delay: 10, zombies: { shambler: 10, spitter: 3, banner: 1 } },
-      { spawn: 'flank', delay: 8, zombies: { sprinter: 8, bomber: 3 } },
+      { spawn: 'flank', delay: 8, zombies: { sprinter: 8, bomber: 3, howler: 2, burrower: 3 } },
       { spawn: 'climb', delay: 8, zombies: { shambler: 10, plated: 3, spitter: 2, banner: 1 } },
     ] },
   ],
@@ -322,8 +385,8 @@ const WAVES = CONFIG.WAVES;
 const W = CONFIG.weapon;
 const AB = CONFIG.abilities;
 
-// Debug keys 1..6 spawn a pack of these types, in order.
-const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber', 'banner'];
+// Debug keys 1..9 spawn a pack of these types, in order.
+const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber', 'banner', 'climber', 'howler', 'burrower'];
 
 // =====================================================================
 // Scene setup
@@ -829,7 +892,7 @@ function showSpawnMarkers(names) {
 // A flow field is Dijkstra distance from a goal set; zombies walk downhill on it.
 const NAV = (() => {
   const C = MAP.cell, N = Math.round(MAP.size / C);
-  const h = new Float32Array(N * N), open = new Uint8Array(N * N), pass = new Uint8Array(N * N);
+  const h = new Float32Array(N * N), open = new Uint8Array(N * N), pass = new Uint8Array(N * N), climb = new Uint8Array(N * N);
   const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   const cx = i => -HALF + (i + 0.5) * C;
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -845,6 +908,7 @@ const NAV = (() => {
       const n = k + dj * N + di;
       if (!open[n]) return;
       if (di && dj && (!open[k + di] || !open[k + dj * N])) return;
+      climb[k] |= 1 << b;   // Climbers may take any step between open cells
       const run = C * (di && dj ? Math.SQRT2 : 1);
       // also check the midpoint so a thin cliff band between cell centers still blocks
       const mid = heightAt((cx(i) + cx(i + di)) / 2, (cx(j) + cx(j + dj)) / 2);
@@ -856,12 +920,12 @@ const NAV = (() => {
     const i = THREE.MathUtils.clamp(Math.floor((x + HALF) / C), 0, N - 1), j = THREE.MathUtils.clamp(Math.floor((z + HALF) / C), 0, N - 1);
     return j * N + i;
   };
-  return { C, N, h, open, pass, DIRS, cx, cellOf };
+  return { C, N, h, open, pass, climb, DIRS, cx, cellOf };
 })();
 
-// Dijkstra from a set of goal cells (binary heap)
-function buildFlowField(goals) {
-  const { N, pass, DIRS, C } = NAV;
+// Dijkstra from a set of goal cells (binary heap). climb = Climbers' layer: cliff steps allowed but costly.
+function buildFlowField(goals, climb = false) {
+  const { N, pass, DIRS, C } = NAV, edges = climb ? NAV.climb : pass;
   const dist = new Float32Array(N * N).fill(Infinity);
   const heapK = [], heapD = [];
   const push = (k, d) => {
@@ -890,9 +954,9 @@ function buildFlowField(goals) {
     if (d > dist[k] + 1e-3) continue;   // stale heap entry (dist is float32, so compare loosely)
     // edges are symmetric enough (slope test is symmetric), so walk outward from goals
     for (let b = 0; b < 8; b++) {
-      if (!(pass[k] & (1 << b))) continue;
+      if (!(edges[k] & (1 << b))) continue;
       const [di, dj] = DIRS[b], n = k + dj * N + di;
-      const nd = d + C * (b < 4 ? 1 : Math.SQRT2);
+      const nd = d + C * (b < 4 ? 1 : Math.SQRT2) * (pass[k] & (1 << b) ? 1 : MAP.climbCost);
       if (nd < dist[n]) { dist[n] = nd; push(n, nd); }
     }
   }
@@ -910,12 +974,13 @@ function goalCells(x, z, radius) {
   return out;
 }
 const STATUE_FIELD = buildFlowField(goalCells(0, 0, S / 2 + 2.6));
+const CLIMB_STATUE_FIELD = buildFlowField(goalCells(0, 0, S / 2 + 2.6), true);
 let playerField = null, playerFieldTimer = 0;
 
 // Downhill direction on a flow field from world (x,z): looks two cells ahead for smoother paths.
 // Returns false at the goal or when the field can't help (caller then goes direct).
-function flowDir(field, x, z, out) {
-  const { N, pass, DIRS, cx } = NAV;
+function flowDir(field, x, z, out, climb = false) {
+  const { N, DIRS, cx } = NAV, pass = climb ? NAV.climb : NAV.pass;
   let k = NAV.cellOf(x, z);
   const next = (c, needPass) => {
     let best = field[c], bk = -1;
@@ -1023,7 +1088,7 @@ const debugMap = (() => {
       ctx.drawImage(bg, 0, 0);
       for (const z of zombies) {
         const [px, pz] = toPx(z.mesh.position.x, z.mesh.position.z);
-        ctx.fillStyle = z.chasingPlayer ? '#ff3030' : '#' + z.def.color.toString(16).padStart(6, '0');
+        ctx.fillStyle = z.chasingPlayer ? '#ff3030' : z.buried ? '#6a4a2a' : '#' + z.def.color.toString(16).padStart(6, '0');
         ctx.fillRect(px - 2, pz - 2, 4, 4);
       }
       const p = playerMesh.position, [px, pz] = toPx(p.x, p.z);
@@ -1066,6 +1131,7 @@ let particles = [];          // chips, smoke, leaves
 let popups = [];             // floating damage numbers
 
 function resetGame() {
+  zombies.forEach(z => { z.dead = true; });   // frees their attack slots
   [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects, ...particles]
     .forEach(o => scene.remove(o.mesh));
   popups.forEach(p => p.el.remove());
@@ -1079,6 +1145,7 @@ function resetGame() {
     phase: 'countdown', // 'countdown' | 'active'
     waveTimer: 0,
     spawnQueue: [],     // pending staggered spawns: { t, type, spawn }
+    distractions: [],   // { pos, time, radius } — zombies inside drop everything and go there
     yaw: 0, pitch: 0.2,
     over: false,
     // hero
@@ -1108,21 +1175,45 @@ function respawnPlayer() {
   playerMesh.position.set(0, heightAt(0, S + 2) + PLAYER_CENTER_Y, S + 2); // just beside the statue
 }
 
-// Build the mesh for a zombie type, plus small primitive extras for readability
+// Build the mesh for a zombie type, plus small primitive extras for readability.
+// Returns { mesh, parts }: parts are children the AI animates or toggles (plates, core, mound, shell…).
+const zombieDarkMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+const moundGeo = new THREE.SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+const moundMat = new THREE.MeshLambertMaterial({ color: 0x5a4028 });
 function makeZombieMesh(type) {
   const def = ZT[type];
   // Per-zombie material clone so hits can flash just this zombie
   const mesh = new THREE.Mesh(zombieAssets[type].geo, zombieAssets[type].mat.clone());
   mesh.castShadow = true;
+  mesh.rotation.order = 'YXZ';                  // yaw first, then lean (climbing, charging)
   const halfH = def.radius + def.height / 2;   // mesh origin is at its center
+  const parts = {};
   if ((def.look || type) === 'plated') {
-    // Front plate on local +Z (the facing direction)
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 2, def.height + def.radius, 0.2),
-      new THREE.MeshLambertMaterial({ color: 0xbfc8d0 }));
-    plate.position.z = def.radius + 0.1;
-    plate.castShadow = true;
-    mesh.add(plate);
-  } else if (type === 'bomber') {
+    const plateMat = new THREE.MeshLambertMaterial({ color: 0xbfc8d0 });
+    if (def.plateBreaks) {
+      // Front armor in stacked pieces (top falls off first); a glowing weak-point core sits behind them
+      const n = def.plateBreaks.length, h = (def.height + def.radius) / n;
+      parts.plates = [];
+      for (let i = 0; i < n; i++) {
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 2, h * 0.94, 0.2), plateMat);
+        plate.position.set(0, (def.height + def.radius) / 2 - h * (i + 0.5), def.radius + 0.1);
+        plate.castShadow = true;
+        mesh.add(plate);
+        parts.plates.push(plate);
+      }
+      parts.core = new THREE.Mesh(new THREE.SphereGeometry(def.radius * 0.42, 12, 10), new THREE.MeshBasicMaterial({ color: 0xff6a2a }));
+      parts.core.position.set(0, 0.1, def.radius * 0.72);
+      parts.core.visible = false;
+      mesh.add(parts.core);
+    } else {
+      // Front plate on local +Z (the facing direction)
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 2, def.height + def.radius, 0.2), plateMat);
+      plate.position.z = def.radius + 0.1;
+      plate.castShadow = true;
+      mesh.add(plate);
+    }
+  }
+  if (type === 'bomber') {
     const bomb = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 10), new THREE.MeshLambertMaterial({ color: 0x111111 }));
     bomb.position.y = halfH + 0.3;
     mesh.add(bomb);
@@ -1137,16 +1228,59 @@ function makeZombieMesh(type) {
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = -halfH + 0.03;
     mesh.add(pole, flag, ring);
+  } else if (type === 'climber') {
+    // Two hooked claws reaching forward
+    for (const s of [-1, 1]) {
+      const claw = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.7), zombieDarkMat);
+      claw.position.set(s * def.radius * 0.8, def.height * 0.25, def.radius * 0.7);
+      claw.rotation.x = -0.5;
+      mesh.add(claw);
+    }
+  } else if (type === 'howler') {
+    // Big gaping mouth on the front
+    parts.mouth = new THREE.Mesh(new THREE.SphereGeometry(def.radius * 0.55, 12, 10), zombieDarkMat);
+    parts.mouth.scale.set(1, 0.6, 0.4);
+    parts.mouth.position.set(0, def.height * 0.2, def.radius * 0.85);
+    mesh.add(parts.mouth);
+  } else if (type === 'burrower') {
+    // Drill-helmet on top; a dirt mound at ground level shows where it tunnels
+    const drill = new THREE.Mesh(new THREE.ConeGeometry(def.radius * 0.8, 0.8, 10), new THREE.MeshLambertMaterial({ color: 0x8a8a8a }));
+    drill.position.y = halfH + 0.3;
+    mesh.add(drill);
+    parts.mound = new THREE.Mesh(moundGeo, moundMat);
+    parts.mound.scale.set(def.radius * 1.6, 0.5, def.radius * 1.6);
+    parts.mound.visible = false;
+    mesh.add(parts.mound);
+  } else if (type === 'finalBoss') {
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(def.radius * 0.55, def.radius * 0.45, 0.7, 8, 1, true),
+      new THREE.MeshLambertMaterial({ color: 0xffc830, side: THREE.DoubleSide, emissive: 0x332200 }));
+    crown.position.y = halfH + 0.2;
+    // Phase-2 armor shell: shown while the armor holds
+    parts.shell = new THREE.Mesh(new THREE.CapsuleGeometry(def.radius * 1.12, def.height, 4, 14),
+      new THREE.MeshLambertMaterial({ color: 0x8aa0b8, transparent: true, opacity: 0.55, emissive: 0x112233 }));
+    parts.shell.visible = false;
+    mesh.add(crown, parts.shell);
   }
-  return mesh;
+  if (def.charge) {
+    // Charge telegraph: a red lane on the ground ahead (shown during the wind-up)
+    parts.lane = new THREE.Mesh(new THREE.PlaneGeometry(def.radius * 2, def.charge.maxDist),
+      new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+    parts.lane.rotation.x = -Math.PI / 2;
+    parts.lane.position.set(0, -halfH + 0.12, def.charge.maxDist / 2);
+    parts.lane.visible = false;
+    mesh.add(parts.lane);
+  }
+  return { mesh, parts };
 }
 
 const randomLane = () => { const k = Object.keys(CONFIG.SPAWN_POINTS); return k[Math.floor(Math.random() * k.length)]; };
+const randRange = ([a, b]) => a + Math.random() * (b - a);
+let nextZombieId = 1;
 
 function spawnZombie(type, spawnName = randomLane()) {
-  const def = ZT[type];
+  const def = ZT[type], AI = CONFIG.AI;
   const sp = CONFIG.SPAWN_POINTS[spawnName];
-  const mesh = makeZombieMesh(type);
+  const { mesh, parts } = makeZombieMesh(type);
   const x = sp.x + (Math.random() - 0.5) * CONFIG.packSpread * 2, z = sp.z + (Math.random() - 0.5) * CONFIG.packSpread * 2;
   mesh.position.set(x, heightAt(x, z) + def.radius + def.height / 2, z);
   // "Buttered" marker: a pat of butter on the head, shown while stunned
@@ -1156,15 +1290,30 @@ function spawnZombie(type, spawnName = randomLane()) {
   butter.visible = false;
   mesh.add(butter);
   scene.add(mesh);
-  zombies.push({
-    type, def, mesh, hp: def.hp, butter,
+  const thinkInterval = 1 / randRange(AI.thinkRate);
+  const zombie = {
+    id: nextZombieId++, type, def, mesh, parts, hp: def.hp, butter,
+    pref: def.targetPreference,      // current targeting rule (the final boss changes it per phase)
+    mode: 'advance',                 // stunned | distracted | special | attack | chase | advance (debug/readability)
     chasingPlayer: false, attackingStatue: false, attackTimer: 0,
-    seesPlayer: false, losTimer: Math.random() * CONFIG.leash.losInterval, unseenTime: 0,
-    chaseOrigin: new THREE.Vector3(), leashCooldown: 0,
+    // perception / aggro
+    seesPlayer: false, lastKnown: new THREE.Vector3(), unseenTime: 0, chaseTime: 0,
+    retargetTimer: 0, reaggroTimer: 0, alertTimer: -1, distraction: null,
+    thinkInterval, thinkTimer: Math.random() * thinkInterval,   // staggered decision ticks
+    // steering
+    speedMul: 1 + (Math.random() * 2 - 1) * AI.speedJitter, phase: Math.random() * Math.PI * 2,
+    tgt: { isPlayer: false, isPoint: false, hold: false, dist: 0, pos: new THREE.Vector3(), dir: new THREE.Vector3() },
+    slot: null, kb: new THREE.Vector3(),
+    stuck: { t: 0, x, z, strikes: 0 }, wantsMove: false, nudge: 0, nudgeDir: new THREE.Vector3(),
+    climbing: false, buried: false,
+    ai: {},                          // behavior-local state (lunge, scream, charge, phases…)
     buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
-    stun: 0, flash: 0,
+    stun: 0, flash: 0, glow: 0, glowColor: 0xff2000,
     dead: false,
-  });
+  };
+  zombies.push(zombie);
+  if (def.behavior === 'burrower') startBurrow(zombie);
+  return zombie;
 }
 
 // ---------------------------------------------------------------------
@@ -1220,25 +1369,34 @@ const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.repeat || !state || state.over) return;
-  // Debug: Digit1..Digit6 spawn a small pack of that type at the spawn point
+  // Debug: Digit1..Digit9 spawn a small pack of that type at the spawn point
   const m = /^Digit([1-9])$/.exec(e.code);
   const type = m && DEBUG_SPAWN_KEYS[m[1] - 1];
   if (type) {
     for (let i = 0; i < CONFIG.debugPackSize; i++) spawnZombie(type);
     setMessage(`[debug] spawned ${CONFIG.debugPackSize} ${type}`, 1.5);
   }
-  // Debug: N = skip to the next wave's countdown (clears current zombies); B = spawn the mini-boss
+  // Debug: N = skip to the next wave's countdown (clears current zombies); B = spawn the mini-boss (Brute)
   if (e.code === 'KeyN') {
-    zombies.forEach(z => scene.remove(z.mesh));
+    zombies.forEach(z => { z.dead = true; scene.remove(z.mesh); });
     zombies = []; state.spawnQueue = [];
     if (state.waveIndex < WAVES.length - 1) { beginCountdown(state.waveIndex + 1); setBanner(true); }
     setMessage(`[debug] skipped to wave ${state.waveIndex + 1}`, 1.5);
   }
   if (e.code === 'KeyB') spawnZombie('miniBoss');
+  // Debug: V = spawn the final boss; G = drop a test distraction (future Chili Bean Bomb) at the aim point
+  if (e.code === 'KeyV') spawnZombie('finalBoss');
+  if (e.code === 'KeyG') {
+    const p = getGroundAimPoint(40);
+    distractAt(p, 6);
+    spawnDecal(p.clone().setY(p.y + 0.05), 1.2, 0xff3020, 6);
+    spawnRing(p, CONFIG.AI.distractionRadius, 0xff6040, 0.6);
+    setMessage('[debug] distraction', 1.5);
+  }
   // Debug: M = top-down map; K = stress-test horde (100+ zombies, split across every lane)
   if (e.code === 'KeyM') debugMap.toggle();
   if (e.code === 'KeyK') {
-    const mix = ['shambler', 'shambler', 'shambler', 'sprinter', 'plated', 'spitter'];
+    const mix = ['shambler', 'shambler', 'shambler', 'sprinter', 'plated', 'spitter', 'climber', 'howler', 'burrower', 'banner'];
     for (const lane of Object.keys(CONFIG.SPAWN_POINTS))
       for (let i = 0; i < 30; i++) spawnZombie(mix[i % mix.length], lane);
     setMessage(`[debug] stress horde: ${zombies.length} zombies`, 2);
@@ -1257,6 +1415,7 @@ const overlay = document.getElementById('overlay');
 overlay.addEventListener('click', () => {
   if (state.over) resetGame();
   renderer.domElement.requestPointerLock();
+  try { audioCtx ??= new AudioContext(); } catch { /* no audio */ }
 });
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
@@ -1791,14 +1950,17 @@ function updateBarrages(dt) {
   }
 }
 
-// Area damage to zombies (explosions bypass Plated fronts), with visuals and shake
+// Area damage to zombies (explosions bypass Plated fronts, count as heavy hits, knock back), with visuals and shake
 function explodeAt(pos, radius, damage, { color = 0xff8800, stun = 0, sphere = true } = {}) {
   for (const z of zombies) {
-    if (z.dead) continue;
+    if (z.dead || z.buried) continue;
     const d = tmp.copy(z.mesh.position).sub(pos).setY(0).length() - z.def.radius;
     if (d > radius) continue;
     if (stun) z.stun = Math.max(z.stun, stun);
-    damageZombie(z, damage * (1 - 0.4 * Math.max(0, d) / radius), z.mesh.position.clone().setY(z.mesh.position.y + z.def.height / 2));
+    // push away from the blast (Plated / bosses resist)
+    const push = CONFIG.AI.knockback * (1 - Math.max(0, d) / radius) * (1 - (z.def.knockbackResist || 0));
+    if (push > 0 && tmp.lengthSq() > 1e-4) z.kb.addScaledVector(tmp.normalize(), push);
+    damageZombie(z, damage * (1 - 0.4 * Math.max(0, d) / radius), z.mesh.position.clone().setY(z.mesh.position.y + z.def.height / 2), false, true);
   }
   if (sphere) spawnExplosion(pos, radius, color);
   spawnRing(pos, radius, color, 0.3);
@@ -1890,115 +2052,427 @@ function animateCorn(dt) {
   muzzleLight.intensity *= Math.exp(-dt * 30);
 }
 
-// ---------------------------------------------------------------------
-// Zombie helpers shared by all behaviors
-// ---------------------------------------------------------------------
+// =====================================================================
+// Zombie AI — one shared brain, then one small behavior function per type
+// =====================================================================
+// Each frame: banner buffs → hero info → spatial hash → per zombie:
+//   knockback → stun → think (perception + targeting, 5–10×/s, staggered) → resolveTarget → behavior → stuck check
+// then pack separation and terrain constraints.
+// Modes (z.mode) by priority: stunned > distracted > special (lunge, scream, charge, tunnel) > attack > chase > advance.
+const AI = CONFIG.AI;
+const flatDist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const statueFaceDist = p => Math.max(Math.abs(p.x), Math.abs(p.z)) - S / 2;
+const feetY = z => z.mesh.position.y - z.def.radius - z.def.height / 2;
+const tmpDir = new THREE.Vector3(), tmpGoal = new THREE.Vector3();
 
-// Decide whether this zombie is after the player or the statue, per its targetPreference.
-// Zombies only notice the hero with line of sight (tall hedges / buildings / terrain hide you), and the
-// leash makes them give up after losing sight for a while or being dragged too far from where they started.
-// Returns { isPlayer, pos, dist, dir } where dir is a flat unit vector along the zombie's path to the target.
+// ---- Hero info, refreshed once a frame: can ground zombies walk to them at all? ----
+// Standing on a prop (Water Tower) or anywhere the statue's nav network doesn't reach = unreachable.
+const hero = { reachable: true, feet: 0 };
+function updateHeroInfo() {
+  if (state.playerDead) { hero.reachable = false; return; }
+  const p = playerMesh.position;
+  hero.feet = p.y - PLAYER_CENTER_Y;
+  if (!state.onGround) return;   // mid-jump: keep the last verdict
+  const onProp = hero.feet - heightAt(p.x, p.z) > AI.heroRise;
+  const { N } = NAV, k = NAV.cellOf(p.x, p.z);
+  let linked = false;
+  for (let dj = -1; dj <= 1 && !linked; dj++) for (let di = -1; di <= 1 && !linked; di++) {
+    const n = k + dj * N + di;
+    linked = n >= 0 && n < N * N && isFinite(STATUE_FIELD[n]);
+  }
+  hero.reachable = !onProp && linked;
+}
+// Hero is "up high" relative to this zombie (Climber trigger)
+const heroHigh = z => !hero.reachable || hero.feet - feetY(z) > (z.def.highGround || 2.5);
+
+// ---- Spatial hash (4 m buckets) for neighbour queries: separation, pack alerts ----
+const HASH_CELL = 4, zombieHash = new Map();
+const hashKey = (i, j) => (i + 512) * 1024 + (j + 512);
+function rebuildHash() {
+  zombieHash.clear();
+  for (const z of zombies) {
+    if (z.dead || z.buried) continue;
+    const k = hashKey(Math.floor(z.mesh.position.x / HASH_CELL), Math.floor(z.mesh.position.z / HASH_CELL));
+    let b = zombieHash.get(k);
+    if (!b) zombieHash.set(k, b = []);
+    b.push(z);
+  }
+}
+function forNeighbors(x, zz, r, fn) {
+  const i0 = Math.floor((x - r) / HASH_CELL), i1 = Math.floor((x + r) / HASH_CELL);
+  const j0 = Math.floor((zz - r) / HASH_CELL), j1 = Math.floor((zz + r) / HASH_CELL);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const b = zombieHash.get(hashKey(i, j));
+    if (b) for (const o of b) fn(o);
+  }
+}
+
+// ---- Attack slots: melee zombies spread around the statue / hero instead of stacking ----
+// Statue ring: points along the box perimeter, statueOffset out from each face. Hero ring: fixed angles around them.
+const STATUE_SLOTS = (() => {
+  const L = S / 2 + AI.slots.statueOffset, n = Math.max(1, Math.floor(2 * L / AI.slots.statueSpacing)), out = [];
+  for (let side = 0; side < 4; side++) for (let i = 0; i < n; i++) {
+    const t = -L + (i + 0.5) * (2 * L / n);
+    const [x, z] = [[t, -L], [L, t], [-t, L], [-L, -t]][side];
+    out.push({ pos: new THREE.Vector3(x, 0, z), owner: null });
+  }
+  return out;
+})();
+const HERO_SLOTS = Array.from({ length: AI.slots.heroCount }, (_, i) => ({ angle: i / AI.slots.heroCount * Math.PI * 2, owner: null }));
+const slotFree = s => !s.owner || s.owner.dead || s.owner.slot !== s;
+const slotPos = (s, out) => s.angle === undefined ? out.copy(s.pos)
+  : out.set(playerMesh.position.x + Math.cos(s.angle) * AI.slots.heroRadius, 0, playerMesh.position.z + Math.sin(s.angle) * AI.slots.heroRadius);
+const usesSlots = z => !z.def.boss && (z.def.behavior === 'melee' || z.def.behavior === 'howler' || z.def.behavior === 'burrower');
+function releaseSlot(z) {
+  if (z.slot && z.slot.owner === z) z.slot.owner = null;
+  z.slot = null;
+}
+// Take the free slot nearest to this zombie (null when the ring is full: it queues instead)
+function claimSlot(z, list) {
+  let best = null, bd = Infinity;
+  for (const s of list) {
+    if (!slotFree(s)) continue;
+    const d = flatDist(slotPos(s, tmpGoal), z.mesh.position);
+    if (d < bd) { bd = d; best = s; }
+  }
+  releaseSlot(z);
+  if (best) { best.owner = z; z.slot = best; }
+  return best;
+}
+
+// ---- Distractions (e.g. a future Chili Bean Bomb): override everything except stun ----
+function distractAt(pos, duration, radius = AI.distractionRadius) {
+  state.distractions.push({ pos: pos.clone(), time: duration, radius });
+}
+function updateDistractions(dt) {
+  state.distractions = state.distractions.filter(d => (d.time -= dt) > 0);
+}
+
+// ---- Perception + aggro (runs at the zombie's think rate) ----
 const eyeA = new THREE.Vector3(), eyeB = new THREE.Vector3();
-function selectTarget(z, dt) {
-  const def = z.def, pos = z.mesh.position, L = CONFIG.leash;
-  const distToPlayer = state.playerDead ? Infinity : tmp.copy(playerMesh.position).sub(pos).setY(0).length();
+function canSeeHero(z) {
+  const pos = z.mesh.position;
+  return losClear(eyeA.copy(pos).setY(pos.y + z.def.height / 2), eyeB.copy(playerMesh.position).setY(playerMesh.position.y + 0.5));
+}
+// Could this zombie join a chase right now (pack alert / scream)?
+const canJoinChase = o => !o.dead && !o.buried && !o.chasingPlayer && !o.distraction && !state.playerDead &&
+  (o.pref === 'player' || (o.pref === 'statue' && !o.attackingStatue) || (o.pref === 'highGround' && heroHigh(o))) &&
+  (hero.reachable || o.def.reachesHighGround);
 
-  // Line-of-sight check (throttled), only when the player is close enough to matter
-  z.losTimer -= dt;
-  if (z.losTimer <= 0) {
-    z.losTimer = L.losInterval;
-    z.seesPlayer = distToPlayer < Math.max(def.aggroRange, def.deaggroRange) &&
-      losClear(eyeA.copy(pos).setY(pos.y + def.height / 2), eyeB.copy(playerMesh.position).setY(playerMesh.position.y + 0.5));
-  }
-  z.unseenTime = z.seesPlayer ? 0 : z.unseenTime + dt;
-  z.leashCooldown = Math.max(0, z.leashCooldown - dt);
-
-  if (def.targetPreference === 'statueOnly' || state.playerDead) {
-    z.chasingPlayer = false;
-  } else if (!z.chasingPlayer && distToPlayer < def.aggroRange && z.seesPlayer && z.leashCooldown <= 0) {
-    // 'statue' types commit to the statue once they've started hitting it
-    if (def.targetPreference === 'player' || !z.attackingStatue) { z.chasingPlayer = true; z.chaseOrigin.copy(pos); }
-  } else if (z.chasingPlayer && (distToPlayer > def.deaggroRange || z.unseenTime > L.loseSightTime ||
-             pos.distanceTo(z.chaseOrigin) > L.maxChase)) {
-    z.chasingPlayer = false;
-    z.leashCooldown = L.cooldown;
-  }
-
-  const isPlayer = z.chasingPlayer;
-  const targetPos = isPlayer ? playerMesh.position : statueMesh.position;
-  const dir = new THREE.Vector3().copy(targetPos).sub(pos).setY(0);
-  // For the box statue, distance to its face ≈ largest axis distance minus half-size
-  const dist = isPlayer ? dir.length() - P.radius : Math.max(Math.abs(dir.x), Math.abs(dir.z)) - S / 2;
-  dir.normalize();
-  // Path: straight at a visible nearby player, otherwise walk the flow field
-  const direct = isPlayer ? (z.seesPlayer && dist < 8) : dist < 2;
-  if (!direct) {
-    const field = isPlayer ? playerField : STATUE_FIELD;
-    if (field) flowDir(field, pos.x, pos.z, dir);
-  }
-  return { isPlayer, pos: targetPos, dist, dir };
+function startChase(z, alertPack) {
+  z.chasingPlayer = true;
+  z.chaseTime = 0; z.unseenTime = 0; z.alertTimer = -1;
+  z.retargetTimer = AI.retargetCooldown;
+  z.lastKnown.copy(playerMesh.position);
+  releaseSlot(z);
+  if (!alertPack) return;
+  // Pack alert: nearby packmates react after a short random delay
+  const p = z.mesh.position;
+  forNeighbors(p.x, p.z, AI.packAlertRadius, o => {
+    if (o !== z && o.alertTimer < 0 && o.reaggroTimer <= 0 && canJoinChase(o) && flatDist(o.mesh.position, p) < AI.packAlertRadius)
+      o.alertTimer = randRange(AI.packAlertDelay);
+  });
+}
+function stopChase(z, cooldown) {
+  z.chasingPlayer = false;
+  z.alertTimer = -1;
+  z.retargetTimer = AI.retargetCooldown;
+  if (cooldown) z.reaggroTimer = AI.reaggroCooldown;
+  releaseSlot(z);
 }
 
-// Step along a flat direction and face it (facing matters for the Plated front plate)
-function moveZombie(z, dir, dt) {
-  z.mesh.position.addScaledVector(dir, z.def.speed * z.buff.speed * dt);
-  faceDir(z, dir);
+function think(z) {
+  const def = z.def, pos = z.mesh.position;
+  // Distractions beat every target
+  z.distraction = null;
+  if (!z.buried) for (const d of state.distractions) if (flatDist(d.pos, pos) < d.radius) { z.distraction = d; break; }
+  if (z.distraction) { if (z.chasingPlayer) stopChase(z, false); return; }
+  if (state.playerDead) { z.seesPlayer = false; return; }
+
+  const dist = flatDist(playerMesh.position, pos);
+  // Types without a hero target still look (the Banner flees a hero it can see)
+  if (z.pref === 'statueOnly' || z.pref === 'none') {
+    z.seesPlayer = !!def.fleeRange && dist < def.fleeRange && canSeeHero(z);
+    if (z.chasingPlayer) stopChase(z, false);
+    return;
+  }
+  z.seesPlayer = dist < Math.max(def.aggroRange, def.deaggroRange) && (def.noLos || canSeeHero(z));
+  if (z.seesPlayer) { z.lastKnown.copy(playerMesh.position); z.unseenTime = 0; }
+  const canReach = hero.reachable || def.reachesHighGround;
+
+  // Bosses: whichever target is nearer (with a retarget cooldown so they don't flip-flop)
+  if (z.pref === 'closest') {
+    const wantHero = canReach && dist < def.aggroRange && dist < statueFaceDist(pos);
+    if (wantHero !== z.chasingPlayer && z.retargetTimer <= 0) wantHero ? startChase(z, false) : stopChase(z, false);
+    return;
+  }
+  if (!z.chasingPlayer) {
+    if (!z.seesPlayer || dist > def.aggroRange || !canReach || z.reaggroTimer > 0 || z.retargetTimer > 0) return;
+    if (z.pref === 'statue' && z.attackingStatue) return;     // committed to the statue
+    if (z.pref === 'highGround' && !heroHigh(z)) return;
+    startChase(z, true);
+  } else {
+    // Give up: out of range, sight lost too long, or chased too long without a hit (anti-kiting)
+    const lost = !def.ignoreLeash && (dist > def.deaggroRange || z.unseenTime > AI.loseSightTime || z.chaseTime > AI.chaseTimeout);
+    const highOk = z.pref !== 'highGround' || heroHigh(z) || dist < 4;   // a Climber keeps fighting once up there
+    if (lost || !canReach || !highOk) stopChase(z, true);
+  }
 }
-// Keep a zombie on walkable ground: out of props, off cliffs, snapped to the terrain
-function constrainZombie(z) {
-  const p = z.mesh.position, def = z.def;
+
+// ---- Where to go this frame: fills z.tgt { isPlayer, isPoint, hold, dist, pos, dir } ----
+// dist = gap to the target's surface (hero capsule incl. height difference, statue face, distraction point)
+function steerDirect(goal, pos, out) {
+  out.set(goal.x - pos.x, 0, goal.z - pos.z);
+  if (out.lengthSq() < 1e-4) out.set(0, 0, 0); else out.normalize();
+  return out;
+}
+const needField = { hero: false, heroClimb: false };
+let playerClimbField = null;
+function fieldDir(z, toHero, goal, out) {
+  const pos = z.mesh.position, climb = !!z.def.canClimb;
+  let field;
+  if (toHero) { field = climb ? playerClimbField : playerField; needField[climb ? 'heroClimb' : 'hero'] = true; }
+  else field = climb ? CLIMB_STATUE_FIELD : STATUE_FIELD;
+  if (field && flowDir(field, pos.x, pos.z, out, climb)) return out;
+  return steerDirect(goal, pos, out);
+}
+
+function resolveTarget(z) {
+  const t = z.tgt, def = z.def, pos = z.mesh.position;
+  t.hold = false; t.isPoint = false;
+  if (z.distraction && z.distraction.time <= 0) z.distraction = null;
+  if (z.distraction) {
+    t.isPlayer = false; t.isPoint = true;
+    t.pos.copy(z.distraction.pos);
+    t.dist = flatDist(t.pos, pos) - 1.5;
+    steerDirect(t.pos, pos, t.dir);
+    return t;
+  }
+  if (z.chasingPlayer) {
+    t.isPlayer = true;
+    const p = playerMesh.position, hd = flatDist(p, pos);
+    t.dist = Math.max(hd - P.radius, Math.abs(hero.feet - feetY(z)) - 1.5);   // a hero far above is out of reach
+    if (z.seesPlayer) {
+      t.pos.copy(p);
+      // Surround: claim a ring slot near the hero; with the ring full, hover just outside it
+      let goal = p;
+      if (usesSlots(z) && hd < AI.slots.heroClaim) {
+        if (!z.slot || z.slot.angle === undefined) claimSlot(z, HERO_SLOTS);
+        if (z.slot) goal = slotPos(z.slot, tmpGoal);
+        else t.hold = hd < AI.slots.heroHold;
+      } else if (z.slot) releaseSlot(z);
+      if (hd < AI.directChaseRange && (def.canClimb || Math.abs(p.y - pos.y) < 2)) steerDirect(goal, pos, t.dir);
+      else fieldDir(z, true, goal, t.dir);
+    } else {
+      // Lost sight: search the last known position, then give up
+      t.pos.copy(z.lastKnown);
+      if (flatDist(z.lastKnown, pos) < 2 && !def.ignoreLeash) stopChase(z, true);
+      steerDirect(z.lastKnown, pos, t.dir);
+    }
+    return t;
+  }
+  // The statue
+  t.isPlayer = false;
+  t.pos.copy(statueMesh.position);
+  t.dist = statueFaceDist(pos);
+  if (usesSlots(z) && statueDistance(pos.x, pos.z) < AI.slots.statueClaim) {
+    if (!z.slot || z.slot.angle !== undefined) claimSlot(z, STATUE_SLOTS);
+    if (z.slot) {
+      slotPos(z.slot, tmpGoal);
+      if (flatDist(tmpGoal, pos) < 4) steerDirect(tmpGoal, pos, t.dir); else fieldDir(z, false, tmpGoal, t.dir);
+      return t;
+    }
+    t.hold = t.dist < AI.slots.queueDist;   // ring full: queue behind the attackers
+  } else if (z.slot) releaseSlot(z);
+  if (t.dist < 2) steerDirect(t.pos, pos, t.dir); else fieldDir(z, false, t.pos, t.dir);
+  return t;
+}
+
+// ---- Steering: wished direction + separation + obstacle feelers + weave/nudge, then step ----
+const steer = new THREE.Vector3();
+function avoidObstacles(z, v) {
+  const pos = z.mesh.position, len = Math.hypot(v.x, v.z);
+  if (len < 1e-4) return;
+  const fx = pos.x + v.x / len * AI.avoidLook, fz = pos.z + v.z / len * AI.avoidLook, f = feetY(z);
   for (const o of OBSTACLES) {
-    if (o.top < p.y - def.height) continue;
+    if (o.top < f + MAP.stepUp || !inFootprint(o, fx, fz, z.def.radius)) continue;
+    // slide tangentially around the prop, on the side we're already heading
+    let tx = -(pos.z - o.z), tz = pos.x - o.x;
+    if (tx * v.x + tz * v.z < 0) { tx = -tx; tz = -tz; }
+    const tl = Math.hypot(tx, tz) || 1;
+    v.x += tx / tl * 1.5; v.z += tz / tl * 1.5;
+  }
+}
+function moveZombie(z, dir, dt, mult = 1) {
+  const def = z.def, pos = z.mesh.position;
+  steer.copy(dir);
+  // Separation: keep a little personal space from packmates (packs spread but stay clumped)
+  const sx0 = steer.x, sz0 = steer.z;
+  forNeighbors(pos.x, pos.z, def.radius + 2.6 + AI.separation, o => {
+    if (o === z || o.dead) return;
+    const dx = pos.x - o.mesh.position.x, dz = pos.z - o.mesh.position.z, d = Math.hypot(dx, dz);
+    const R = def.radius + o.def.radius + AI.separation;
+    if (d > 1e-3 && d < R) { const w = (1 - d / R) / d * AI.separationWeight; steer.x += dx * w; steer.z += dz * w; }
+  });
+  if (!(def.canClimb && z.chasingPlayer)) avoidObstacles(z, steer);   // Climbers go up and over
+  if (def.weave && !(z.ai.lungeT > 0)) {
+    const w = Math.sin(state.anim.t * def.weave.freq * Math.PI * 2 + z.phase) * def.weave.amp;
+    steer.x += -sz0 * w; steer.z += sx0 * w;
+  }
+  if (z.nudge > 0) steer.addScaledVector(z.nudgeDir, 1.5);
+  steer.y = 0;
+  if (steer.lengthSq() < 1e-6) return;
+  steer.normalize();
+  const speed = def.speed * z.speedMul * z.buff.speed * mult * (z.climbing ? 0.4 : 1);
+  pos.addScaledVector(steer, speed * dt);
+  faceDir(z, dir.lengthSq() > 0 ? dir : steer, dt);
+  z.wantsMove = true;
+}
+// Smoothly turn to face a flat direction (facing matters for the Plated front plate)
+function faceDir(z, dir, dt = 1) {
+  if (dir.x * dir.x + dir.z * dir.z < 1e-6) return;
+  let d = Math.atan2(dir.x, dir.z) - z.mesh.rotation.y;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  z.mesh.rotation.y += d * Math.min(1, dt * 10);
+}
+const faceToward = (z, p, dt) => faceDir(z, tmpDir.set(p.x - z.mesh.position.x, 0, p.z - z.mesh.position.z), dt);
+
+// ---- Safety nets: stuck detection, teleport to the nearest valid cell, out-of-bounds cleanup ----
+function teleportToOpenCell(z) {
+  const { N, cx } = NAV, p = z.mesh.position, field = z.def.canClimb ? CLIMB_STATUE_FIELD : STATUE_FIELD;
+  const k0 = NAV.cellOf(p.x, p.z), i0 = k0 % N, j0 = Math.floor(k0 / N);
+  for (let r = 1; r < 12; r++) {
+    let best = -1;
+    for (let j = j0 - r; j <= j0 + r; j++) for (let i = i0 - r; i <= i0 + r; i++) {
+      if (i < 0 || j < 0 || i >= N || j >= N || (Math.abs(i - i0) !== r && Math.abs(j - j0) !== r)) continue;
+      const k = j * N + i;
+      if (isFinite(field[k]) && (best < 0 || field[k] < field[best])) best = k;
+    }
+    if (best >= 0) { p.x = cx(best % N); p.z = cx(Math.floor(best / N)); break; }
+  }
+  if (!isFinite(p.x + p.z)) { const sp = CONFIG.SPAWN_POINTS[randomLane()]; p.x = sp.x; p.z = sp.z; }
+  z.prevX = p.x; z.prevZ = p.z;
+  z.kb.set(0, 0, 0);
+}
+function checkStuck(z, dt) {
+  const st = z.stuck, p = z.mesh.position;
+  z.nudge = Math.max(0, z.nudge - dt);
+  if (!z.wantsMove) { st.t = 0; st.x = p.x; st.z = p.z; return; }
+  st.t += dt;
+  if (st.t < AI.stuck.window) return;
+  const moved = Math.hypot(p.x - st.x, p.z - st.z);
+  st.t = 0; st.x = p.x; st.z = p.z;
+  if (moved >= AI.stuck.minProgress) { st.strikes = 0; return; }
+  if (++st.strikes < 3) {
+    // nudge sideways for a moment
+    const a = Math.random() * Math.PI * 2;
+    z.nudge = AI.stuck.nudgeTime; z.nudgeDir.set(Math.cos(a), 0, Math.sin(a));
+  } else { teleportToOpenCell(z); st.strikes = 0; }
+}
+
+// Keep a zombie on walkable ground: out of props, off cliffs (unless it climbs), snapped to the terrain
+function constrainZombie(z, dt) {
+  const p = z.mesh.position, def = z.def, halfH = def.radius + def.height / 2;
+  if (!isFinite(p.x + p.y + p.z) || p.y < -30) teleportToOpenCell(z);
+  p.x = THREE.MathUtils.clamp(p.x, -HALF + 1, HALF - 1);
+  p.z = THREE.MathUtils.clamp(p.z, -HALF + 1, HALF - 1);
+  if (z.buried) { p.y = heightAt(p.x, p.z) - halfH - 0.3; return; }   // tunnelling: ignores everything above ground
+  // A Climber chasing a hero on a prop climbs it instead of being pushed out
+  const scaleProps = def.canClimb && z.chasingPlayer && flatDist(p, playerMesh.position) < 6;
+  const feet = feetY(z);
+  if (!scaleProps) for (const o of OBSTACLES) {
+    if (o.top < feet + MAP.stepUp) continue;
     const r = pushOut(o, p.x, p.z, def.radius);
     if (r) { p.x = r[0]; p.z = r[1]; }
   }
-  // Too steep (a cliff)? Slide along it on one axis, else stay put
-  const h0 = heightAt(z.prevX, z.prevZ);
-  const ok = (x, zz) => heightAt(x, zz) - h0 <= MAP.maxSlope * Math.hypot(x - z.prevX, zz - z.prevZ) * 1.6 + 0.02;
-  if (!ok(p.x, p.z)) {
-    if (ok(p.x, z.prevZ)) p.z = z.prevZ;
-    else if (ok(z.prevX, p.z)) p.x = z.prevX;
-    else { p.x = z.prevX; p.z = z.prevZ; }
+  if (!def.canClimb) {
+    // Too steep (a cliff)? Slide along it on one axis, else stay put
+    const h0 = heightAt(z.prevX, z.prevZ);
+    const ok = (x, zz) => heightAt(x, zz) - h0 <= MAP.maxSlope * Math.hypot(x - z.prevX, zz - z.prevZ) * 1.6 + 0.02;
+    if (!ok(p.x, p.z)) {
+      if (ok(p.x, z.prevZ)) p.z = z.prevZ;
+      else if (ok(z.prevX, p.z)) p.x = z.prevX;
+      else { p.x = z.prevX; p.z = z.prevZ; }
+    }
+    p.y = heightAt(p.x, p.z) + halfH;
+    return;
   }
-  p.x = THREE.MathUtils.clamp(p.x, -HALF + 1, HALF - 1);
-  p.z = THREE.MathUtils.clamp(p.z, -HALF + 1, HALF - 1);
-  p.y = heightAt(p.x, p.z) + def.radius + def.height / 2;
+  // Climber: a wall ahead pins it in place while it scales up; drops fall quickly
+  const ground = scaleProps ? groundAt(p.x, p.z, Infinity, def.radius) : heightAt(p.x, p.z);
+  if (ground - feet > 0.6) {
+    p.x = z.prevX; p.z = z.prevZ;
+    p.y = feet + def.climbSpeed * dt + halfH;
+    z.climbing = true;
+  } else {
+    p.y = Math.max(ground, feet - 14 * dt) + halfH;   // follow small rises, fall quickly off drops
+    z.climbing = false;
+  }
+  z.mesh.rotation.x = z.climbing ? -0.7 : 0;
 }
-function faceDir(z, dir) { z.mesh.rotation.y = Math.atan2(dir.x, dir.z); }
 
-function dealDamage(target, amount) {
-  if (target.isPlayer) damagePlayer(amount);
+function dealDamage(z, target, amount) {
+  if (target.isPlayer) { damagePlayer(amount); z.chaseTime = 0; }   // landing a hit resets the chase timeout
   else state.statueHp -= amount;
+  z.ai.swing = 0.18;   // little lunge-squash for readability
 }
 
-// ---------------------------------------------------------------------
+// =====================================================================
 // Behaviors — one small function per zombie style, keyed by def.behavior
-// ---------------------------------------------------------------------
+// =====================================================================
+const meleeReach = (z, t) => t.isPlayer ? z.def.radius + 0.6 : t.isPoint ? 0 : Math.max(z.def.radius, AI.slots.statueOffset) + 0.25;
 
-// Walk to target, hit it on cooldown when in contact (Shambler, Sprinter, Plated)
-function meleeBehavior(z, target, dt) {
-  const reach = z.def.radius + 0.2;
-  z.attackingStatue = !target.isPlayer && target.dist <= reach;
-  if (target.dist > reach) { moveZombie(z, target.dir, dt); return; }
-  faceDir(z, target.dir);
+// Walk to target, hit it on cooldown when in reach (Shambler, Sprinter, Plated, Climber).
+// Sprinters also lunge: a short dash at a close, visible hero.
+function meleeBehavior(z, t, dt) {
+  const def = z.def, a = z.ai, reach = meleeReach(z, t), L = def.lunge;
+  z.attackingStatue = !t.isPlayer && !t.isPoint && t.dist <= reach;
+  if (L) {
+    a.lungeCd = (a.lungeCd || 0) - dt;
+    if (a.lungeT > 0) {
+      a.lungeT -= dt; z.mode = 'special';
+      moveZombie(z, a.lungeDir, dt, L.speed / def.speed);
+      if (t.isPlayer && t.dist <= reach && z.attackTimer <= 0) { z.attackTimer = def.attackCooldown; dealDamage(z, t, def.damage * z.buff.damage); }
+      return;
+    }
+    if (t.isPlayer && z.seesPlayer && t.dist > reach && t.dist < L.range && a.lungeCd <= 0) {
+      a.lungeT = L.time; a.lungeCd = L.cooldown;
+      a.lungeDir = steerDirect(playerMesh.position, z.mesh.position, new THREE.Vector3());
+      return;
+    }
+  }
+  if (t.dist > reach) {
+    if (t.hold) faceToward(z, t.pos, dt); else moveZombie(z, t.dir, dt);
+    return;
+  }
+  z.mode = 'attack';
+  faceToward(z, t.pos, dt);
+  if (t.isPoint) return;   // distracted: mill about the distraction
   if (z.attackTimer <= 0) {
-    z.attackTimer = z.def.attackCooldown;
-    dealDamage(target, z.def.damage * z.buff.damage);
+    z.attackTimer = def.attackCooldown;
+    dealDamage(z, t, def.damage * z.buff.damage);
   }
 }
 
-// Close to `range`, then stand and lob slow globs at the target (Spitter)
-function rangedBehavior(z, target, dt) {
-  const def = z.def;
-  if (target.dist > def.range) { moveZombie(z, target.dir, dt); return; }
-  const start = z.mesh.position.clone().add(new THREE.Vector3(0, def.height / 2, 0));
-  const aim = target.isPlayer ? playerMesh.position.clone() : new THREE.Vector3(0, S / 2, 0);
-  // No clear shot (hedge, cliff lip)? Keep walking the path until there is one
-  if (!losClear(start, aim)) { moveZombie(z, target.dir, dt); return; }
-  faceDir(z, new THREE.Vector3().copy(aim).sub(z.mesh.position).setY(0).normalize());
-  z.attackingStatue = !target.isPlayer;
+// Stop at `range` with a clear shot and lob globs; back away from a hero who gets close (Spitter)
+function rangedBehavior(z, t, dt) {
+  const def = z.def, pos = z.mesh.position, a = z.ai;
+  let backing = false;
+  if (z.seesPlayer && !state.playerDead && flatDist(playerMesh.position, pos) < def.backoffRange) {
+    moveZombie(z, tmpDir.set(pos.x - playerMesh.position.x, 0, pos.z - playerMesh.position.z).normalize(), dt, 0.9);
+    backing = true; z.mode = 'special';
+  }
+  if (t.isPoint || t.dist > def.range) { if (!backing) moveZombie(z, t.dir, dt); return; }
+  const start = pos.clone().setY(pos.y + def.height / 2);
+  const aim = t.isPlayer ? playerMesh.position.clone() : new THREE.Vector3(0, S / 2, 0);
+  // Clear shot? (checked a few times a second) No → keep walking the path until there is one
+  a.losT = (a.losT || 0) - dt;
+  if (a.losT <= 0) { a.losT = 0.25; a.clearShot = losClear(start, aim); }
+  if (!a.clearShot) { if (!backing) moveZombie(z, t.dir, dt); return; }
+  if (!backing) { faceToward(z, aim, dt); z.mode = 'attack'; }
+  z.attackingStatue = !t.isPlayer;
   if (z.attackTimer > 0) return;
   z.attackTimer = def.attackCooldown;
+  z.ai.swing = 0.18;
   const vel = aim.sub(start).normalize().multiplyScalar(def.projectileSpeed);
   const mesh = new THREE.Mesh(spitGeo, spitMat);
   mesh.position.copy(start);
@@ -2006,28 +2480,227 @@ function rangedBehavior(z, target, dt) {
   enemyProjectiles.push({ mesh, vel, life: def.projectileLife, damage: def.damage * z.buff.damage });
 }
 
-// Rush the statue and blow up on contact (Bomber). Killing it first means no explosion.
-function bomberBehavior(z, target, dt) {
-  const def = z.def;
-  if (target.dist > def.radius + 0.2) { moveZombie(z, target.dir, dt); return; }
-  state.statueHp -= def.explosionDamage * z.buff.damage;
-  if (!state.playerDead && playerMesh.position.distanceTo(z.mesh.position) < def.explosionRadius) {
-    damagePlayer(def.playerExplosionDamage);
-  }
-  spawnExplosion(z.mesh.position, def.explosionRadius);
-  addShake(0.3, z.mesh.position);
+// Sprint the statue field, glowing and beeping faster as it closes in; blow up on contact (Bomber).
+// Killing it first means no explosion.
+let audioCtx = null, lastBeep = 0;
+function beepNear(pos, range, freq) {
+  if (!audioCtx || state.playerDead || performance.now() - lastBeep < 60) return;
+  const d = pos.distanceTo(playerMesh.position);
+  if (d > range) return;
+  lastBeep = performance.now();
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = audioCtx.currentTime;
+  o.type = 'square'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.06 * (1 - d / range), t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t0); o.stop(t0 + 0.09);
+}
+function bomberBehavior(z, t, dt) {
+  const def = z.def, pos = z.mesh.position, a = z.ai;
+  const rate = THREE.MathUtils.clamp(1 + (60 - Math.max(0, statueFaceDist(pos))) / 12, 1, 6);   // beeps per second
+  a.beepT = (a.beepT || 0) - dt * rate;
+  if (a.beepT <= 0) { a.beepT += 1; z.glow = 1; beepNear(pos, def.beepRange, 700 + rate * 80); }
+  if (t.dist > (t.isPoint ? 0 : def.radius + 0.2)) { moveZombie(z, t.dir, dt); return; }
+  if (!t.isPoint) state.statueHp -= def.explosionDamage * z.buff.damage;
+  if (!state.playerDead && playerMesh.position.distanceTo(pos) < def.explosionRadius) damagePlayer(def.playerExplosionDamage);
+  spawnExplosion(pos, def.explosionRadius);
+  addShake(0.3, pos);
   z.dead = true;
 }
 
-// Hang behind the pack along the path (Banner): stay backOffset metres of walking distance behind
-// the pack's average. With no pack left, behave as a weak melee zombie.
-function bannerBehavior(z, target, dt) {
-  const others = zombies.filter(o => o !== z && o.type !== 'banner' && !o.dead);
-  if (others.length === 0) { meleeBehavior(z, target, dt); return; }
+// Hang backOffset walking metres behind the pack along the path, flee a visible hero (Banner).
+// With no pack left, behave as a weak melee zombie.
+function bannerBehavior(z, t, dt) {
+  const def = z.def, pos = z.mesh.position;
+  if (z.seesPlayer && !state.playerDead && flatDist(playerMesh.position, pos) < def.fleeRange) {
+    moveZombie(z, tmpDir.set(pos.x - playerMesh.position.x, 0, pos.z - playerMesh.position.z).normalize(), dt, 1.2);
+    z.mode = 'special';
+    return;
+  }
+  if (t.isPoint) { meleeBehavior(z, t, dt); return; }
   let avg = 0, n = 0;
-  for (const o of others) { const d = statueDistance(o.mesh.position.x, o.mesh.position.z); if (isFinite(d)) { avg += d; n++; } }
-  const mine = statueDistance(z.mesh.position.x, z.mesh.position.z);
-  if (n && mine > avg / n + z.def.backOffset) moveZombie(z, target.dir, dt);
+  for (const o of zombies) {
+    if (o === z || o.dead || o.type === 'banner' || o.buried || flatDist(o.mesh.position, pos) > 40) continue;
+    const d = statueDistance(o.mesh.position.x, o.mesh.position.z);
+    if (isFinite(d)) { avg += d; n++; }
+  }
+  if (n === 0) { meleeBehavior(z, t, dt); return; }
+  const mine = statueDistance(pos.x, pos.z);
+  if (!isFinite(mine) || mine > avg / n + def.backOffset) moveZombie(z, t.dir, dt);
+  else faceDir(z, t.dir, dt);
+}
+
+// Runs ahead at the hero (senses them without sight), then stops and screams: every zombie in
+// range starts hunting the hero's position (Howler).
+function howlerBehavior(z, t, dt) {
+  const Sc = z.def.scream, a = z.ai;
+  a.screamCd = (a.screamCd ?? randRange([0, 2])) - dt;
+  if (a.windup > 0) {
+    a.windup -= dt; z.mode = 'special';
+    faceToward(z, playerMesh.position, dt);
+    z.parts.mouth.scale.set(1.4, 1.2, 0.6);
+    z.glow = 0.8; z.glowColor = 0xffa040;
+    if (a.windup <= 0) scream(z);
+    return;
+  }
+  z.parts.mouth.scale.set(1, 0.6, 0.4);
+  if (t.isPlayer && t.dist < Sc.range && a.screamCd <= 0 && !state.playerDead) { a.windup = Sc.windup; return; }
+  meleeBehavior(z, t, dt);
+}
+function scream(z) {
+  const Sc = z.def.scream, pos = z.mesh.position;
+  z.ai.screamCd = Sc.cooldown;
+  const ground = pos.clone().setY(feetY(z) + 0.1);
+  spawnRing(ground, Sc.radius, 0xffa040, 0.9);
+  spawnRing(ground, Sc.radius * 0.5, 0xffd080, 0.6);
+  spawnPopup(pos.clone().setY(pos.y + z.def.height), 'HOWL!', '#ffa040');
+  addShake(0.15, pos);
+  for (const o of zombies) {
+    if (o === z || flatDist(o.mesh.position, pos) > Sc.radius || !canJoinChase(o)) continue;
+    startChase(o, false);
+    o.reaggroTimer = 0;
+  }
+}
+
+// Tunnels underground (untargetable, only a moving dirt mound shows) to a point near the statue,
+// pops up, then fights like a melee zombie (Burrower)
+function startBurrow(z) {
+  const [r0, r1] = z.def.emergeRadius;
+  const p = new THREE.Vector3();
+  for (let i = 0; i < 30; i++) {
+    const ang = Math.random() * Math.PI * 2, r = randRange([r0, r1]);
+    p.set(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+    if (isFinite(STATUE_FIELD[NAV.cellOf(p.x, p.z)])) break;
+  }
+  z.ai.emerge = p;
+  z.buried = true;
+  z.parts.mound.visible = true;
+  z.parts.mound.position.y = z.def.radius + z.def.height / 2 + 0.3;   // mesh sits underground; mound at the surface
+  z.mesh.castShadow = false;
+}
+function burrowerBehavior(z, t, dt) {
+  if (!z.buried) { meleeBehavior(z, t, dt); return; }
+  const a = z.ai, pos = z.mesh.position, d = flatDist(a.emerge, pos);
+  z.mode = 'special';
+  steerDirect(a.emerge, pos, tmpDir);
+  pos.addScaledVector(tmpDir, Math.min(d, z.def.tunnelSpeed * z.speedMul * dt));
+  faceDir(z, tmpDir, dt);
+  const m = z.parts.mound;
+  m.scale.y = 0.45 + Math.sin(state.anim.t * 14 + z.phase) * 0.08;
+  if (Math.random() < dt * 14) {
+    const at = pos.clone().setY(heightAt(pos.x, pos.z) + 0.2);
+    spawnParticle('chip', 0x6a4a2a, at, rand3(2, 3), { life: 0.5, size: 0.8 });
+  }
+  if (d < 0.3) emerge(z);
+}
+function emerge(z) {
+  const pos = z.mesh.position, ground = pos.clone().setY(heightAt(pos.x, pos.z) + 0.2);
+  z.buried = false;
+  z.parts.mound.visible = false;
+  z.mesh.castShadow = true;
+  for (let i = 0; i < 14; i++) spawnParticle('chip', 0x6a4a2a, ground, rand3(7, 6), { life: 0.8, size: 1.3 });
+  for (let i = 0; i < 4; i++) spawnParticle('puff', 0x9a7a5a, ground.clone().add(rand3(0.8)), rand3(2, 1), { life: 0.8, gravity: -1, grow: 2, drag: 3 });
+  spawnRing(ground, 2.2, 0x8a6a3a, 0.4);
+  addShake(0.12, pos);
+}
+
+// Mini-boss: a slow brute that goes for whatever is closest, never gives up, and charges.
+// The charge is telegraphed (red lane + glow, aim locks just before release); dodging it or slamming
+// into a wall leaves it dazed.
+function bruteBehavior(z, t, dt) {
+  const def = z.def, C = def.charge, a = z.ai, pos = z.mesh.position;
+  a.chargeCd = (a.chargeCd ?? 3) - dt;
+  if (a.charge === 'windup') {
+    z.mode = 'special';
+    a.t -= dt;
+    if (a.t > C.aimLock) steerDirect(t.pos, pos, a.dir);
+    z.mesh.rotation.y = Math.atan2(a.dir.x, a.dir.z);
+    z.mesh.rotation.x = -0.25;
+    z.glow = 0.5 + 0.5 * Math.sin(state.anim.t * 20); z.glowColor = 0xff2010;
+    z.parts.lane.material.opacity = 0.2 + 0.25 * (1 - a.t / C.windup);
+    if (a.t <= 0) { a.charge = 'rush'; a.travel = 0; z.parts.lane.visible = false; addShake(0.2, pos); }
+    return;
+  }
+  if (a.charge === 'rush') {
+    z.mode = 'special';
+    const step = C.speed * dt, f0 = heightAt(pos.x, pos.z);
+    pos.addScaledVector(a.dir, step);
+    a.travel += step;
+    z.mesh.rotation.x = 0.2;
+    if (Math.random() < 0.6) spawnParticle('puff', 0xb7a27a, pos.clone().setY(f0 + 0.3), rand3(2, 1), { life: 0.6, gravity: -1, grow: 2, drag: 3 });
+    // bowl packmates aside
+    forNeighbors(pos.x, pos.z, def.radius + 1.5, o => {
+      if (o === z || o.dead || flatDist(o.mesh.position, pos) > def.radius + o.def.radius + 0.3) return;
+      tmpDir.set(o.mesh.position.x - pos.x, 0, o.mesh.position.z - pos.z).normalize();
+      o.kb.addScaledVector(tmpDir, 10 * (1 - (o.def.knockbackResist || 0)));
+    });
+    if (!state.playerDead && flatDist(playerMesh.position, pos) < def.radius + P.radius + 0.4 && Math.abs(hero.feet - feetY(z)) < def.height) {
+      damagePlayer(C.playerDamage);
+      state.vel.addScaledVector(a.dir, C.knock).setY(8);
+      state.onGround = false;
+      addShake(0.5);
+      endCharge(z, false);
+    } else if (statueFaceDist(pos) < def.radius + 0.3) {
+      state.statueHp -= C.statueDamage;
+      addShake(0.4, pos);
+      endCharge(z, false);
+    } else if (OBSTACLES.some(o => o.top > feetY(z) + MAP.stepUp && inFootprint(o, pos.x, pos.z, def.radius * 0.8)) ||
+               heightAt(pos.x, pos.z) - f0 > MAP.maxSlope * step * 1.6 + 0.05) {
+      endCharge(z, true);   // hit a wall
+    } else if (a.travel > C.maxDist) endCharge(z, true);   // dodged
+    return;
+  }
+  // Walking: start a charge when the target sits in the charge band
+  if (a.chargeCd <= 0 && !t.isPoint && t.dist > C.range[0] && t.dist < C.range[1] && (!t.isPlayer || hero.reachable)) {
+    a.charge = 'windup'; a.t = C.windup;
+    a.dir = steerDirect(t.pos, pos, new THREE.Vector3());
+    z.parts.lane.visible = true;
+    spawnPopup(pos.clone().setY(pos.y + def.height), '!', '#ff3020');
+    return;
+  }
+  meleeBehavior(z, t, dt);
+}
+function endCharge(z, dazed) {
+  const C = z.def.charge, pos = z.mesh.position;
+  z.ai.charge = null;
+  z.ai.chargeCd = C.cooldown;
+  z.mesh.rotation.x = 0;
+  z.parts.lane.visible = false;
+  if (!dazed) return;
+  z.stun = C.daze; z.ai.dazed = true;
+  spawnPopup(pos.clone().setY(pos.y + z.def.height), 'DAZED', '#ffe14a');
+  addShake(0.35, pos);
+  for (let i = 0; i < 10; i++) spawnParticle('puff', 0xb7a27a, pos.clone().setY(feetY(z) + 0.5).add(rand3(1.5)), rand3(3, 1), { life: 0.9, gravity: -1, grow: 2.5, drag: 3 });
+}
+
+// Final boss: phases at 66% / 33% hp. Each phase changes targeting and calls reinforcements from every lane.
+// Phase 2 grows an armor shell that only heavy hits (explosions, slams) can break — hp is locked meanwhile.
+// Phase 3 is enraged and charges like the Brute.
+function overlordBehavior(z, t, dt) {
+  const def = z.def, a = z.ai;
+  a.phaseIdx ??= 0;
+  while (a.phaseIdx < def.phases.length && z.hp / def.hp <= def.phases[a.phaseIdx]) enterPhase(z, ++a.phaseIdx);
+  if (a.phaseIdx >= 2) bruteBehavior(z, t, dt); else meleeBehavior(z, t, dt);
+}
+function enterPhase(z, idx) {
+  const def = z.def, pos = z.mesh.position;
+  z.pref = def.phasePrefs[idx];
+  if (z.pref === 'statueOnly' && z.chasingPlayer) stopChase(z, false);
+  z.retargetTimer = 0;
+  const lanes = Object.keys(CONFIG.SPAWN_POINTS);
+  let i = 0;
+  for (const [type, n] of Object.entries(def.reinforcements[idx - 1] || {}))
+    for (let k = 0; k < n; k++, i++) state.spawnQueue.push({ t: 0.4 + i * 0.25, type, spawn: lanes[i % lanes.length] });
+  spawnRing(pos.clone().setY(feetY(z) + 0.1), 14, 0xff3040, 0.8);
+  addShake(0.5, pos);
+  if (idx === 1) {
+    z.ai.armor = def.armorHp;
+    z.parts.shell.visible = true;
+    setMessage(`${def.name} is ARMORED — break it with heavy hits!`, 3);
+  } else {
+    z.speedMul *= def.enrageSpeed;
+    setMessage(`${def.name} is ENRAGED!`, 3);
+  }
 }
 
 const BEHAVIORS = {
@@ -2035,6 +2708,10 @@ const BEHAVIORS = {
   ranged: rangedBehavior,
   bomber: bomberBehavior,
   banner: bannerBehavior,
+  howler: howlerBehavior,
+  burrower: burrowerBehavior,
+  brute: bruteBehavior,
+  overlord: overlordBehavior,
 };
 
 // Reset all buffs, then let every living banner buff allies inside its radius
@@ -2055,75 +2732,152 @@ function applyBannerBuffs() {
   }
 }
 
+// Hit flash beats glow (bomber beeps, wind-ups); attack swing is a quick squash
+function updateZombieLook(z, dt) {
+  z.flash = Math.max(0, z.flash - dt);
+  z.glow = Math.max(0, z.glow - dt * 3);
+  const e = z.mesh.material.emissive;
+  if (z.flash > 0) e.setScalar(0.55);
+  else if (z.glow > 0) e.setHex(z.glowColor).multiplyScalar(z.glow);
+  else e.setScalar(0);
+  const sw = z.ai.swing = Math.max(0, (z.ai.swing || 0) - dt);
+  z.mesh.scale.set(1 + sw * 0.8, 1 - sw * 0.8, 1 + sw * 0.8);
+  if (z.parts.core && z.parts.core.visible) z.parts.core.scale.setScalar(1 + Math.sin(state.anim.t * 8) * 0.12);
+}
+
 function updateZombies(dt) {
   applyBannerBuffs();
+  updateHeroInfo();
+  updateDistractions(dt);
   for (const z of zombies) { z.prevX = z.mesh.position.x; z.prevZ = z.mesh.position.z; }
-  // Flow field toward the hero, refreshed a few times a second while anyone is chasing
+  rebuildHash();
+  // Hero flow fields (ground / climb layer), rebuilt a few times a second while someone needed them
   playerFieldTimer -= dt;
-  if (playerFieldTimer <= 0 && !state.playerDead && zombies.some(z => z.chasingPlayer)) {
-    playerFieldTimer = CONFIG.leash.playerFieldInterval;
-    const p = playerMesh.position;
-    playerField = buildFlowField(goalCells(p.x, p.z, 2.5));
+  if (playerFieldTimer <= 0 && !state.playerDead && (needField.hero || needField.heroClimb)) {
+    playerFieldTimer = AI.playerFieldInterval;
+    const p = playerMesh.position, goals = goalCells(p.x, p.z, 2.5);
+    if (needField.hero) playerField = buildFlowField(goals);
+    if (needField.heroClimb) playerClimbField = buildFlowField(goals, true);
+    needField.hero = needField.heroClimb = false;
   }
 
   for (const z of zombies) {
     if (z.dead) continue;
-    z.attackTimer -= dt;
-    // hit flash
-    z.flash = Math.max(0, z.flash - dt);
-    z.mesh.material.emissive.setScalar(z.flash > 0 ? 0.55 : 0);
-    // Buttered: frozen in place, wobbling
+    const pos = z.mesh.position;
+    z.wantsMove = false;
+    z.attackTimer -= dt; z.retargetTimer -= dt; z.reaggroTimer -= dt;
+    if (z.chasingPlayer) { z.chaseTime += dt; if (!z.seesPlayer) z.unseenTime += dt; }
+    updateZombieLook(z, dt);
+    // Hero died: every chaser drops aggro at once and heads for the statue
+    if (state.playerDead && (z.chasingPlayer || z.alertTimer >= 0)) stopChase(z, false);
+    // Pack alert reaction delay
+    if (z.alertTimer >= 0 && (z.alertTimer -= dt) < 0) { if (canJoinChase(z)) startChase(z, false); z.alertTimer = -1; }
+    // Knockback from explosions / charges
+    if (z.kb.lengthSq() > 0.01) { pos.addScaledVector(z.kb, dt); z.kb.multiplyScalar(Math.exp(-6 * dt)); }
+    // Stunned (buttered, or dazed after a missed charge): frozen in place, wobbling
     if (z.stun > 0) {
       z.stun -= dt;
-      z.butter.visible = z.stun > 0;
-      z.mesh.rotation.z = Math.sin(state.anim.t * 18 + z.mesh.position.x) * 0.06;
+      z.mode = 'stunned';
+      z.butter.visible = z.stun > 0 && !z.ai.dazed;
+      z.mesh.rotation.z = Math.sin(state.anim.t * 18 + pos.x) * 0.06;
+      if (z.ai.dazed && Math.random() < dt * 10) {
+        const ang = state.anim.t * 6, top = pos.clone().setY(pos.y + z.def.height / 2 + z.def.radius + 0.4);
+        spawnParticle('puff', 0xffe14a, top.add(new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)).multiplyScalar(z.def.radius)), rand3(0.5), { life: 0.4, gravity: 0, size: 0.5, additive: true });
+      }
+      if (z.stun <= 0) z.ai.dazed = false;
       continue;
     }
+    z.butter.visible = false;
     z.mesh.rotation.z = 0;
-    const target = selectTarget(z, dt);
+    z.thinkTimer -= dt;
+    if (z.thinkTimer <= 0) { z.thinkTimer += z.thinkInterval; think(z); }
+    const target = resolveTarget(z);
+    z.mode = z.distraction ? 'distracted' : z.chasingPlayer ? 'chase' : 'advance';   // behaviors refine this
     BEHAVIORS[z.def.behavior](z, target, dt);
+    checkStuck(z, dt);
   }
   removeDeadZombies();
 
-  // Light separation so the pack doesn't collapse into one point
-  for (let i = 0; i < zombies.length; i++) {
-    for (let j = i + 1; j < zombies.length; j++) {
-      const a = zombies[i].mesh.position, b = zombies[j].mesh.position;
-      tmp.copy(a).sub(b).setY(0);
-      const d = tmp.length(), min = zombies[i].def.radius + zombies[j].def.radius;
+  // Hard separation so bodies never overlap (soft spacing is in the steering)
+  for (const a of zombies) {
+    if (a.buried) continue;
+    const pa = a.mesh.position;
+    forNeighbors(pa.x, pa.z, a.def.radius + 2.6, b => {
+      if (b.id <= a.id || b.buried) return;
+      const pb = b.mesh.position;
+      tmp.set(pa.x - pb.x, 0, pa.z - pb.z);
+      const d = tmp.length(), min = a.def.radius + b.def.radius;
       if (d > 0 && d < min) {
-        tmp.multiplyScalar((min - d) / d / 2);
-        a.add(tmp); b.sub(tmp);
+        // heavier zombies get shoved less
+        const wa = b.def.radius / min, wb = a.def.radius / min;
+        tmp.multiplyScalar((min - d) / d);
+        pa.addScaledVector(tmp, wa); pb.addScaledVector(tmp, -wb);
       }
-    }
+    });
   }
-  for (const z of zombies) constrainZombie(z);
+  for (const z of zombies) constrainZombie(z, dt);
 }
 
 function removeDeadZombies() {
   for (let i = zombies.length - 1; i >= 0; i--) {
-    if (zombies[i].dead) { scene.remove(zombies[i].mesh); zombies[i].mesh.material.dispose(); zombies.splice(i, 1); }
+    const z = zombies[i];
+    if (!z.dead) continue;
+    releaseSlot(z);
+    scene.remove(z.mesh);
+    z.mesh.material.dispose();
+    zombies.splice(i, 1);
   }
 }
 
-// Apply damage to a zombie with feedback (flash, number, hitmarker); death is removed next frame
-function damageZombie(z, amount, at, reduced = false) {
-  if (z.dead) return;
+// Apply damage to a zombie with feedback (flash, number, hitmarker); death is removed next frame.
+// `heavy` = explosions / slams (they break the final boss's armor).
+function damageZombie(z, amount, at, reduced = false, heavy = false) {
+  if (z.dead || z.buried) return;
+  const def = z.def;
+  if (z.ai.armor > 0) {
+    // Armored boss: hp is locked; only heavy hits chip the shell
+    if (heavy) {
+      z.ai.armor -= amount;
+      spawnPopup(at, Math.round(amount), '#8ab4d8');
+      if (z.ai.armor <= 0) {
+        z.parts.shell.visible = false;
+        z.stun = 2;
+        spawnPopup(z.mesh.position.clone().setY(z.mesh.position.y + def.height), 'ARMOR BROKEN', '#ffe14a');
+        for (let i = 0; i < 20; i++) spawnParticle('chip', 0x8aa0b8, z.mesh.position.clone().add(rand3(def.radius)), rand3(10, 6), { life: 1, size: 1.6 });
+        addShake(0.4, z.mesh.position);
+      }
+    } else spawnPopup(at, 0, '#8a96a0');
+    z.flash = 0.05;
+    state.hitmarker = 0.08;
+    return;
+  }
   amount = Math.max(1, Math.round(amount));
   z.hp -= amount;
   z.flash = 0.08;
   spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a');
   state.hitmarker = z.hp <= 0 ? -0.25 : 0.12;   // negative = kill marker (red)
+  // Plated: plate pieces fall off at hp thresholds; the last one exposes the weak-point core
+  if (def.plateBreaks) {
+    while ((z.ai.plates || 0) < def.plateBreaks.length && z.hp / def.hp <= def.plateBreaks[z.ai.plates || 0]) {
+      const plate = z.parts.plates[z.ai.plates || 0];
+      z.ai.plates = (z.ai.plates || 0) + 1;
+      plate.visible = false;
+      const wp = plate.getWorldPosition(new THREE.Vector3());
+      for (let i = 0; i < 8; i++) spawnParticle('chip', 0xbfc8d0, wp, rand3(6, 4), { life: 0.9, size: 1.4 });
+      if (z.ai.plates === def.plateBreaks.length) z.parts.core.visible = true;
+    }
+  }
   if (z.hp <= 0) {
     z.dead = true;
-    const c = new THREE.Color(z.def.color);
-    for (let i = 0; i < 12; i++) spawnParticle('chip', c, z.mesh.position.clone().add(rand3(z.def.radius)), rand3(8, 5), { life: 0.9, size: 1.5 });
-    for (let i = 0; i < 4; i++) spawnParticle('puff', 0x9ab07a, z.mesh.position.clone().add(rand3(z.def.radius)), rand3(2, 1), { life: 0.7, gravity: -1, grow: 2, drag: 3 });
+    const c = new THREE.Color(def.color);
+    for (let i = 0; i < 12; i++) spawnParticle('chip', c, z.mesh.position.clone().add(rand3(def.radius)), rand3(8, 5), { life: 0.9, size: 1.5 });
+    for (let i = 0; i < 4; i++) spawnParticle('puff', 0x9ab07a, z.mesh.position.clone().add(rand3(def.radius)), rand3(2, 1), { life: 0.7, gravity: -1, grow: 2, drag: 3 });
   }
 }
 
-// Capsule (vertical segment) vs sphere test
+// Capsule (vertical segment) vs sphere test. Buried zombies can't be hit.
 function hitsZombie(z, pos, r) {
+  if (z.buried) return false;
   const zp = z.mesh.position;
   const hitDist = r + z.def.radius;
   const dy = Math.max(0, Math.abs(pos.y - zp.y) - z.def.height / 2);
@@ -2132,12 +2886,17 @@ function hitsZombie(z, pos, r) {
 }
 const hitsStatue = (p, r) => Math.abs(p.x) < S / 2 + r && Math.abs(p.z) < S / 2 + r && p.y < S + r;
 
-// Plated takes reduced damage when a shot travels into its front plate
+// Front armor: shots travelling into a zombie's front take its front multiplier
+// (Plated: depends on how many plates are left; bare core takes extra)
 function damageMultiplierFor(z, shotVel) {
-  if (z.def.frontDamageMult === undefined) return 1;
+  const def = z.def;
+  if (def.frontDamageMult === undefined && !def.plateBreaks) return 1;
   const facing = new THREE.Vector3(Math.sin(z.mesh.rotation.y), 0, Math.cos(z.mesh.rotation.y));
   const incoming = shotVel.clone().setY(0).normalize();
-  return -incoming.dot(facing) > z.def.frontArc ? z.def.frontDamageMult : 1;
+  if (-incoming.dot(facing) <= def.frontArc) return 1;
+  if (!def.plateBreaks) return def.frontDamageMult;
+  const broken = z.ai.plates || 0;
+  return broken >= def.plateBreaks.length ? def.weakPointMult : def.frontMults[broken];
 }
 
 function updateEnemyProjectiles(dt) {
@@ -2256,8 +3015,10 @@ function updateHud(dt) {
   const boss = zombies.find(z => z.def.boss);
   hud('bossHud').style.display = boss ? 'block' : 'none';
   if (boss) {
-    hud('bossName').textContent = boss.def.name;
-    hud('bossBar').style.width = `${Math.max(0, boss.hp / boss.def.hp) * 100}%`;
+    const armored = boss.ai.armor > 0;
+    hud('bossName').textContent = boss.def.name + (armored ? ' — ARMORED' : '');
+    hud('bossBar').style.width = `${Math.max(0, armored ? boss.ai.armor / boss.def.armorHp : boss.hp / boss.def.hp) * 100}%`;
+    hud('bossBar').style.background = armored ? '#8ab4d8' : '#c33';
   }
   hud('statueBar').style.width = `${Math.max(0, state.statueHp / CONFIG.statue.hp) * 100}%`;
   hud('playerBar').style.width = `${(state.playerHp / P.hp) * 100}%`;
@@ -2334,7 +3095,7 @@ resetGame();
 animateCorn(0);
 // Debug handle for the browser console (inspect / pose the hero)
 window.__game = { CONFIG, get state() { return state; }, corn, camera, scene, spawnZombie, explodeAt, get zombies() { return zombies; },
-  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, get fps() { return fpsAvg; } };
+  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, distractAt, hero, get fps() { return fpsAvg; } };
 loop();
 </script>
 </body>
