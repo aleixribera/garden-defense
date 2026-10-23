@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.10.0';
+const VERSION = 'v1.10.1';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -222,6 +222,7 @@ const CONFIG = {
     airAbsorb: 45,                                    // m: distant sounds lose their highs
     moanRange: 55, moanInterval: [1.2, 3], maxMoans: 3,
     stepDistance: 1.6,                                // m walked per footstep
+    killStreakWindow: 1.2,                            // s: kills closer than this raise the kill chime's pitch
     statueAlarmGap: 9,                                // s between "statue under attack" horns
     voicePitch: { shambler: 100, sprinter: 150, plated: 82, spitter: 125, bomber: 175, banner: 135, climber: 140,
                   howler: 115, burrower: 105, miniBoss: 58, finalBoss: 46 },   // moan pitch (Hz)
@@ -3065,6 +3066,7 @@ const SFX = (() => {
   let ctx = null, master, sfxBus, uiBus, ambBus, verb, noiseBuf, brownBuf;
   let windGain, windFilter, ambWind, ambFilter;
   const lastPlay = {}, live = {};
+  let streak = 0, lastKill = -9;   // kill-chime streak
   const lis = new THREE.Vector3(), camRight = new THREE.Vector3(), camFwd = new THREE.Vector3(), dir = new THREE.Vector3();
   const rr = (a, b) => a + (b - a) * Math.random();
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -3261,14 +3263,22 @@ const SFX = (() => {
       tone(v, { type: 'triangle', f0: 2100, dur: 0.035, vol: 0.5 });
       tone(v, { f0: 3150, dur: 0.025, vol: 0.25 });
     },
+    // Kill confirm: punchy thump + crunchy pop, then a bright bell chord with sparkle.
+    // Quick successive kills climb in pitch (streak), so multi-kills feel rewarding.
     vanquish() {
-      const v = voice(null, { vol: 0.42, name: 'vq', gap: 0.06, max: 3, len: 0.6, bus: uiBus, rev: 0.25 });
+      const v = voice(null, { vol: 0.55, name: 'vq', gap: 0.05, max: 4, len: 1, bus: uiBus, rev: 0.3 });
       if (!v) return;
-      const p = rr(0.98, 1.03);
-      tone(v, { f0: 1046 * p, dur: 0.38, vol: 0.45, attack: 0.002 });
-      tone(v, { f0: 1568 * p, at: 0.045, dur: 0.42, vol: 0.4 });
-      tone(v, { type: 'triangle', f0: 2093 * p, at: 0.09, dur: 0.3, vol: 0.18 });
-      tone(v, { f0: 700, f1: 180, dur: 0.07, vol: 0.4 });   // pop
+      streak = v.t - lastKill < AU.killStreakWindow ? Math.min(streak + 1, 6) : 0;
+      lastKill = v.t;
+      const p = Math.pow(2, streak * 2 / 12) * rr(0.995, 1.005);   // +1 whole tone per streak step
+      tone(v, { f0: 180, f1: 50, dur: 0.14, vol: 0.9 });                        // body thump
+      tone(v, { f0: 1400, f1: 240, dur: 0.06, vol: 0.45 });                     // pop
+      hiss(v, { dur: 0.05, vol: 0.4, f0: 3500, f1: 1500, q: 1.2 });           // crunch
+      for (const [m, at, d, vol] of [[1, 0.02, 0.5, 0.42], [1.5, 0.05, 0.55, 0.34], [2, 0.08, 0.45, 0.2]]) {
+        tone(v, { f0: 1046 * p * m, at, dur: d, vol, attack: 0.002 });
+        tone(v, { type: 'triangle', f0: 1046 * p * m * 2.01, at, dur: d * 0.4, vol: vol * 0.25 });   // bell shimmer
+      }
+      for (let i = 0; i < 4; i++) tone(v, { f0: rr(3500, 5500) * p, at: 0.08 + i * 0.04, dur: 0.08, vol: 0.06 });   // sparkle
     },
     // Zombie death: squelchy splat + a dying moan, bigger for bosses
     zombieDeath(pos, type) {
@@ -3486,7 +3496,7 @@ const SFX = (() => {
     },
     // Leafy footstep, alternating feet (slightly different pitch)
     step(pos, ai, k, foot) {
-      const v = voice(ai ? pos : null, { vol: (ai ? 0.2 : 0.17) * k, name: ai ? 'stAI' : 'st', gap: 0.08, max: 2, len: 0.15, rev: 0.02 });
+      const v = voice(ai ? pos : null, { vol: (ai ? 0.07 : 0.06) * k, name: ai ? 'stAI' : 'st', gap: 0.08, max: 2, len: 0.15, rev: 0.02 });
       if (!v) return;
       const p = foot ? 1.08 : 0.94;
       hiss(v, { dur: 0.06, vol: 0.7, f0: rr(650, 1050) * p, f1: 400, q: 1.2 });
