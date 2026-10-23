@@ -13,16 +13,22 @@
   #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
              color: #fff; background: rgba(0,0,0,0.6); font-size: 28px; text-align: center; cursor: pointer; }
   #overlay small { font-size: 16px; margin-top: 12px; opacity: 0.8; }
+  #banner { position: fixed; top: 18%; width: 100%; text-align: center; color: #fff; text-shadow: 2px 2px 4px #000; pointer-events: none; }
+  #banner .title { font-size: 56px; font-weight: bold; }
+  #banner .sub { font-size: 20px; margin-top: 6px; }
   #message { position: fixed; top: 30%; width: 100%; text-align: center; color: #fff; font-size: 32px; text-shadow: 2px 2px 4px #000; pointer-events: none; }
 </style>
 </head>
 <body>
 <div id="hud">
   <div id="waveText">Wave 1</div>
+  <div id="remainingText"></div>
+  <div id="bossHud" style="display:none"><div id="bossName">Boss</div><div class="bar"><div class="fill" id="bossBar" style="background:#c33"></div></div></div>
   <div>Statue</div><div class="bar"><div class="fill" id="statueBar"></div></div>
   <div>You</div><div class="bar"><div class="fill" id="playerBar"></div></div>
 </div>
 <div id="crosshair"></div>
+<div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div></div>
 <div id="message"></div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div><small id="overlaySub">Click to play — WASD move, mouse aim, left click shoot</small></div>
 
@@ -93,18 +99,54 @@ const CONFIG = {
       speedMult: 1.4, damageMult: 1.5,
       backOffset: 4,           // how far behind the pack centroid it hangs back
     },
+    // PLACEHOLDER BOSSES — scaled-up Plated (look: 'plated'). Real boss designs come later.
+    miniBoss: {
+      name: 'Mini-boss', boss: true, look: 'plated',
+      hp: 3000, speed: 1.6, damage: 40, attackCooldown: 1.5,
+      aggroRange: 10, deaggroRange: 18, targetPreference: 'statue',
+      radius: 1.8, height: 3.2, color: 0x7a4f6f, behavior: 'melee',
+      frontDamageMult: 0.5, frontArc: 0.5,
+    },
+    finalBoss: {
+      name: 'Final Boss', boss: true, look: 'plated',
+      hp: 8000, speed: 1.3, damage: 60, attackCooldown: 1.5,
+      aggroRange: 10, deaggroRange: 18, targetPreference: 'statue',
+      radius: 2.6, height: 4.5, color: 0x5a1f2f, behavior: 'melee',
+      frontDamageMult: 0.5, frontArc: 0.5,
+    },
   },
   debugPackSize: 4,             // zombies spawned per debug key press (keys 1–6)
-  spawnPoint: { x: 0, z: -45 }, // single pack spawn at arena edge
+  // Named spawn points on the arena edge. Wave packs reference these by name.
+  SPAWN_POINTS: {
+    north: { x: 0, z: -45 },
+    east:  { x: 45, z: 10 },
+    west:  { x: -45, z: 10 },
+  },
   packSpread: 4,                // random scatter around the spawn point
-  timeBetweenWaves: 4,          // seconds after last zombie dies
-};
+  spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
+  waveCountdown: 5,             // seconds of countdown before each wave (banner + spawn markers)
+  incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
 
-// Waves as data: each entry maps zombie type name -> count.
-const WAVES = [
-  { shambler: 10 }, { shambler: 12 }, { shambler: 14 }, { shambler: 16 }, { shambler: 18 },
-  { shambler: 20 }, { shambler: 23 }, { shambler: 26 }, { shambler: 29 }, { shambler: 32 },
-];
+  // Waves as data. Each wave: { packs: [{ spawn, zombies: { type: count } }], modifiers: [] }
+  //   packs     — all spawn at once at the start of the wave, each at its own spawn point
+  //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
+  WAVES: [
+    { packs: [{ spawn: 'north', zombies: { shambler: 10 } }] },
+    { packs: [{ spawn: 'east',  zombies: { shambler: 12, sprinter: 4 } }] },
+    { packs: [{ spawn: 'west',  zombies: { shambler: 10, plated: 3 } }] },
+    { packs: [{ spawn: 'north', zombies: { shambler: 12, spitter: 4 } }] },
+    { packs: [{ spawn: 'north', zombies: { miniBoss: 1, shambler: 15, sprinter: 4 } }] },
+    { packs: [{ spawn: 'east',  zombies: { shambler: 10, sprinter: 6, plated: 4, spitter: 3 } }] },
+    { packs: [{ spawn: 'west',  zombies: { shambler: 12, bomber: 4, banner: 2 } }] },
+    { packs: [
+      { spawn: 'east', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
+      { spawn: 'west', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
+    ] },
+    { packs: [{ spawn: 'north', zombies: { shambler: 25, sprinter: 8, plated: 5, spitter: 5, bomber: 4, banner: 2 } }] },
+    { packs: [{ spawn: 'north', zombies: { finalBoss: 1, shambler: 20, sprinter: 8, plated: 6, spitter: 4, bomber: 3, banner: 2 } }] },
+  ],
+};
+const WAVES = CONFIG.WAVES;
 
 // Debug keys 1..6 spawn a pack of these types, in order.
 const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber', 'banner'];
@@ -133,13 +175,25 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-// Spawn point marker
-const spawnMarker = new THREE.Mesh(
-  new THREE.CylinderGeometry(3, 3, 0.1, 24),
-  new THREE.MeshLambertMaterial({ color: 0x552222 })
-);
-spawnMarker.position.set(CONFIG.spawnPoint.x, 0.05, CONFIG.spawnPoint.z);
-scene.add(spawnMarker);
+// Spawn point markers: a dim disc each, plus a tall red beacon shown when that point is about to be used
+const spawnMarkers = {};
+for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), new THREE.MeshLambertMaterial({ color: 0x552222 }));
+  disc.position.set(sp.x, 0.05, sp.z);
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 30, 12),
+    new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.5, depthWrite: false }));
+  beacon.position.set(sp.x, 15, sp.z);
+  beacon.visible = false;
+  scene.add(disc, beacon);
+  spawnMarkers[name] = { disc, beacon };
+}
+function showSpawnMarkers(names) {
+  for (const [name, m] of Object.entries(spawnMarkers)) {
+    const on = names.includes(name);
+    m.beacon.visible = on;
+    m.disc.material.color.setHex(on ? 0xcc2222 : 0x552222);
+  }
+}
 
 // Statue (box) with a floating health bar
 const S = CONFIG.statue.size;
@@ -201,14 +255,18 @@ function resetGame() {
     playerHp: P.hp,
     playerDead: false,
     respawnTimer: 0,
-    waveIndex: -1,
-    waveTimer: 1,       // short delay before wave 1
+    waveIndex: 0,
+    phase: 'countdown', // 'countdown' | 'active'
+    waveTimer: 0,
+    spawnQueue: [],     // pending staggered spawns: { t, type, spawn }
     fireTimer: 0,
     yaw: 0, pitch: 0.2,
     over: false,
   };
   respawnPlayer();
   setMessage('');
+  beginCountdown(0);
+  setBanner(true);
 }
 
 function respawnPlayer() {
@@ -223,7 +281,7 @@ function makeZombieMesh(type) {
   const def = ZT[type];
   const mesh = new THREE.Mesh(zombieAssets[type].geo, zombieAssets[type].mat);
   const halfH = def.radius + def.height / 2;   // mesh origin is at its center
-  if (type === 'plated') {
+  if ((def.look || type) === 'plated') {
     // Front plate on local +Z (the facing direction)
     const plate = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 2, def.height + def.radius, 0.2),
       new THREE.MeshLambertMaterial({ color: 0xbfc8d0 }));
@@ -248,13 +306,14 @@ function makeZombieMesh(type) {
   return mesh;
 }
 
-function spawnZombie(type) {
+function spawnZombie(type, spawnName = 'north') {
   const def = ZT[type];
+  const sp = CONFIG.SPAWN_POINTS[spawnName];
   const mesh = makeZombieMesh(type);
   mesh.position.set(
-    CONFIG.spawnPoint.x + (Math.random() - 0.5) * CONFIG.packSpread * 2,
+    sp.x + (Math.random() - 0.5) * CONFIG.packSpread * 2,
     def.radius + def.height / 2,
-    CONFIG.spawnPoint.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
+    sp.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
   );
   scene.add(mesh);
   zombies.push({
@@ -265,12 +324,47 @@ function spawnZombie(type) {
   });
 }
 
-function spawnWave(index) {
-  for (const [type, count] of Object.entries(WAVES[index])) {
-    for (let i = 0; i < count; i++) spawnZombie(type);
-  }
-  setMessage(`Wave ${index + 1}`, 2);
+// ---------------------------------------------------------------------
+// Waves: countdown → staggered pack bursts → fight → next countdown
+// ---------------------------------------------------------------------
+const displayName = type => ZT[type].name || type[0].toUpperCase() + type.slice(1);
+const waveSpawnNames = wave => [...new Set(wave.packs.map(p => p.spawn))];
+
+// "Incoming" preview: bosses first, then the most numerous types across all packs
+function incomingPreview(wave) {
+  const totals = {};
+  for (const pack of wave.packs)
+    for (const [type, n] of Object.entries(pack.zombies)) totals[type] = (totals[type] || 0) + n;
+  const sorted = Object.entries(totals).sort((a, b) => (!!ZT[b[0]].boss - !!ZT[a[0]].boss) || b[1] - a[1]);
+  return sorted.slice(0, CONFIG.incomingPreviewCount)
+    .map(([type, n]) => ZT[type].boss ? displayName(type).toUpperCase() : `${n} ${displayName(type)}`).join(', ');
 }
+
+// Enter the pre-wave countdown for wave `index`
+function beginCountdown(index) {
+  state.waveIndex = index;
+  state.phase = 'countdown';
+  state.waveTimer = CONFIG.waveCountdown;
+  showSpawnMarkers(waveSpawnNames(WAVES[index]));
+  document.getElementById('bannerTitle').textContent = `Wave ${index + 1}`;
+  document.getElementById('bannerSub').textContent = `Incoming: ${incomingPreview(WAVES[index])}`;
+}
+
+// Queue every pack of the wave; each pack's zombies are spread (shuffled) over CONFIG.spawnBurst seconds
+function startWave(index) {
+  state.phase = 'active';
+  setBanner(false);
+  showSpawnMarkers([]);
+  for (const pack of WAVES[index].packs) {
+    const list = [];
+    for (const [type, n] of Object.entries(pack.zombies)) for (let i = 0; i < n; i++) list.push(type);
+    list.sort(() => Math.random() - 0.5);
+    list.forEach((type, i) => state.spawnQueue.push({ t: (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn }));
+  }
+  // (Future: apply WAVES[index].modifiers here for special waves.)
+}
+
+function setBanner(visible) { document.getElementById('banner').style.display = visible ? 'block' : 'none'; }
 
 // =====================================================================
 // Input
@@ -285,6 +379,14 @@ addEventListener('keydown', e => {
     for (let i = 0; i < CONFIG.debugPackSize; i++) spawnZombie(type);
     setMessage(`[debug] spawned ${CONFIG.debugPackSize} ${type}`, 1.5);
   }
+  // Debug: N = skip to the next wave's countdown (clears current zombies); B = spawn the mini-boss
+  if (!e.repeat && !state.over && e.code === 'KeyN') {
+    zombies.forEach(z => scene.remove(z.mesh));
+    zombies = []; state.spawnQueue = [];
+    if (state.waveIndex < WAVES.length - 1) { beginCountdown(state.waveIndex + 1); setBanner(true); }
+    setMessage(`[debug] skipped to wave ${state.waveIndex + 1}`, 1.5);
+  }
+  if (!e.repeat && !state.over && e.code === 'KeyB') spawnZombie('miniBoss');
 });
 addEventListener('keyup', e => keys[e.code] = false);
 let mouseDown = false;
@@ -614,17 +716,23 @@ function updateProjectiles(dt) {
 }
 
 function updateWaves(dt) {
-  if (zombies.length > 0) return;
-  // All zombies dead: win check, else count down to next wave
-  if (state.waveIndex === WAVES.length - 1) { endGame(true); return; }
-  if (state.waveTimer > 0) {
+  if (state.phase === 'countdown') {
     state.waveTimer -= dt;
-    if (state.waveIndex >= 0 && messageTimer <= 0) setMessage(`Next wave in ${Math.ceil(state.waveTimer)}...`);
-    if (state.waveTimer <= 0) {
-      state.waveIndex++;
-      spawnWave(state.waveIndex);
-      state.waveTimer = CONFIG.timeBetweenWaves;
-    }
+    setBanner(true);
+    document.getElementById('bannerCount').textContent = `Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
+    if (state.waveTimer <= 0) startWave(state.waveIndex);
+    return;
+  }
+  // Active: release queued spawns whose time has come
+  for (const s of state.spawnQueue) {
+    s.t -= dt;
+    if (s.t <= 0) spawnZombie(s.type, s.spawn);
+  }
+  state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
+  // Wave cleared: win after the last wave, otherwise count down to the next
+  if (zombies.length === 0 && state.spawnQueue.length === 0) {
+    if (state.waveIndex === WAVES.length - 1) endGame(true);
+    else beginCountdown(state.waveIndex + 1);
   }
 }
 
@@ -643,7 +751,15 @@ function updateCamera() {
 }
 
 function updateHud() {
-  document.getElementById('waveText').textContent = `Wave ${Math.max(1, state.waveIndex + 1)} / ${WAVES.length}`;
+  document.getElementById('waveText').textContent = `Wave ${state.waveIndex + 1} / ${WAVES.length}`;
+  document.getElementById('remainingText').textContent =
+    state.phase === 'active' ? `Zombies remaining: ${zombies.length + state.spawnQueue.length}` : '';
+  const boss = zombies.find(z => z.def.boss);
+  document.getElementById('bossHud').style.display = boss ? 'block' : 'none';
+  if (boss) {
+    document.getElementById('bossName').textContent = boss.def.name;
+    document.getElementById('bossBar').style.width = `${Math.max(0, boss.hp / boss.def.hp) * 100}%`;
+  }
   document.getElementById('statueBar').style.width = `${Math.max(0, state.statueHp / CONFIG.statue.hp) * 100}%`;
   document.getElementById('playerBar').style.width = `${(state.playerHp / P.hp) * 100}%`;
   setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
