@@ -72,7 +72,8 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 - Attack slots: `STATUE_SLOTS` ring on the statue faces (extras queue), `h.slots` ring to surround each hero.
 - Waves: `resolvePacks` turns each pack into { spawn, route }: `spawn` or the wave's `lanes` in turn; `route`
   'A' | 'B' | 'split' (alternates through the pack) or `CONFIG.routeCycle` rotation. Packs spawn in order; `delay` is
-  a hidden timer shrunk per wave by `packDelayTighten` (floor `packDelayMin`).
+  a hidden timer shrunk per wave by `packDelayTighten` (floor `packDelayMin`). Pack counts ramp 4 → 20 over waves 1–10
+  (gaps ~20 s → ~11 s, one longer lull before each wave's heaviest pack; bosses after it); 15 s countdown between waves.
 - Telegraphs: countdown shows spawn beacons + pulsing ground chevrons along each active route + HUD `#laneArrow`
   to the first pack's spawn; each pack drops a primitive ghost skull (`spawnSkull`, `skullTime` 20 s) at its spawn.
 - HUD (minimal, CSS tokens on `:root`): top-center Garden (statue) bar + wave/zombie line + boss bar; bottom-left

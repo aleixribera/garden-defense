@@ -2117,7 +2117,7 @@ function updateHero(h, dt) {
   // Wished velocity, approached smoothly for weight
   const wish = inp.move;
   // Sprint: only while moving forward-ish and not shooting / aiming / reloading
-  const fwdness = wish.lengthSq() > 0 ? wish.dot(new THREE.Vector3(-Math.sin(inp.yaw), 0, -Math.cos(inp.yaw))) : 0;
+  const fwdness = wish.lengthSq() > 0 ? wish.dot(yawForward(inp.yaw)) : 0;
   const sprinting = inp.sprint && fwdness > 0.5 && !inp.fire && !inp.zoom && !h.reloading;
   h.sprint += ((sprinting ? 1 : 0) - h.sprint) * Math.min(1, dt * (sprinting ? 4 : 8));
   const speed = P.speed * (1 - (1 - P.aimSpeedMult) * h.zoom) * (1 + (P.sprintMult - 1) * h.sprint);
@@ -4063,16 +4063,43 @@ function updateWaves(dt) {
   }
 }
 
-// Over-the-shoulder orbit camera with zoom, FOV kick and trauma-based shake
+// Over-the-shoulder orbit camera. Feel layers (all deliberately small): smoothed pivot, speed/sprint FOV + pull-back,
+// head bob, strafe roll, landing spring dip, hurt flinch, and trauma shake built from layered sines (less periodic).
 function updateCamera(dt) {
-  const c = CONFIG.camera;
-  const z = player.zoom;
+  const c = CONFIG.camera, cs = state.cam, h = player;
+  const z = h.zoom, sp = h.sprint;
+  const hSpeed = Math.hypot(h.vel.x, h.vel.z), speedK = Math.min(1, hSpeed / P.speed);
+  const grounded = h.onGround && !h.dead;
+
   state.fovKick *= Math.exp(-dt * 4);
-  const fov = THREE.MathUtils.lerp(c.fov, c.aimFov, z) + state.fovKick;
+  const fov = THREE.MathUtils.lerp(c.fov + c.speedFov * speedK + c.sprintFov * sp, c.aimFov, z) + state.fovKick;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
-  const dist = THREE.MathUtils.lerp(c.distance, c.aimDistance, z);
+  const dist = THREE.MathUtils.lerp(c.distance + c.sprintDistance * sp, c.aimDistance, z);
   const fwd = yawForward(), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-  const target = playerMesh.position.clone().add(new THREE.Vector3(0, c.height, 0)).addScaledVector(right, c.shoulder);
+
+  // Smoothed pivot: snaps on (re)spawn / teleports, otherwise catches up (softer vertically)
+  const want = playerMesh.position.clone().add(new THREE.Vector3(0, c.height, 0));
+  if (!cs.pivot || cs.pivot.distanceToSquared(want) > 25) cs.pivot = want.clone();
+  const kf = 1 - Math.exp(-dt * c.follow), ky = 1 - Math.exp(-dt * c.followY * (z > 0.5 ? 2 : 1));
+  cs.pivot.x += (want.x - cs.pivot.x) * kf;
+  cs.pivot.z += (want.z - cs.pivot.z) * kf;
+  cs.pivot.y += (want.y - cs.pivot.y) * ky;
+
+  // Landing: remember the fall speed while airborne, kick a damped spring when touching down
+  if (!grounded) cs.airVy = h.vel.y;
+  else if (!cs.wasGround && cs.airVy < -6) cs.landVel -= Math.min(1, -cs.airVy / 26) * c.landDip * 12;
+  cs.wasGround = grounded;
+  cs.landVel += (-cs.land * 160 - cs.landVel * 16) * dt;
+  cs.land += cs.landVel * dt;
+
+  // Head bob: phase advances with distance walked; amplitude grows with speed, sprint, fades when aiming / airborne
+  cs.bob += dt * hSpeed * 0.9;
+  const bobAmp = grounded ? speedK * (1 + (c.sprintBob - 1) * sp) * (1 - 0.8 * z) : 0;
+  cs.bobAmp = THREE.MathUtils.lerp(cs.bobAmp ?? 0, bobAmp, Math.min(1, dt * 8));
+  const bobY = Math.abs(Math.sin(cs.bob)) * c.bob * cs.bobAmp, bobX = Math.sin(cs.bob) * c.bobSide * cs.bobAmp;
+
+  const target = cs.pivot.clone().addScaledVector(right, c.shoulder + bobX);
+  target.y += bobY + cs.land;
   const offset = new THREE.Vector3(
     Math.sin(state.yaw) * Math.cos(state.pitch) * dist,
     Math.sin(state.pitch) * dist,
@@ -4086,14 +4113,24 @@ function updateCamera(dt) {
     if (solidAt(p, margin)) { reach = (i - 1) / 24; break; }
   }
   camera.position.copy(target).addScaledVector(offset, reach);
-  camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.4, camera.position.y);
-  camera.lookAt(target);
-  // trauma shake: squared for a nicer falloff
+
+  // Trauma shake (squared falloff): positional jitter + rotation, each axis a mix of two sines
   state.shake = Math.max(0, state.shake - dt * 1.8);
   const t = state.shake * state.shake, now = performance.now() * 0.001;
-  camera.rotation.z += Math.sin(now * 37) * 0.02 * t;
-  camera.rotateX(Math.sin(now * 43 + 1) * 0.02 * t);
-  camera.rotateY(Math.sin(now * 31 + 2) * 0.02 * t);
+  const n = (a, b, o) => (Math.sin(now * a + o) + Math.sin(now * b + o * 1.7) * 0.6) / 1.6;
+  camera.position.addScaledVector(right, n(23, 41, 0.3) * c.shakePos * t);
+  camera.position.y += n(29, 47, 2.1) * c.shakePos * t;
+  camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.4, camera.position.y);
+  camera.lookAt(target);
+
+  // Roll: lean into sideways motion, a little sway while sprinting, and the hurt flinch
+  const side = h.dead ? 0 : (h.vel.x * right.x + h.vel.z * right.z) / P.speed;
+  cs.flinch *= Math.exp(-dt * 7);
+  const wantRoll = -side * c.strafeRoll * (1 - 0.6 * z) + Math.sin(cs.bob) * 0.006 * sp;
+  cs.roll += (wantRoll - cs.roll) * Math.min(1, dt * 6);
+  camera.rotateZ(cs.roll + cs.flinch * c.hurtRoll + n(37, 53, 4.2) * c.shakeRot * t);
+  camera.rotateX(n(43, 31, 1) * c.shakeRot * t);
+  camera.rotateY(n(31, 59, 2) * c.shakeRot * t);
   // keep the sun's shadow frustum centered on the player
   sun.position.copy(playerMesh.position).add(SUN_OFFSET);
   sun.target.position.copy(playerMesh.position);
