@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garden Defense</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
+  #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-size: 18px; text-shadow: 1px 1px 2px #000; pointer-events: none; }
+  #hud .bar { width: 200px; height: 14px; background: #400; border: 1px solid #fff; margin: 4px 0 10px; }
+  #hud .fill { height: 100%; background: #3c3; }
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; background: #fff; border-radius: 50%; pointer-events: none; }
+  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+             color: #fff; background: rgba(0,0,0,0.6); font-size: 28px; text-align: center; cursor: pointer; }
+  #overlay small { font-size: 16px; margin-top: 12px; opacity: 0.8; }
+  #message { position: fixed; top: 30%; width: 100%; text-align: center; color: #fff; font-size: 32px; text-shadow: 2px 2px 4px #000; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="waveText">Wave 1</div>
+  <div>Statue</div><div class="bar"><div class="fill" id="statueBar"></div></div>
+  <div>You</div><div class="bar"><div class="fill" id="playerBar"></div></div>
+</div>
+<div id="crosshair"></div>
+<div id="message"></div>
+<div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div><small id="overlaySub">Click to play — WASD move, mouse aim, left click shoot</small></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// =====================================================================
+// CONFIG — every tuning number lives here
+// =====================================================================
+const CONFIG = {
+  arenaSize: 100,              // ground plane width/depth
+  statue: { hp: 1000, size: 4 },
+  player: {
+    hp: 100, speed: 12, radius: 0.6, height: 1.2,
+    respawnDelay: 3,           // seconds
+    fireRate: 0.15,            // seconds between shots
+  },
+  projectile: { speed: 60, damage: 25, life: 1.5, radius: 0.2 },
+  camera: { distance: 8, height: 3, sensitivity: 0.0025 },
+  zombie: {                    // the single basic zombie type
+    hp: 50, speed: 3.5, radius: 0.6, height: 1.2,
+    damage: 10, attackCooldown: 1.0, // seconds between hits
+    aggroRange: 15,            // starts chasing player inside this
+    deaggroRange: 25,          // returns to statue beyond this
+    color: 0x6a8f3a,
+  },
+  spawnPoint: { x: 0, z: -45 }, // single pack spawn at arena edge
+  packSpread: 4,                // random scatter around the spawn point
+  timeBetweenWaves: 4,          // seconds after last zombie dies
+};
+
+// Waves as data: each entry is how many basic zombies spawn in that wave.
+const WAVES = [
+  { count: 10 }, { count: 12 }, { count: 14 }, { count: 16 }, { count: 18 },
+  { count: 20 }, { count: 23 }, { count: 26 }, { count: 29 }, { count: 32 },
+];
+
+// =====================================================================
+// Scene setup
+// =====================================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 500);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445522, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+sun.position.set(30, 50, 20);
+scene.add(sun);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(CONFIG.arenaSize, CONFIG.arenaSize),
+  new THREE.MeshLambertMaterial({ color: 0x4a7a2c })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// Spawn point marker
+const spawnMarker = new THREE.Mesh(
+  new THREE.CylinderGeometry(3, 3, 0.1, 24),
+  new THREE.MeshLambertMaterial({ color: 0x552222 })
+);
+spawnMarker.position.set(CONFIG.spawnPoint.x, 0.05, CONFIG.spawnPoint.z);
+scene.add(spawnMarker);
+
+// Statue (box) with a floating health bar
+const S = CONFIG.statue.size;
+const statueMesh = new THREE.Mesh(new THREE.BoxGeometry(S, S, S), new THREE.MeshLambertMaterial({ color: 0xccccbb }));
+statueMesh.position.y = S / 2;
+scene.add(statueMesh);
+const statueHpBar = makeWorldBar(6);
+statueHpBar.group.position.set(0, S + 1.5, 0);
+scene.add(statueHpBar.group);
+
+// Player (capsule)
+const P = CONFIG.player;
+const playerMesh = new THREE.Mesh(new THREE.CapsuleGeometry(P.radius, P.height, 4, 12), new THREE.MeshLambertMaterial({ color: 0x33cc33 }));
+scene.add(playerMesh);
+
+// Shared zombie resources
+const Z = CONFIG.zombie;
+const zombieGeo = new THREE.CapsuleGeometry(Z.radius, Z.height, 4, 12);
+const zombieMat = new THREE.MeshLambertMaterial({ color: Z.color });
+const projGeo = new THREE.SphereGeometry(CONFIG.projectile.radius, 8, 8);
+const projMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
+
+// A simple world-space health bar (two planes) that faces the camera
+function makeWorldBar(width) {
+  const group = new THREE.Group();
+  const bg = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.4), new THREE.MeshBasicMaterial({ color: 0x440000 }));
+  const fill = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.4), new THREE.MeshBasicMaterial({ color: 0x33dd33 }));
+  fill.position.z = 0.01;
+  group.add(bg, fill);
+  return { group, fill, width };
+}
+function setWorldBar(bar, ratio) {
+  ratio = Math.max(0, ratio);
+  bar.fill.scale.x = ratio || 0.0001;
+  bar.fill.position.x = -(bar.width * (1 - ratio)) / 2;
+}
+
+// =====================================================================
+// Game state
+// =====================================================================
+let state;          // reset by resetGame()
+let zombies = [];
+let projectiles = [];
+
+function resetGame() {
+  zombies.forEach(z => scene.remove(z.mesh));
+  projectiles.forEach(p => scene.remove(p.mesh));
+  zombies = []; projectiles = [];
+  state = {
+    statueHp: CONFIG.statue.hp,
+    playerHp: P.hp,
+    playerDead: false,
+    respawnTimer: 0,
+    waveIndex: -1,
+    waveTimer: 1,       // short delay before wave 1
+    fireTimer: 0,
+    yaw: 0, pitch: 0.2,
+    over: false,
+  };
+  respawnPlayer();
+  setMessage('');
+}
+
+function respawnPlayer() {
+  state.playerHp = P.hp;
+  state.playerDead = false;
+  playerMesh.visible = true;
+  playerMesh.position.set(0, P.radius + P.height / 2, S + 2); // just beside the statue
+}
+
+function spawnWave(index) {
+  const wave = WAVES[index];
+  for (let i = 0; i < wave.count; i++) {
+    const mesh = new THREE.Mesh(zombieGeo, zombieMat);
+    mesh.position.set(
+      CONFIG.spawnPoint.x + (Math.random() - 0.5) * CONFIG.packSpread * 2,
+      Z.radius + Z.height / 2,
+      CONFIG.spawnPoint.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
+    );
+    scene.add(mesh);
+    zombies.push({ mesh, hp: Z.hp, chasingPlayer: false, attackTimer: 0 });
+  }
+  setMessage(`Wave ${index + 1}`, 2);
+}
+
+// =====================================================================
+// Input
+// =====================================================================
+const keys = {};
+addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keyup', e => keys[e.code] = false);
+let mouseDown = false;
+const overlay = document.getElementById('overlay');
+
+overlay.addEventListener('click', () => {
+  if (state.over) resetGame();
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  const locked = document.pointerLockElement === renderer.domElement;
+  overlay.style.display = locked ? 'none' : 'flex';
+  if (!locked && !state.over) {
+    document.getElementById('overlayTitle').textContent = 'PAUSED';
+    document.getElementById('overlaySub').textContent = 'Click to resume';
+  }
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  state.yaw -= e.movementX * CONFIG.camera.sensitivity;
+  state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * CONFIG.camera.sensitivity, -0.6, 1.2);
+});
+addEventListener('mousedown', e => { if (e.button === 0) mouseDown = true; });
+addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// =====================================================================
+// UI helpers
+// =====================================================================
+let messageTimer = 0;
+function setMessage(text, duration = 0) {
+  document.getElementById('message').textContent = text;
+  messageTimer = duration;
+}
+function endGame(won) {
+  state.over = true;
+  document.exitPointerLock();
+  document.getElementById('overlayTitle').textContent = won ? 'YOU WIN! The garden is safe.' : 'DEFEAT — the statue fell.';
+  document.getElementById('overlaySub').textContent = 'Click to restart';
+  overlay.style.display = 'flex';
+}
+
+// =====================================================================
+// Update loop
+// =====================================================================
+const tmp = new THREE.Vector3();
+
+function updatePlayer(dt) {
+  if (state.playerDead) {
+    state.respawnTimer -= dt;
+    if (state.respawnTimer <= 0) respawnPlayer();
+    return;
+  }
+  // WASD relative to camera yaw
+  const fwd = new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const move = new THREE.Vector3();
+  if (keys.KeyW) move.add(fwd);
+  if (keys.KeyS) move.sub(fwd);
+  if (keys.KeyD) move.add(right);
+  if (keys.KeyA) move.sub(right);
+  if (move.lengthSq() > 0) playerMesh.position.addScaledVector(move.normalize(), P.speed * dt);
+
+  // Keep inside arena
+  const half = CONFIG.arenaSize / 2 - 1;
+  playerMesh.position.x = THREE.MathUtils.clamp(playerMesh.position.x, -half, half);
+  playerMesh.position.z = THREE.MathUtils.clamp(playerMesh.position.z, -half, half);
+  playerMesh.rotation.y = state.yaw;
+
+  // Shooting: projectile travels toward the camera's aim point
+  state.fireTimer -= dt;
+  if (mouseDown && state.fireTimer <= 0 && document.pointerLockElement) {
+    state.fireTimer = P.fireRate;
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const aimPoint = camera.position.clone().addScaledVector(dir, 100);
+    const start = playerMesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
+    const vel = aimPoint.sub(start).normalize().multiplyScalar(CONFIG.projectile.speed);
+    const mesh = new THREE.Mesh(projGeo, projMat);
+    mesh.position.copy(start);
+    scene.add(mesh);
+    projectiles.push({ mesh, vel, life: CONFIG.projectile.life });
+  }
+}
+
+function damagePlayer(amount) {
+  if (state.playerDead) return;
+  state.playerHp -= amount;
+  if (state.playerHp <= 0) {
+    state.playerHp = 0;
+    state.playerDead = true;
+    state.respawnTimer = P.respawnDelay;
+    playerMesh.visible = false;
+    setMessage(`You were eaten! Respawning in ${P.respawnDelay}s`, P.respawnDelay);
+  }
+}
+
+function updateZombies(dt) {
+  const statueReach = S / 2 + Z.radius + 0.2;   // contact distance to statue
+  const playerReach = P.radius + Z.radius + 0.2;
+
+  for (const z of zombies) {
+    const pos = z.mesh.position;
+    const distToPlayer = state.playerDead ? Infinity : tmp.copy(playerMesh.position).sub(pos).setY(0).length();
+
+    // Aggro rule with hysteresis
+    if (!z.chasingPlayer && distToPlayer < Z.aggroRange) z.chasingPlayer = true;
+    else if (z.chasingPlayer && distToPlayer > Z.deaggroRange) z.chasingPlayer = false;
+
+    const target = z.chasingPlayer ? playerMesh.position : statueMesh.position;
+    const reach = z.chasingPlayer ? playerReach : statueReach;
+    const toTarget = tmp.copy(target).sub(pos).setY(0);
+    // For the box statue, use the larger axis distance (approx. distance to its face)
+    const dist = z.chasingPlayer ? toTarget.length() : Math.max(Math.abs(toTarget.x), Math.abs(toTarget.z));
+
+    z.attackTimer -= dt;
+    if (dist > reach) {
+      pos.addScaledVector(toTarget.normalize(), Z.speed * dt);
+    } else if (z.attackTimer <= 0) {
+      z.attackTimer = Z.attackCooldown;
+      if (z.chasingPlayer) damagePlayer(Z.damage);
+      else state.statueHp -= Z.damage;
+    }
+  }
+
+  // Light separation so the pack doesn't collapse into one point
+  for (let i = 0; i < zombies.length; i++) {
+    for (let j = i + 1; j < zombies.length; j++) {
+      const a = zombies[i].mesh.position, b = zombies[j].mesh.position;
+      tmp.copy(a).sub(b).setY(0);
+      const d = tmp.length(), min = Z.radius * 2;
+      if (d > 0 && d < min) {
+        tmp.multiplyScalar((min - d) / d / 2);
+        a.add(tmp); b.sub(tmp);
+      }
+    }
+  }
+}
+
+function updateProjectiles(dt) {
+  const hitDist = CONFIG.projectile.radius + Z.radius;
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.life -= dt;
+    let dead = p.life <= 0 || p.mesh.position.y < 0;
+
+    // Hit test against zombies (capsule approximated by vertical segment)
+    for (let j = zombies.length - 1; j >= 0 && !dead; j--) {
+      const z = zombies[j], zp = z.mesh.position;
+      const dy = Math.max(0, Math.abs(p.mesh.position.y - zp.y) - Z.height / 2);
+      const dx = p.mesh.position.x - zp.x, dz = p.mesh.position.z - zp.z;
+      if (dx * dx + dy * dy + dz * dz < hitDist * hitDist) {
+        z.hp -= CONFIG.projectile.damage;
+        dead = true;
+        if (z.hp <= 0) { scene.remove(z.mesh); zombies.splice(j, 1); }
+      }
+    }
+    if (dead) { scene.remove(p.mesh); projectiles.splice(i, 1); }
+  }
+}
+
+function updateWaves(dt) {
+  if (zombies.length > 0) return;
+  // All zombies dead: win check, else count down to next wave
+  if (state.waveIndex === WAVES.length - 1) { endGame(true); return; }
+  if (state.waveTimer > 0) {
+    state.waveTimer -= dt;
+    if (state.waveIndex >= 0 && messageTimer <= 0) setMessage(`Next wave in ${Math.ceil(state.waveTimer)}...`);
+    if (state.waveTimer <= 0) {
+      state.waveIndex++;
+      spawnWave(state.waveIndex);
+      state.waveTimer = CONFIG.timeBetweenWaves;
+    }
+  }
+}
+
+function updateCamera() {
+  // Orbit behind the player based on yaw/pitch
+  const c = CONFIG.camera;
+  const target = playerMesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+  const offset = new THREE.Vector3(
+    Math.sin(state.yaw) * Math.cos(state.pitch) * c.distance,
+    Math.sin(state.pitch) * c.distance + c.height * 0.3,
+    Math.cos(state.yaw) * Math.cos(state.pitch) * c.distance
+  );
+  camera.position.copy(target).add(offset);
+  camera.position.y = Math.max(0.5, camera.position.y);
+  camera.lookAt(target);
+}
+
+function updateHud() {
+  document.getElementById('waveText').textContent = `Wave ${Math.max(1, state.waveIndex + 1)} / ${WAVES.length}`;
+  document.getElementById('statueBar').style.width = `${Math.max(0, state.statueHp / CONFIG.statue.hp) * 100}%`;
+  document.getElementById('playerBar').style.width = `${(state.playerHp / P.hp) * 100}%`;
+  setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
+  statueHpBar.group.quaternion.copy(camera.quaternion);
+}
+
+const clock = new THREE.Clock();
+function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const playing = document.pointerLockElement === renderer.domElement && !state.over;
+
+  if (playing) {
+    updatePlayer(dt);
+    updateZombies(dt);
+    updateProjectiles(dt);
+    updateWaves(dt);
+    if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
+    if (state.statueHp <= 0) endGame(false);
+  }
+  updateCamera();
+  updateHud();
+  renderer.render(scene, camera);
+}
+
+resetGame();
+loop();
+</script>
+</body>
+</html>
