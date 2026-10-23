@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.10.5';
+const VERSION = 'v1.10.6';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -571,13 +571,13 @@ const CONFIG = {
       { spawn: 'longRoad', route: 'B', delay: 7, zombies: { shambler: 6, spitter: 2 } },
       { spawn: 'climb', route: 'A', delay: 8, zombies: { shambler: 6, climber: 2, plated: 1 } },
     ] },
-    // 5 — the Brute, after a lull (10)
+    // 5 — the Brute leads the third pack so later enemies can catch up (10)
     { packs: [
       { spawn: 'flank', route: 'split', zombies: { shambler: 5, sprinter: 2 } },
       { spawn: 'longRoad', route: 'A', delay: 9, zombies: { shambler: 6 } },
-      { spawn: 'choke', delay: 9, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'longRoad', route: 'B', delay: 9, zombies: { miniBoss: 1, shambler: 6 } },
       { spawn: 'climb', delay: 9, zombies: { shambler: 4, spitter: 2 } },
-      { spawn: 'longRoad', route: 'B', delay: 14, zombies: { miniBoss: 1, shambler: 6 } },
+      { spawn: 'choke', route: 'A', delay: 14, zombies: { shambler: 5, plated: 1 } },
       { spawn: 'flank', delay: 11, zombies: { sprinter: 4 } },
       { spawn: 'choke', route: 'split', delay: 9, zombies: { shambler: 6, plated: 1 } },
       { spawn: 'climb', route: 'B', delay: 9, zombies: { climber: 3, shambler: 3 } },
@@ -653,7 +653,7 @@ const CONFIG = {
       { spawn: 'choke', route: 'B', delay: 11, zombies: { spitter: 3, bomber: 2 } },
       { spawn: 'longRoad', route: 'A', delay: 14, zombies: { shambler: 9, plated: 3, sprinter: 3, banner: 1 } },
     ] },
-    // 10 — finale: escalating packs, a breather, then the Zombie King and his court (20)
+    // 10 — finale: the Zombie King leads pack nine, with his court following after a breather (20)
     { packs: [
       { spawn: 'longRoad', route: 'A', zombies: { shambler: 7 } },
       { spawn: 'flank', route: 'split', delay: 12, zombies: { sprinter: 5 } },
@@ -663,10 +663,10 @@ const CONFIG = {
       { spawn: 'flank', delay: 11, zombies: { shambler: 4, banner: 1, howler: 1 } },
       { spawn: 'choke', route: 'split', delay: 11, zombies: { burrower: 3, shambler: 3 } },
       { spawn: 'climb', route: 'B', delay: 11, zombies: { climber: 3, shambler: 3 } },
-      { spawn: 'longRoad', route: 'split', delay: 12, zombies: { shambler: 7, plated: 2, banner: 1 } },
+      { spawn: 'longRoad', route: 'A', delay: 12, zombies: { finalBoss: 1, shambler: 8, plated: 2 } },
       { spawn: 'flank', route: 'A', delay: 11, zombies: { sprinter: 5, bomber: 1 } },
       { spawn: 'choke', route: 'A', delay: 11, zombies: { shambler: 5, spitter: 2 } },
-      { spawn: 'longRoad', route: 'A', delay: 28, zombies: { finalBoss: 1, shambler: 8, plated: 2 } },
+      { spawn: 'longRoad', route: 'split', delay: 28, zombies: { shambler: 7, plated: 2, banner: 1 } },
       { spawn: 'climb', route: 'split', delay: 15, zombies: { shambler: 5, spitter: 2 } },
       { spawn: 'flank', delay: 12, zombies: { sprinter: 4, howler: 1 } },
       { spawn: 'choke', route: 'B', delay: 12, zombies: { shambler: 5, plated: 2, banner: 1 } },
