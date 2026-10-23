@@ -32,7 +32,10 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   retarget cooldown) → state station / engage / reposition (`findVantage`) / retreat (low hp) / downed / reviveWait →
   A* `findPath` on the nav grid + `smoothPath` string pulling, repath every `repathInterval` → abilities (Husk Hop to
   escape or travel via `pendingHop`, Butter on a big pack near the statue when safe, Shuck on clusters/tough targets).
-  Per frame: path following, personal-space backoff, stuck → jump, reaction delay, aim wobble shrinking with tracking
+  Never static: station = patrol random points out to `patrol.radius` + base check every `baseCheckEvery` s; engage =
+  `orbitSteer` circle-strafe (flips direction, `dodge` repels zombies, `steerWalkable` keeps it on ground) + jump/hop flair.
+  Fires only when `shotClear` from the next muzzle to the aim point is clear (`eyeOf` = muzzle height).
+  Per frame: path following, stuck → jump, reaction delay, aim wobble shrinking with tracking
   time, target lead, turn-speed limit, `difficulty` multiplier. Downed: hold X near it 5 s → revive at half hp, else
   respawn after 20 s (`#revive` prompt + ring). `ZOMBIE_SCALE_PER_HERO` scales non-boss wave counts (`scaledCount`).
 - Feedback: hitmarkers, damage numbers, particles (`spawnParticle`), rings/decals, camera shake, hurt vignette.
