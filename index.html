@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.10.2';
+const VERSION = 'v1.10.3';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -3496,7 +3496,7 @@ const SFX = (() => {
     },
     // Leafy footstep, alternating feet (slightly different pitch)
     step(pos, ai, k, foot) {
-      const v = voice(ai ? pos : null, { vol: (ai ? 0.07 : 0.06) * k, name: ai ? 'stAI' : 'st', gap: 0.08, max: 2, len: 0.15, rev: 0.02 });
+      const v = voice(ai ? pos : null, { vol: (ai ? 0.022 : 0.018) * k, name: ai ? 'stAI' : 'st', gap: 0.08, max: 2, len: 0.15, rev: 0.02 });
       if (!v) return;
       const p = foot ? 1.08 : 0.94;
       hiss(v, { dur: 0.06, vol: 0.7, f0: rr(650, 1050) * p, f1: 400, q: 1.2 });
@@ -3716,11 +3716,11 @@ const SFX = (() => {
       if (!h.active || h.dead || !h.onGround || moved > 3) { tr[key] = 0; continue; }
       tr[key] += moved;
       const stride = AU.stepDistance * (1 + 0.35 * h.sprint);
-      if (tr[key] > stride) { tr[key] = 0; tr[fk] ^= 1; S.step(p, h.isAI, 0.8 + 0.5 * h.sprint, tr[fk]); }
+      if (tr[key] > stride) { tr[key] = 0; tr[fk] ^= 1; S.step(p, h.isAI, 0.8 + 0.2 * h.sprint, tr[fk]); }
     }
     // Wind rush: gliding / falling fast / sprinting
     const sp = player.vel.length(), glide = player.hopping && !player.onGround;
-    const w = player.dead ? 0 : Math.min(0.5, (glide ? 0.28 : 0) + Math.max(0, sp - 8) * 0.025 + player.sprint * 0.05);
+    const w = player.dead ? 0 : Math.min(0.5, (glide ? 0.28 : 0) + Math.max(0, sp - 12) * 0.02);
     windGain.gain.setTargetAtTime(w, now, 0.15);
     windFilter.frequency.setTargetAtTime(500 + sp * 60, now, 0.2);
     // Ambience bed: soft gusty breeze (gust target changes every few seconds)
