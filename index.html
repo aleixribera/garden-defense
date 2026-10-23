@@ -15,6 +15,9 @@
   #banner { position: fixed; top: 18%; width: 100%; text-align: center; color: #fff; text-shadow: 2px 2px 4px #000; pointer-events: none; }
   #banner .title { font-size: 56px; font-weight: bold; }
   #banner .sub { font-size: 20px; margin-top: 6px; }
+  #laneArrow { position: fixed; top: 6%; left: 50%; transform: translateX(-50%); text-align: center; color: #fff;
+               text-shadow: 2px 2px 4px #000; pointer-events: none; display: none; font-size: 15px; font-weight: bold; }
+  #laneArrow .arrow { font-size: 44px; line-height: 1; display: inline-block; }
   #message { position: fixed; top: 30%; width: 100%; text-align: center; color: #fff; font-size: 32px; text-shadow: 2px 2px 4px #000; pointer-events: none; }
 
   /* Reticle: four ticks whose gap follows the current weapon spread */
@@ -49,6 +52,8 @@
   #ammo .label { font-size: 12px; letter-spacing: 2px; color: #ffe680; }
   #reloadBar { width: 150px; height: 6px; background: rgba(0,0,0,0.5); margin: 4px 0 4px auto; border-radius: 3px; overflow: hidden; }
   #reloadFill { height: 100%; width: 0; background: #ffe14a; }
+  #fps { position: fixed; top: 8px; right: 10px; color: #fff; font: 12px monospace; opacity: 0.7; text-shadow: 1px 1px 1px #000; pointer-events: none; }
+  #version { position: fixed; bottom: 4px; right: 8px; color: #fff; font: 11px monospace; opacity: 0.5; text-shadow: 1px 1px 1px #000; pointer-events: none; }
   #targetHint { position: fixed; bottom: 110px; width: 100%; text-align: center; color: #ffe680; font-size: 18px; font-weight: 700;
                 text-shadow: 1px 1px 3px #000; pointer-events: none; display: none; }
 </style>
@@ -74,7 +79,10 @@
   <div id="reloadBar"><div id="reloadFill"></div></div><div class="label">COB BUSTERS</div></div>
 <div id="targetHint">BUTTER BARRAGE — Left click to call the strike · Right click to cancel</div>
 <div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div></div>
+<div id="laneArrow"><div class="arrow">&#x2B06;</div><div class="label"></div></div>
 <div id="message"></div>
+<div id="fps"></div>
+<div id="version"></div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
   <small id="overlaySub">Click to play<br>WASD move · Mouse aim · LMB fire · RMB zoom · Space jump (hold to glide) · R reload<br>Q Shuck Shot · E Husk Hop · F Butter Barrage</small></div>
 
@@ -87,6 +95,9 @@
 <script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// Shown bottom-right; bump on every release (matches the git tag)
+const VERSION = 'v1.6.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -256,63 +267,78 @@ const CONFIG = {
   debugPackSize: 4,             // zombies spawned per debug key press (keys 1–6)
   // -------------------------------------------------------------------
   // THE MAP — grey-box layout. x = east, z = south (north is -z). Statue at the origin.
-  // Three rings: sunken Statue Court (tier 0) → mid ring (tier 3) → outer lane approaches.
-  // Heights are absolute metres. Terrain = bowl + plateaus + ramps, sampled into a heightfield.
+  // Sunken Statue Court (tier 0) → open mid ring (tier 3) walled by cliffs (tier 14), with four
+  // approaches cut through the walls: the north road, the east flank, the west wall gates and the
+  // raised southern quarry (tier 8). Heights are absolute metres. Terrain = bowl + plateaus + ramps,
+  // sampled into a heightfield. Corridors are ≥ 8 m wide; ramps are smooth (slope ≤ 0.45).
   // -------------------------------------------------------------------
   MAP: {
-    size: 300,                   // world is size × size metres, centered on the statue
+    size: 440,                   // world is size × size metres, centered on the statue
     cell: 2,                     // nav grid cell size (flow fields)
-    tiers: { court: 0, mid: 3, high: 8, wall: 12 },
+    tiers: { court: 0, mid: 3, high: 8, wall: 14 },
     bowl: { floorRadius: 14, rimRadius: 26 },   // flat court floor, then a smooth slope up to the mid tier
     maxSlope: 0.7,               // rise per metre zombies can walk (ramps yes, cliffs no)
     climbCost: 5,                // Climbers' nav layer: a cliff step costs this many flat steps
     navClearance: 1.0,           // obstacles are inflated by this for the nav grid
     stepUp: 0.45,                // the hero walks up ledges this tall without jumping
+    routeReach: 7,               // a zombie counts a route waypoint as reached within this many walking metres
     // Raised terrain. rect {x,z,w,d} (center + size) or circle {x,z,r}; edge = blend width (≈1 cliff, 4+ slope)
     plateaus: [
-      { name: 'Windmill Ridge',    x: -71, z: -104, w: 158, d: 16,  h: 8,  edge: 1 },
-      { name: 'West Wall (north)', x: -69, z: -45,  w: 12,  d: 134, h: 12, edge: 1 },
-      { name: 'West Wall (south)', x: -69, z: 90,   w: 12,  d: 120, h: 12, edge: 1 },
-      { name: 'East Cliffs',       x: 110, z: -45,  w: 80,  d: 210, h: 12, edge: 1 },
-      { name: 'Quarry Top',        x: 43.5, z: 105, w: 213, d: 90,  h: 8,  edge: 1 },
-      // Outer walls that close off dead corners (nothing spawns or paths there)
-      { name: 'SW Rocks',          x: -112.5, z: 105, w: 75, d: 90, h: 12, edge: 1 },
-      { name: 'NW Rocks',          x: -105, z: -131, w: 90, d: 38, h: 12, edge: 1 },
-      { name: 'Well Mound',        x: 24,  z: -62,  r: 4,  h: 5.5, edge: 6 },
-      { name: 'Bandstand',         x: 12,  z: 36,   r: 4,  h: 4.6, edge: 4 },
+      // Outer cliff walls (tier 14): only Climbers get over these
+      { name: 'NW Block',          x: -130,  z: -160, w: 180, d: 120, h: 14, edge: 1 },
+      { name: 'NE Block',          x: 62.5,  z: -160, w: 45,  d: 120, h: 14, edge: 1 },
+      { name: 'East Cliffs',       x: 152.5, z: 0,    w: 135, d: 440, h: 14, edge: 1 },
+      { name: 'SW Block',          x: -150,  z: 140,  w: 140, d: 160, h: 14, edge: 1 },
+      // West Wall, split by two choke gaps: Garden Gate (z 18..32) and Sluice Pass (z -63..-49)
+      { name: 'West Wall (north)', x: -74,   z: -81,  w: 12,  d: 38,  h: 14, edge: 1 },
+      { name: 'West Wall (mid)',   x: -74,   z: -15.5, w: 12, d: 67,  h: 14, edge: 1 },
+      { name: 'West Wall (south)', x: -74,   z: 46,   w: 12,  d: 28,  h: 14, edge: 1 },
+      // Raised tiers (tier 8): the quarry spawn shelf (cliff front at z = 60) and the windmill ridge
+      { name: 'Quarry Top',        x: 2.5,   z: 140,  w: 165, d: 160, h: 8,  edge: 1 },
+      { name: 'Windmill Ridge',    x: -27.5, z: -137, w: 25,  d: 66,  h: 8,  edge: 1 },
+      // Mounds (slopes all round)
+      { name: 'Well Mound',        x: 12,    z: -60,  r: 4,   h: 5.5, edge: 6 },
+      { name: 'Bandstand',         x: 12,    z: 36,   r: 4,   h: 4.6, edge: 4 },
     ],
-    // Straight ramps between tiers: from [x, z, h] to [x, z, h], width in metres
+    // Straight ramps: from [x, z, h] (high end, inside the plateau) to [x, z, h] (low end), width in metres
     ramps: [
-      { name: 'Windmill Ramp', from: [-44, -99, 8], to: [-44, -78, 3], width: 7 },
-      { name: 'Quarry Ramp',   from: [-30, 63, 8],  to: [-30, 42, 3],  width: 8 },
+      { name: 'Ridge Ramp N',  from: [-26, -168, 8],  to: [-26, -192, 3], width: 10 },
+      { name: 'Ridge Ramp S',  from: [-26, -106, 8],  to: [-26, -82, 3],  width: 10 },
+      { name: 'Quarry Ramp W', from: [-30, 64, 8],    to: [-30, 40, 3],   width: 10 },
+      { name: 'Quarry Ramp E', from: [55, 64, 8],     to: [55, 40, 3],    width: 10 },
+      { name: 'Rampart Ramp',  from: [-70, -12, 14],  to: [-46, -12, 3],  width: 8 },
     ],
     // Solid props, standing on the terrain at their center. box {w,d} or cyl {r}; h above ground.
     //   hedge/building block line of sight (break aggro, kite loops); cover is low (stops globs, not sight);
     //   any top can be stood on if you get up there (platforms are meant to be jumped onto).
     obstacles: [
-      // Statue Court: a little cover and a kite loop
+      // Statue Court: a little cover and the fountain loop
       { name: 'Fountain',      kind: 'cover',    x: -8,  z: 7,     r: 2.6, h: 1.1 },
       { name: 'North Planter', kind: 'cover',    x: 5,   z: -9,    w: 5,   d: 1.4, h: 1.0 },
       { name: 'East Planter',  kind: 'cover',    x: 9,   z: 5,     w: 1.4, d: 5,   h: 1.0 },
-      // Mid ring: hiding hedges, the shed loop, the jump-only tower
-      { name: 'Tool Shed',     kind: 'building', x: 25,  z: 16,    w: 8,   d: 6,   h: 4.2 },
-      { name: 'Long Hedge',    kind: 'hedge',    x: 36,  z: -36,   w: 2.5, d: 20,  h: 3.2 },
+      // Mid ring: the shed loop, the hedge wall, hiding hedges, the jump-only tower
+      { name: 'Tool Shed',     kind: 'building', x: 26,  z: 17,    w: 10,  d: 7,   h: 4.2 },
+      { name: 'Hedge Wall',    kind: 'hedge',    x: 36,  z: -38,   w: 2.5, d: 30,  h: 3.2 },
       { name: 'Rose Hedge',    kind: 'hedge',    x: -36, z: 12,    w: 2.5, d: 16,  h: 3.2 },
-      { name: 'Arc Hedge',     kind: 'hedge',    x: -6,  z: -38,   w: 16,  d: 2.5, h: 3.2 },
+      { name: 'Arc Hedge',     kind: 'hedge',    x: -6,  z: -40,   w: 18,  d: 2.5, h: 3.2 },
       { name: 'Water Tower',   kind: 'platform', x: -28, z: -26,   w: 4,   d: 4,   h: 2.6 },
       { name: 'Tower Crate',   kind: 'platform', x: -25, z: -23.2, w: 2,   d: 2,   h: 1.25 },
-      // Short flank: the greenhouse hides the spawn
-      { name: 'Greenhouse',    kind: 'building', x: 42,  z: -6,    w: 6,   d: 18,  h: 5 },
-      // Long road: low wall on the mound in the lane
-      { name: 'Mound Wall',    kind: 'cover',    x: 24,  z: -64.5, w: 4,   d: 0.8, h: 1.0 },
+      // Short flank: the greenhouse hides the spawn and splits it into a north and a south route
+      { name: 'Greenhouse',    kind: 'building', x: 52,  z: -5,    w: 6,   d: 22,  h: 5 },
+      // Long road: low wall on the mound in the lane, a few orchard blocks to dodge between
+      { name: 'Mound Wall',    kind: 'cover',    x: 12,  z: -64.5, w: 4,   d: 0.8, h: 1.0 },
+      { name: 'Orchard Crates', kind: 'cover',   x: 14,  z: -130,  w: 3,   d: 3,   h: 1.2 },
+      { name: 'Hay Stack',     kind: 'cover',    x: -2,  z: -165,  w: 4,   d: 2.5, h: 1.6 },
       // Windmill Ridge: landmark + low cover looking down the road
-      { name: 'Windmill',      kind: 'building', x: -16, z: -106,  r: 2.5, h: 11 },
-      { name: 'Ridge Cover E', kind: 'cover',    x: 6.5, z: -104,  w: 0.8, d: 6,   h: 1.1 },
-      { name: 'Ridge Cover S', kind: 'cover',    x: -2,  z: -97.4, w: 5,   d: 0.8, h: 1.1 },
-      // Garden Gate: posts squeeze the gap, a low wall inside faces it
-      { name: 'Gate Post N',   kind: 'building', x: -62.5, z: 21.5, r: 0.9, h: 5 },
-      { name: 'Gate Post S',   kind: 'building', x: -62.5, z: 30.5, r: 0.9, h: 5 },
-      { name: 'Gate Cover',    kind: 'cover',    x: -48, z: 18,    w: 1,   d: 5,   h: 1.1 },
+      { name: 'Windmill',      kind: 'building', x: -35, z: -140,  r: 2.5, h: 11 },
+      { name: 'Ridge Cover A', kind: 'cover',    x: -16.5, z: -150, w: 0.8, d: 6, h: 1.1 },
+      { name: 'Ridge Cover B', kind: 'cover',    x: -16.5, z: -125, w: 0.8, d: 6, h: 1.1 },
+      // Garden Gate: posts squeeze the gap (≈9 m clear), a low wall inside faces it
+      { name: 'Gate Post N',   kind: 'building', x: -74, z: 19.5,  r: 0.9, h: 5 },
+      { name: 'Gate Post S',   kind: 'building', x: -74, z: 30.5,  r: 0.9, h: 5 },
+      { name: 'Gate Cover',    kind: 'cover',    x: -56, z: 18,    w: 1,   d: 5,   h: 1.1 },
+      // Rampart (west wall top): parapet facing the west field
+      { name: 'Parapet',       kind: 'cover',    x: -79, z: -12,   w: 0.8, d: 8,   h: 1.0 },
       // Bandstand rails (open toward the quarry cliffs)
       { name: 'Bandstand Rail N', kind: 'cover', x: 12,  z: 32.6,  w: 5,   d: 0.6, h: 1.0 },
       { name: 'Bandstand Rail W', kind: 'cover', x: 8.4, z: 36,    w: 0.6, d: 3,   h: 1.0 },
@@ -320,64 +346,81 @@ const CONFIG = {
     // Named spots (theming anchors). Shown in the debug map (M).
     landmarks: [
       { name: 'Statue Court',   x: 0,   z: 0,    note: 'sunken, open, a little cover' },
-      { name: 'Windmill Ridge', x: -2,  z: -104, note: 'vantage: sees Orchard Road, far from statue' },
-      { name: 'Bandstand',      x: 12,  z: 36,   note: 'vantage: near statue, open to the quarry' },
-      { name: 'Water Tower',    x: -28, z: -26,  note: 'vantage: jump-only' },
-      { name: 'Well Mound',     x: 24,  z: -62,  note: 'vantage: right in the lane' },
-      { name: 'Tool Shed',      x: 25,  z: 16,   note: 'kite loop' },
+      { name: 'Windmill Ridge', x: -22, z: -137, note: 'vantage: sees Orchard Road, far from statue (ramps N + S)' },
+      { name: 'Rampart',        x: -76, z: -12,  note: 'vantage: west wall top over both gates (inside ramp)' },
+      { name: 'Bandstand',      x: 12,  z: 36,   note: 'vantage: near statue, exposed to the quarry (slopes)' },
+      { name: 'Water Tower',    x: -28, z: -26,  note: 'vantage: jump-only (crate → tower)' },
+      { name: 'Well Mound',     x: 12,  z: -60,  note: 'vantage: right in the road (slopes)' },
+      { name: 'Tool Shed',      x: 26,  z: 17,   note: 'kite loop' },
       { name: 'Fountain',       x: -8,  z: 7,    note: 'kite loop' },
+      { name: 'Hedge Wall',     x: 36,  z: -38,  note: 'kite loop' },
     ],
   },
-  // Spawn lanes — each one a different tactical problem. Wave packs reference these by key.
+  // Spawn points — each one a different tactical problem, each with two routes (A / B) to the statue.
+  // A route is a list of waypoints (`via`); zombies follow a flow field to each waypoint, then the statue
+  // field. Wave packs pick a spawn + route ('A', 'B' or 'split' = half each); omitted → rotates per wave.
   SPAWN_POINTS: {
-    longRoad: { x: -20,  z: -138, label: 'Orchard Road',   note: 'long and open: you see them coming', color: '#ffd23a' },
-    flank:    { x: 51,   z: -6,   label: 'Greenhouse Gap', note: 'short flank, ~15 s', color: '#ff5a3a' },
-    choke:    { x: -130, z: 30,   label: 'Garden Gate',    note: 'choke: packs bunch at the gate', color: '#5ad0ff' },
-    climb:    { x: -5,   z: 95,   label: 'Quarry Top',     note: 'climb: ramp down beside the cliffs', color: '#c07aff' },
+    longRoad: { x: 0, z: -205, label: 'Orchard Road', note: 'long and open: ~60 s, you see them coming', color: '#ffd23a',
+      routes: { A: { label: 'the road',        via: [[10, -140]] },
+                B: { label: 'over the ridge',  via: [[-26, -182], [-26, -137], [-26, -88]] } } },
+    flank:    { x: 66, z: -5, label: 'Greenhouse Gap', note: 'short flank, ~20 s', color: '#ff5a3a',
+      routes: { A: { label: 'north side',      via: [[54, -24]] },
+                B: { label: 'south side',      via: [[54, 15]] } } },
+    choke:    { x: -150, z: 20, label: 'West Gates', note: 'chokes: packs bunch in the wall gaps', color: '#5ad0ff',
+      routes: { A: { label: 'Garden Gate',     via: [[-82, 25], [-64, 25]] },
+                B: { label: 'Sluice Pass',     via: [[-82, -56], [-64, -56]] } } },
+    climb:    { x: 10, z: 150, label: 'Quarry Top', note: 'cliff lane: ramps down beside the quarry cliffs', color: '#c07aff',
+      routes: { A: { label: 'west ramp',       via: [[-30, 70], [-30, 36]] },
+                B: { label: 'east ramp',       via: [[55, 70], [55, 36]] } } },
   },
+  routeCycle: ['A', 'B', 'split'],  // auto route choice for packs without one: cycles per wave + pack index
   packSpread: 4,                // random scatter around the spawn point
   spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
   packDelayTighten: 0.04,       // each wave shortens the hidden pack timers by this fraction…
   packDelayMin: 0.65,           // …down to this multiplier
-  waveCountdown: 5,             // seconds of countdown before each wave (banner + spawn markers)
+  waveCountdown: 6,             // seconds of countdown before each wave (banner, beacons, ground arrows, HUD arrow)
   incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
+  skullTime: 20,                // the ghost skull marks where a pack spawned for this many seconds
+  markerArrowLength: 48,        // metres of each active route shown by ground arrows during the countdown
   maxParticles: 450,
 
-  // Waves as data. Each wave: { packs: [{ spawn, delay, zombies: { type: count } }], modifiers: [] }
+  // Waves as data. Each wave: { lanes?, packs: [{ spawn?, route?, delay, zombies: { type: count } }], modifiers: [] }
+  //   lanes     — optional: spawns this wave may use; packs without `spawn` take them in turn
   //   packs     — spawn in order; `delay` = hidden seconds after the previous pack (shrunk by packDelayTighten)
+  //   route     — 'A' | 'B' | 'split' (half the pack on each); omitted → CONFIG.routeCycle rotation
   //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
   // Lanes rotate between waves so no single spot covers everything.
   WAVES: [
-    { packs: [{ spawn: 'longRoad', zombies: { shambler: 8 } }, { spawn: 'longRoad', delay: 12, zombies: { shambler: 6 } }] },
-    { packs: [{ spawn: 'flank', zombies: { shambler: 6, sprinter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8 } }] },
-    { packs: [{ spawn: 'choke', zombies: { shambler: 10, plated: 2 } }, { spawn: 'choke', delay: 12, zombies: { shambler: 6, plated: 1 } }] },
-    { packs: [{ spawn: 'climb', zombies: { shambler: 8, spitter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8, spitter: 2, climber: 2 } }] },
-    { packs: [{ spawn: 'longRoad', zombies: { miniBoss: 1, shambler: 10 } }, { spawn: 'flank', delay: 14, zombies: { sprinter: 6, shambler: 4 } }] },
-    { packs: [
-      { spawn: 'choke', zombies: { shambler: 8, plated: 3 } },
-      { spawn: 'climb', delay: 10, zombies: { spitter: 4, shambler: 6 } },
-      { spawn: 'flank', delay: 10, zombies: { sprinter: 5, howler: 2 } },
+    { packs: [{ spawn: 'longRoad', route: 'A', zombies: { shambler: 8 } }, { spawn: 'longRoad', route: 'B', delay: 12, zombies: { shambler: 6 } }] },
+    { packs: [{ spawn: 'flank', route: 'split', zombies: { shambler: 6, sprinter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8 } }] },
+    { packs: [{ spawn: 'choke', route: 'A', zombies: { shambler: 10, plated: 2 } }, { spawn: 'choke', route: 'B', delay: 12, zombies: { shambler: 6, plated: 1 } }] },
+    { packs: [{ spawn: 'climb', route: 'split', zombies: { shambler: 8, spitter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8, spitter: 2, climber: 2 } }] },
+    { packs: [{ spawn: 'longRoad', route: 'A', zombies: { miniBoss: 1, shambler: 10 } }, { spawn: 'flank', delay: 14, zombies: { sprinter: 6, shambler: 4 } }] },
+    { lanes: ['choke', 'climb', 'flank'], packs: [
+      { zombies: { shambler: 8, plated: 3 } },
+      { delay: 10, zombies: { spitter: 4, shambler: 6 } },
+      { delay: 10, zombies: { sprinter: 5, howler: 2 } },
     ] },
     { packs: [
-      { spawn: 'longRoad', zombies: { shambler: 10, bomber: 2, banner: 1 } },
+      { spawn: 'longRoad', route: 'split', zombies: { shambler: 10, bomber: 2, banner: 1 } },
       { spawn: 'choke', delay: 10, zombies: { shambler: 8, bomber: 2, banner: 1, burrower: 3 } },
     ] },
     { packs: [
-      { spawn: 'climb', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
-      { spawn: 'flank', delay: 8, zombies: { shambler: 8, sprinter: 3, climber: 2, howler: 1 } },
-      { spawn: 'choke', delay: 8, zombies: { plated: 3, spitter: 3 } },
+      { spawn: 'climb', route: 'B', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
+      { spawn: 'flank', route: 'A', delay: 8, zombies: { shambler: 8, sprinter: 3, climber: 2, howler: 1 } },
+      { spawn: 'choke', route: 'split', delay: 8, zombies: { plated: 3, spitter: 3 } },
     ] },
     { packs: [
-      { spawn: 'longRoad', zombies: { shambler: 15, plated: 3, spitter: 3, banner: 1 } },
-      { spawn: 'flank', delay: 8, zombies: { sprinter: 6, bomber: 2 } },
-      { spawn: 'climb', delay: 8, zombies: { shambler: 10, spitter: 2, climber: 3, burrower: 3 } },
+      { spawn: 'longRoad', route: 'B', zombies: { shambler: 15, plated: 3, spitter: 3, banner: 1 } },
+      { spawn: 'flank', route: 'split', delay: 8, zombies: { sprinter: 6, bomber: 2 } },
+      { spawn: 'climb', route: 'A', delay: 8, zombies: { shambler: 10, spitter: 2, climber: 3, burrower: 3 } },
       { spawn: 'choke', delay: 8, zombies: { shambler: 8, plated: 3, bomber: 2, banner: 1 } },
     ] },
     { packs: [
-      { spawn: 'longRoad', zombies: { finalBoss: 1, shambler: 12, plated: 3 } },
-      { spawn: 'choke', delay: 10, zombies: { shambler: 10, spitter: 3, banner: 1 } },
+      { spawn: 'longRoad', route: 'A', zombies: { finalBoss: 1, shambler: 12, plated: 3 } },
+      { spawn: 'choke', route: 'split', delay: 10, zombies: { shambler: 10, spitter: 3, banner: 1 } },
       { spawn: 'flank', delay: 8, zombies: { sprinter: 8, bomber: 3, howler: 2, burrower: 3 } },
-      { spawn: 'climb', delay: 8, zombies: { shambler: 10, plated: 3, spitter: 2, banner: 1 } },
+      { spawn: 'climb', route: 'split', delay: 8, zombies: { shambler: 10, plated: 3, spitter: 2, banner: 1 } },
     ] },
   ],
 };
@@ -879,11 +922,79 @@ for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
   scene.add(disc, beacon);
   spawnMarkers[name] = { disc, beacon };
 }
-function showSpawnMarkers(names) {
+// Countdown markers for a wave's resolved packs: beacons on the spawns + ground arrows along each route used
+function showSpawnMarkers(packs) {
   for (const [name, m] of Object.entries(spawnMarkers)) {
-    const on = names.includes(name);
+    const on = packs.some(p => p.spawn === name);
     m.beacon.visible = on;
     m.disc.material.color.setHex(on ? 0xcc2222 : 0x552222);
+    for (const [key, arrows] of Object.entries(routeArrows(name)))
+      arrows.visible = packs.some(p => p.spawn === name && (p.route === key || p.route === 'split'));
+  }
+}
+// Ground arrows (flat chevrons) along the first CONFIG.markerArrowLength metres of a route, built on first use
+const chevronGeo = (() => {
+  const sh = new THREE.Shape();
+  sh.moveTo(0, 1.2); sh.lineTo(1.3, -0.6); sh.lineTo(0, -0.1); sh.lineTo(-1.3, -0.6); sh.closePath();
+  return new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);   // tip points to -z
+})();
+function routeArrows(name) {
+  const m = spawnMarkers[name];
+  if (m.arrows) return m.arrows;
+  m.arrows = {};
+  const sp = CONFIG.SPAWN_POINTS[name];
+  for (const [key, r] of Object.entries(sp.routes)) {
+    const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(sp.color), transparent: true, opacity: 0.85, depthWrite: false });
+    let walked = 0;
+    for (let i = 1; i < r.pts.length && walked < CONFIG.markerArrowLength; i++) {
+      const [x0, z0] = r.pts[i - 1], [x1, z1] = r.pts[i];
+      walked += Math.hypot(x1 - x0, z1 - z0);
+      if (i % 2) continue;   // one chevron every ~6 m
+      const c = new THREE.Mesh(chevronGeo, mat);
+      c.position.set(x1, heightAt(x1, z1) + 0.12, z1);
+      c.rotation.y = Math.atan2(-(x1 - x0), -(z1 - z0));
+      c.userData.phase = walked;
+      g.add(c);
+    }
+    g.visible = false;
+    scene.add(g);
+    m.arrows[key] = g;
+  }
+  return m.arrows;
+}
+// Chevrons pulse in a wave running toward the statue so the direction reads at a glance
+function animateMarkers(t) {
+  for (const m of Object.values(spawnMarkers)) for (const g of Object.values(m.arrows || {})) {
+    if (!g.visible) continue;
+    for (const c of g.children) c.scale.setScalar(1 + 0.35 * Math.max(0, Math.sin(t * 6 - c.userData.phase * 0.25)));
+  }
+}
+
+// Ghost skull: a floating primitive skull (always visible through walls) where a pack spawned
+const skulls = [];
+const skullMat = new THREE.MeshBasicMaterial({ color: 0xf4f0e6, transparent: true, opacity: 0.8, depthTest: false, depthWrite: false });
+const skullDark = new THREE.MeshBasicMaterial({ color: 0x1a1010, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+function spawnSkull(sp) {
+  const g = new THREE.Group();
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.renderOrder = mat === skullDark ? 11 : 10; g.add(m); return m; };
+  add(new THREE.SphereGeometry(1.2, 18, 14), skullMat, 0, 0.3, 0);                       // cranium
+  add(new THREE.BoxGeometry(1.3, 0.7, 1.0), skullMat, 0, -0.75, 0.25);                    // jaw
+  add(new THREE.SphereGeometry(0.32, 12, 8), skullDark, -0.45, 0.15, 1.0);                // eyes
+  add(new THREE.SphereGeometry(0.32, 12, 8), skullDark, 0.45, 0.15, 1.0);
+  add(new THREE.ConeGeometry(0.15, 0.3, 3), skullDark, 0, -0.3, 1.12).rotation.x = Math.PI;   // nose
+  for (let i = -1; i <= 1; i++) add(new THREE.BoxGeometry(0.12, 0.3, 0.1), skullDark, i * 0.32, -0.75, 0.76);   // teeth gaps
+  g.position.set(sp.x, sp.y + 7, sp.z);
+  scene.add(g);
+  skulls.push({ g, life: CONFIG.skullTime, baseY: sp.y + 7 });
+}
+function updateSkulls(dt, t) {
+  for (let i = skulls.length - 1; i >= 0; i--) {
+    const s = skulls[i];
+    s.life -= dt;
+    s.g.position.y = s.baseY + Math.sin(t * 2 + i) * 0.5;
+    s.g.rotation.y = Math.atan2(camera.position.x - s.g.position.x, camera.position.z - s.g.position.z);   // face the camera
+    s.g.scale.setScalar(2.2 * (0.6 + 0.4 * Math.min(1, s.life / 2)));   // shrinks over the last 2 s
+    if (s.life <= 0) { scene.remove(s.g); s.g.children.forEach(c => c.geometry.dispose()); skulls.splice(i, 1); }
   }
 }
 
@@ -926,7 +1037,9 @@ const NAV = (() => {
 // Dijkstra from a set of goal cells (binary heap). climb = Climbers' layer: cliff steps allowed but costly.
 function buildFlowField(goals, climb = false) {
   const { N, pass, DIRS, C } = NAV, edges = climb ? NAV.climb : pass;
-  const dist = new Float32Array(N * N).fill(Infinity);
+  // Float64 on purpose: with Float32, a stored distance rounded *up* makes `nd < dist[n]` true forever
+  // for the same nd, re-pushing cells endlessly (the heap explodes and the game freezes)
+  const dist = new Float64Array(N * N).fill(Infinity);
   const heapK = [], heapD = [];
   const push = (k, d) => {
     let i = heapK.length; heapK.push(k); heapD.push(d);
@@ -951,7 +1064,7 @@ function buildFlowField(goals, climb = false) {
   for (const g of goals) { dist[g] = 0; push(g, 0); }
   while (heapK.length) {
     const [k, d] = pop();
-    if (d > dist[k] + 1e-3) continue;   // stale heap entry (dist is float32, so compare loosely)
+    if (d > dist[k]) continue;   // stale heap entry
     // edges are symmetric enough (slope test is symmetric), so walk outward from goals
     for (let b = 0; b < 8; b++) {
       if (!(edges[k] & (1 << b))) continue;
@@ -1004,17 +1117,37 @@ function flowDir(field, x, z, out, climb = false) {
 // Walking distance to the statue from (x,z) (Infinity if unreachable)
 const statueDistance = (x, z) => STATUE_FIELD[NAV.cellOf(x, z)];
 
-// Trace a lane: follow the statue flow field from a spawn, return the polyline and its length
-function traceLane(sp) {
-  const pts = [[sp.x, sp.z]], d = new THREE.Vector3();
+// ---- Routes: every spawn has two (A / B). Each waypoint gets its own static flow field. ----
+// sp.routes[key].wps = [{ x, z, field, statueDist }]
+for (const sp of Object.values(CONFIG.SPAWN_POINTS))
+  for (const r of Object.values(sp.routes))
+    r.wps = r.via.map(([x, z]) => ({ x, z, field: buildFlowField(goalCells(x, z, 3)), statueDist: statueDistance(x, z) }));
+
+// Current route field for a walker at (x,z), skipping waypoints already reached or passed
+// (closer to the statue than the waypoint, e.g. after a chase). null = route done → statue field.
+function routeField(walker, x, z) {
+  const k = NAV.cellOf(x, z);
+  while (walker.route && walker.wp < walker.route.length) {
+    const w = walker.route[walker.wp];
+    if (isFinite(w.field[k]) && w.field[k] > MAP.routeReach && STATUE_FIELD[k] > w.statueDist - 4) return w.field;
+    walker.wp++;
+  }
+  return null;
+}
+
+// Trace a route: walk the waypoint fields then the statue field from a spawn; polyline + length
+function traceRoute(sp, route) {
+  const pts = [[sp.x, sp.z]], d = new THREE.Vector3(), walker = { route: route.wps, wp: 0 };
   let x = sp.x, z = sp.z, len = 0;
-  for (let i = 0; i < 2000 && flowDir(STATUE_FIELD, x, z, d); i++) {
+  for (let i = 0; i < 3000 && flowDir(routeField(walker, x, z) || STATUE_FIELD, x, z, d); i++) {
     x += d.x; z += d.z; len += 1;
     if (i % 3 === 0) pts.push([x, z]);
   }
   pts.push([0, 0]);
-  return { pts, len: len + Math.hypot(x, z) };
+  return { pts, len: len + Math.hypot(x, z) - S / 2 };
 }
+for (const sp of Object.values(CONFIG.SPAWN_POINTS))
+  for (const r of Object.values(sp.routes)) Object.assign(r, traceRoute(sp, r));
 
 // ---- Debug top-down map (M): tiers, props, lanes with walk times, landmarks, live zombies ----
 const debugMap = (() => {
@@ -1050,35 +1183,51 @@ const debugMap = (() => {
     b.globalAlpha = 1;
   }
   b.fillStyle = '#fff'; b.fillRect(...toPx(-S / 2, -S / 2), S * k, S * k);
-  // Lanes + walk times (shambler speed)
+  // Statue flow field: a small arrow every 8 m pointing downhill (where a zombie there would walk)
+  b.strokeStyle = 'rgba(255,255,255,0.35)'; b.lineWidth = 1;
+  const fd = new THREE.Vector3();
+  for (let z = -HALF + 6; z < HALF; z += 8) for (let x = -HALF + 6; x < HALF; x += 8) {
+    if (!isFinite(STATUE_FIELD[NAV.cellOf(x, z)]) || !flowDir(STATUE_FIELD, x, z, fd)) continue;
+    const [px, pz] = toPx(x, z), L = 6 * k, ex = px + fd.x * L, ez = pz + fd.z * L;
+    b.beginPath(); b.moveTo(px - fd.x * L * 0.3, pz - fd.z * L * 0.3); b.lineTo(ex, ez);
+    b.lineTo(ex - (fd.x + fd.z * 0.6) * 3, ez - (fd.z - fd.x * 0.6) * 3); b.stroke();
+  }
+  // Routes (A solid, B dashed) + walk times at Shambler speed
   const lanes = {};
   b.font = 'bold 12px Segoe UI'; b.textAlign = 'center';
   for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
-    const lane = traceLane(sp);
-    lanes[name] = { ...lane, seconds: lane.len / ZT.shambler.speed };
-    b.strokeStyle = sp.color; b.lineWidth = 3; b.setLineDash([8, 5]);
-    b.beginPath(); lane.pts.forEach((p, i) => i ? b.lineTo(...toPx(...p)) : b.moveTo(...toPx(...p))); b.stroke();
-    b.setLineDash([]);
+    const lines = [];
+    for (const [key, r] of Object.entries(sp.routes)) {
+      lanes[`${name}.${key}`] = { label: `${sp.label} ${key} (${r.label})`, len: r.len, seconds: r.len / ZT.shambler.speed };
+      b.strokeStyle = sp.color; b.lineWidth = 3; b.setLineDash(key === 'A' ? [] : [8, 5]);
+      b.beginPath(); r.pts.forEach((p, i) => i ? b.lineTo(...toPx(...p)) : b.moveTo(...toPx(...p))); b.stroke();
+      b.setLineDash([]);
+      for (const w of r.wps) { const [wx, wz] = toPx(w.x, w.z); b.fillStyle = sp.color; b.fillRect(wx - 3, wz - 3, 6, 6); }
+      lines.push(`${key}: ${Math.round(r.len)} m · ${(r.len / ZT.shambler.speed).toFixed(0)} s`);
+    }
     const [px, pz] = toPx(sp.x, sp.z);
     b.fillStyle = sp.color; b.beginPath(); b.arc(px, pz, 7, 0, 7); b.fill();
     b.fillStyle = '#fff';
-    b.fillText(`${sp.label}`, px, pz - 18);
-    b.fillText(`${Math.round(lane.len)} m · ${lanes[name].seconds.toFixed(0)} s`, px, pz - 5 + 22);
+    const below = pz < 60 ? 46 : 0;   // near the top edge: put the label under the dot
+    b.fillText(sp.label, px, pz - 30 + below);
+    lines.forEach((t, i) => b.fillText(t, px, pz - 17 + below + i * 13 + (i ? 27 : 0)));
   }
+  console.table(Object.fromEntries(Object.entries(lanes).map(([k2, l]) => [k2, { route: l.label, metres: Math.round(l.len), seconds: +l.seconds.toFixed(1) }])));
   b.font = '11px Segoe UI';
   for (const l of MAP.landmarks) {
     const [px, pz] = toPx(l.x, l.z);
     b.fillStyle = '#ffe14a'; b.beginPath(); b.arc(px, pz, 3.5, 0, 7); b.fill();
     b.fillStyle = '#fff'; b.fillText(l.name, px, pz - 7);
   }
-  b.textAlign = 'left'; b.fillStyle = 'rgba(0,0,0,0.6)'; b.fillRect(6, SIZE - 96, 250, 90);
+  b.textAlign = 'left'; b.fillStyle = 'rgba(0,0,0,0.6)'; b.fillRect(6, SIZE - 112, 270, 106);
   b.fillStyle = '#fff';
   ['DEBUG MAP (M)   K: spawn 100+ test horde',
    'grey = walkable (lighter = higher)',
    'red tint = unreachable for zombies',
    'black = blocked / cliff-locked',
-   'dashed = lane path · time at Shambler speed',
-   'green hedge / grey building block sight'].forEach((t, i) => b.fillText(t, 12, SIZE - 80 + i * 14));
+   'routes: A solid, B dashed · s at Shambler speed',
+   'white ticks = statue flow field direction',
+   'green hedge / grey building block sight'].forEach((t, i) => b.fillText(t, 12, SIZE - 96 + i * 14));
   return {
     canvas, lanes,
     get visible() { return canvas.style.display !== 'none'; },
@@ -1135,6 +1284,7 @@ function resetGame() {
   [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects, ...particles]
     .forEach(o => scene.remove(o.mesh));
   popups.forEach(p => p.el.remove());
+  skulls.forEach(s => s.life = 0);   // removed on the next updateSkulls
   zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
   state = {
     statueHp: CONFIG.statue.hp,
@@ -1144,7 +1294,7 @@ function resetGame() {
     waveIndex: 0,
     phase: 'countdown', // 'countdown' | 'active'
     waveTimer: 0,
-    spawnQueue: [],     // pending staggered spawns: { t, type, spawn }
+    spawnQueue: [],     // pending staggered spawns: { t, type, spawn, route, skull }
     distractions: [],   // { pos, time, radius } — zombies inside drop everything and go there
     yaw: 0, pitch: 0.2,
     over: false,
@@ -1274,10 +1424,11 @@ function makeZombieMesh(type) {
 }
 
 const randomLane = () => { const k = Object.keys(CONFIG.SPAWN_POINTS); return k[Math.floor(Math.random() * k.length)]; };
+const randomRoute = () => Math.random() < 0.5 ? 'A' : 'B';
 const randRange = ([a, b]) => a + Math.random() * (b - a);
 let nextZombieId = 1;
 
-function spawnZombie(type, spawnName = randomLane()) {
+function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
   const def = ZT[type], AI = CONFIG.AI;
   const sp = CONFIG.SPAWN_POINTS[spawnName];
   const { mesh, parts } = makeZombieMesh(type);
@@ -1306,6 +1457,7 @@ function spawnZombie(type, spawnName = randomLane()) {
     slot: null, kb: new THREE.Vector3(),
     stuck: { t: 0, x, z, strikes: 0 }, wantsMove: false, nudge: 0, nudgeDir: new THREE.Vector3(),
     climbing: false, buried: false,
+    route: sp.routes[routeKey].wps, wp: 0,   // waypoints to pass before heading for the statue (routeField)
     ai: {},                          // behavior-local state (lunge, scream, charge, phases…)
     buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
     stun: 0, flash: 0, glow: 0, glowColor: 0xff2000,
@@ -1320,7 +1472,18 @@ function spawnZombie(type, spawnName = randomLane()) {
 // Waves: countdown → staggered pack bursts → fight → next countdown
 // ---------------------------------------------------------------------
 const displayName = type => ZT[type].name || type[0].toUpperCase() + type.slice(1);
-const waveSpawnNames = wave => [...new Set(wave.packs.map(p => p.spawn))];
+
+// Resolve a wave's packs to concrete { spawn, route, delay, zombies }:
+//   spawn - pack.spawn, else the wave's `lanes` taken in turn (offset by wave index so they rotate)
+//   route - pack.route, else CONFIG.routeCycle rotated by wave + pack index (A / B / split)
+function resolvePacks(index) {
+  const wave = WAVES[index], lanes = wave.lanes || Object.keys(CONFIG.SPAWN_POINTS), cyc = CONFIG.routeCycle;
+  return wave.packs.map((p, i) => ({
+    ...p,
+    spawn: p.spawn || lanes[(i + index) % lanes.length],
+    route: p.route || cyc[(index + i) % cyc.length],
+  }));
+}
 
 // "Incoming" preview: bosses first, then the most numerous types across all packs
 function incomingPreview(wave) {
@@ -1337,7 +1500,8 @@ function beginCountdown(index) {
   state.waveIndex = index;
   state.phase = 'countdown';
   state.waveTimer = CONFIG.waveCountdown;
-  showSpawnMarkers(waveSpawnNames(WAVES[index]));
+  state.packs = resolvePacks(index);
+  showSpawnMarkers(state.packs);
   document.getElementById('bannerTitle').textContent = `Wave ${index + 1}`;
   document.getElementById('bannerSub').textContent = `Incoming: ${incomingPreview(WAVES[index])}`;
 }
@@ -1350,17 +1514,37 @@ function startWave(index) {
   // Each pack starts `delay` seconds after the previous one (hidden from the player), scaled down on later waves
   const tighten = Math.max(CONFIG.packDelayMin, 1 - CONFIG.packDelayTighten * index);
   let packStart = 0;
-  for (const pack of WAVES[index].packs) {
+  for (const pack of state.packs) {
     packStart += (pack.delay || 0) * tighten;
     const list = [];
     for (const [type, n] of Object.entries(pack.zombies)) for (let i = 0; i < n; i++) list.push(type);
     list.sort(() => Math.random() - 0.5);
-    list.forEach((type, i) => state.spawnQueue.push({ t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn }));
+    // 'split' alternates A/B through the shuffled list, so each half gets a fair mix; the first one drops the skull
+    list.forEach((type, i) => state.spawnQueue.push({
+      t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn, skull: i === 0,
+      route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route,
+    }));
   }
   // (Future: apply WAVES[index].modifiers here for special waves.)
 }
 
-function setBanner(visible) { document.getElementById('banner').style.display = visible ? 'block' : 'none'; }
+function setBanner(visible) {
+  document.getElementById('banner').style.display = visible ? 'block' : 'none';
+  if (!visible) document.getElementById('laneArrow').style.display = 'none';
+}
+// HUD arrow during the countdown: points (relative to where the camera looks) at the first pack's spawn
+function updateLaneArrow() {
+  const el = document.getElementById('laneArrow'), pack = state.packs && state.packs[0];
+  if (!pack) { el.style.display = 'none'; return; }
+  const sp = CONFIG.SPAWN_POINTS[pack.spawn], f = yawForward(), p = playerMesh.position;
+  const dx = sp.x - p.x, dz = sp.z - p.z;
+  const ang = Math.atan2(dx * -f.z + dz * f.x, dx * f.x + dz * f.z);   // + = to the right of the view
+  el.style.display = 'block';
+  el.querySelector('.arrow').style.transform = `rotate(${ang}rad)`;
+  el.querySelector('.arrow').style.color = sp.color;
+  const route = pack.route === 'split' ? 'split A + B' : `${pack.route}: ${sp.routes[pack.route].label}`;
+  el.querySelector('.label').textContent = `${sp.label} (${route}) · ${Math.round(Math.hypot(dx, dz))} m`;
+}
 
 // =====================================================================
 // Input
@@ -2232,7 +2416,7 @@ function fieldDir(z, toHero, goal, out) {
   const pos = z.mesh.position, climb = !!z.def.canClimb;
   let field;
   if (toHero) { field = climb ? playerClimbField : playerField; needField[climb ? 'heroClimb' : 'hero'] = true; }
-  else field = climb ? CLIMB_STATUE_FIELD : STATUE_FIELD;
+  else field = routeField(z, pos.x, pos.z) || (climb ? CLIMB_STATUE_FIELD : STATUE_FIELD);   // route waypoints first
   if (field && flowDir(field, pos.x, pos.z, out, climb)) return out;
   return steerDirect(goal, pos, out);
 }
@@ -2953,13 +3137,17 @@ function updateWaves(dt) {
     state.waveTimer -= dt;
     setBanner(true);
     document.getElementById('bannerCount').textContent = `Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
+    updateLaneArrow();
     if (state.waveTimer <= 0) startWave(state.waveIndex);
     return;
   }
   // Active: release queued spawns whose time has come
   for (const s of state.spawnQueue) {
     s.t -= dt;
-    if (s.t <= 0) spawnZombie(s.type, s.spawn);
+    if (s.t <= 0) {
+      spawnZombie(s.type, s.spawn, s.route);
+      if (s.skull) spawnSkull(CONFIG.SPAWN_POINTS[s.spawn]);
+    }
   }
   state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
   // Wave cleared: win after the last wave, otherwise count down to the next
@@ -3008,7 +3196,12 @@ function updateCamera(dt) {
 const hud = id => document.getElementById(id);
 const crossTicks = { t: document.querySelector('#crosshair .t'), b: document.querySelector('#crosshair .b'),
                      l: document.querySelector('#crosshair .l'), r: document.querySelector('#crosshair .r') };
+hud('version').textContent = VERSION;
+let fpsShownAt = 0;
 function updateHud(dt) {
+  // FPS readout, refreshed a few times a second so it's readable
+  const now = performance.now();
+  if (now - fpsShownAt > 250) { fpsShownAt = now; hud('fps').textContent = `${Math.round(fpsAvg)} FPS`; }
   hud('waveText').textContent = `Wave ${state.waveIndex + 1} / ${WAVES.length}`;
   hud('remainingText').textContent =
     state.phase === 'active' ? `Zombies remaining: ${zombies.length + state.spawnQueue.length}` : '';
@@ -3078,6 +3271,8 @@ function loop() {
     updateBarrages(dt);
     updateEnemyProjectiles(dt);
     updateEffects(dt);
+    updateSkulls(dt, state.anim.t);
+    animateMarkers(state.anim.t);
     updateParticles(dt);
     updateWaves(dt);
     animateCorn(dt);

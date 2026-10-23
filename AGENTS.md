@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.5.0)
+## Current state (v1.6.0)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -35,26 +35,36 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 - Bosses: `miniBoss` Brute (`brute`: closest target, never gives up, telegraphed charge → dazed if dodged);
   `finalBoss` Zombie King (`overlord`: phases at 66/33% change targeting + call reinforcements; phase 2 armor
   only heavy hits break, hp locked; phase 3 enraged + charges). HUD boss bar shows armor.
-- Map (`CONFIG.MAP`, grey-box, 300×300 m): terrain = bowl (sunken Statue Court, tier 0) + `plateaus`
-  (rect/circle, `edge` ≈1 = cliff, 4+ = slope) + `ramps`, sampled into a 1 m heightfield (`heightAt`).
-  `obstacles` (cover / hedge / building / platform) sit on the terrain; hedges+buildings block line of sight.
-  Queries: `groundAt`, `solidAt`, `losClear`, `raycastWorld`, `pushOut`. Landmark names (`landmarks`) are theming anchors.
+- Map (`CONFIG.MAP`, grey-box, 440×440 m): terrain = bowl (sunken Statue Court, tier 0) + mid ring (tier 3) walled by
+  cliffs (tier 14) + `plateaus` (rect/circle, `edge` ≈1 = cliff, 4+ = slope) + smooth `ramps` (high end inside the
+  plateau), sampled into a 1 m heightfield (`heightAt`). `obstacles` (cover / hedge / building / platform) sit on the
+  terrain; hedges+buildings block line of sight. Queries: `groundAt`, `solidAt`, `losClear`, `raycastWorld`, `pushOut`.
 - Pathing: 2 m nav grid (`NAV`, slope ≤ `maxSlope`, obstacles inflated; `NAV.climb` = every step, cliffs cost
   `climbCost`). `STATUE_FIELD` / `CLIMB_STATUE_FIELD` are static Dijkstra flow fields; hero fields (ground/climb)
   are rebuilt only while someone needs them. Steering = flow dir + separation + obstacle feelers + ±10% speed.
-  The map is static (no destructible cover), so fields never need runtime rebuilds.
+  The map is static, so fields never need runtime rebuilds.
+- Spawns + routes (`CONFIG.SPAWN_POINTS`): each spawn has two routes `A`/`B` = waypoint lists (`via`); every waypoint
+  has its own static flow field. Zombies carry `z.route`/`z.wp`; `routeField()` returns the current waypoint field
+  (skips reached/passed ones, so a chase never sends them back) and `fieldDir` falls back to the statue field.
+  `traceRoute` gives each route's polyline + length. Walk times (Shambler, measured): Orchard Road A 59 s / B over
+  Windmill Ridge 63 s; Greenhouse Gap A 21 s / B 20 s; West Gates A Garden Gate 45 s / B Sluice Pass 57 s;
+  Quarry Top (cliff lane) A west ramp 49 s / B east ramp 56 s.
+- Vantages: Windmill Ridge (far, ramps N+S), Rampart (west wall top, inside ramp), Bandstand (near, exposed),
+  Water Tower (jump-only), Well Mound (in the road). Kite loops: Fountain, Tool Shed, Hedge Wall.
 - Aggro: acquire with LOS within aggroRange, drop past deaggroRange / 4 s unseen (search last known pos) /
   10 s chase without a hit; retarget + re-aggro cooldowns; pack alert (0.2–0.8 s delay); unreachable hero is
   ignored except by Spitters/Climbers; hero death drops all aggro. Distractions (`distractAt`) beat all but stun.
 - Attack slots: `STATUE_SLOTS` ring on the statue faces (extras queue), `HERO_SLOTS` ring to surround the hero.
-- Lanes (`CONFIG.SPAWN_POINTS`): longRoad (Orchard Road, ~44 s), flank (Greenhouse Gap, ~17 s),
-  choke (Garden Gate), climb (Quarry Top, ramp beside cliffs). Vantages: Windmill Ridge (far), Bandstand (near,
-  exposed), Water Tower (jump-only), Well Mound (in the lane). Kite loops: Fountain, Tool Shed, hedges.
-- Waves: packs spawn in order; `delay` is a hidden timer after the previous pack, shrunk per wave by
-  `packDelayTighten` (floor `packDelayMin`). Lanes rotate per wave.
+- Waves: `resolvePacks` turns each pack into { spawn, route }: `spawn` or the wave's `lanes` in turn; `route`
+  'A' | 'B' | 'split' (alternates through the pack) or `CONFIG.routeCycle` rotation. Packs spawn in order; `delay` is
+  a hidden timer shrunk per wave by `packDelayTighten` (floor `packDelayMin`).
+- Telegraphs: countdown shows spawn beacons + pulsing ground chevrons along each active route + HUD `#laneArrow`
+  to the first pack's spawn; each pack drops a primitive ghost skull (`spawnSkull`, `skullTime` 20 s) at its spawn.
 - HUD: wave, zombies remaining (alive + queued), boss bar, statue/player HP.
+- HUD corners: FPS counter top-right, `VERSION` bottom-right.
+- Nav fields are Float64 (`buildFlowField`): Float32 rounding made Dijkstra re-push cells forever (freeze).
 - Debug: keys 1–9 spawn `debugPackSize` of a type at a random lane; N next wave; B Brute; V Zombie King; G test distraction at aim point; M top-down map
-  (tiers, lanes + walk times, landmarks, live zombies); K spawns a 120-zombie stress horde. `?autoplay` runs
+  (tiers, both routes per spawn + walk times, statue flow-field arrows, landmarks, live zombies; times also console.table); K spawns a 120-zombie stress horde. `?autoplay` runs
   without pointer lock (headless playtests).
   `window.__game` exposes state/corn/camera/CONFIG/explodeAt for console inspection.
 
@@ -73,3 +83,5 @@ If considerable changes are made (new systems, new direction, structural changes
 reflect them. Keep it compact: replace outdated info rather than appending history.
 
 ## Always commit tag push to GitHub
+Just before committing, bump `VERSION` at the top of the `index.html` script (shown bottom-right in game) to the
+new tag, and update the version in "Current state" above. Then commit, tag that version, push (with tags).
