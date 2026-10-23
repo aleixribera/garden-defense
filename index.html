@@ -92,7 +92,6 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 // CONFIG — every tuning number lives here
 // =====================================================================
 const CONFIG = {
-  arenaSize: 100,              // ground plane width/depth
   statue: { hp: 1000, size: 4 },
   // Kernel Corn (the hero). Collision is still a capsule of radius/height; the model is cosmetic.
   player: {
@@ -190,35 +189,133 @@ const CONFIG = {
     },
   },
   debugPackSize: 4,             // zombies spawned per debug key press (keys 1–6)
-  // Named spawn points on the arena edge. Wave packs reference these by name.
+  // -------------------------------------------------------------------
+  // THE MAP — grey-box layout. x = east, z = south (north is -z). Statue at the origin.
+  // Three rings: sunken Statue Court (tier 0) → mid ring (tier 3) → outer lane approaches.
+  // Heights are absolute metres. Terrain = bowl + plateaus + ramps, sampled into a heightfield.
+  // -------------------------------------------------------------------
+  MAP: {
+    size: 300,                   // world is size × size metres, centered on the statue
+    cell: 2,                     // nav grid cell size (flow fields)
+    tiers: { court: 0, mid: 3, high: 8, wall: 12 },
+    bowl: { floorRadius: 14, rimRadius: 26 },   // flat court floor, then a smooth slope up to the mid tier
+    maxSlope: 0.7,               // rise per metre zombies can walk (ramps yes, cliffs no)
+    navClearance: 1.0,           // obstacles are inflated by this for the nav grid
+    stepUp: 0.45,                // the hero walks up ledges this tall without jumping
+    // Raised terrain. rect {x,z,w,d} (center + size) or circle {x,z,r}; edge = blend width (≈1 cliff, 4+ slope)
+    plateaus: [
+      { name: 'Windmill Ridge',    x: -71, z: -104, w: 158, d: 16,  h: 8,  edge: 1 },
+      { name: 'West Wall (north)', x: -69, z: -45,  w: 12,  d: 134, h: 12, edge: 1 },
+      { name: 'West Wall (south)', x: -69, z: 90,   w: 12,  d: 120, h: 12, edge: 1 },
+      { name: 'East Cliffs',       x: 110, z: -45,  w: 80,  d: 210, h: 12, edge: 1 },
+      { name: 'Quarry Top',        x: 43.5, z: 105, w: 213, d: 90,  h: 8,  edge: 1 },
+      // Outer walls that close off dead corners (nothing spawns or paths there)
+      { name: 'SW Rocks',          x: -112.5, z: 105, w: 75, d: 90, h: 12, edge: 1 },
+      { name: 'NW Rocks',          x: -105, z: -131, w: 90, d: 38, h: 12, edge: 1 },
+      { name: 'Well Mound',        x: 24,  z: -62,  r: 4,  h: 5.5, edge: 6 },
+      { name: 'Bandstand',         x: 12,  z: 36,   r: 4,  h: 4.6, edge: 4 },
+    ],
+    // Straight ramps between tiers: from [x, z, h] to [x, z, h], width in metres
+    ramps: [
+      { name: 'Windmill Ramp', from: [-44, -99, 8], to: [-44, -78, 3], width: 7 },
+      { name: 'Quarry Ramp',   from: [-30, 63, 8],  to: [-30, 42, 3],  width: 8 },
+    ],
+    // Solid props, standing on the terrain at their center. box {w,d} or cyl {r}; h above ground.
+    //   hedge/building block line of sight (break aggro, kite loops); cover is low (stops globs, not sight);
+    //   any top can be stood on if you get up there (platforms are meant to be jumped onto).
+    obstacles: [
+      // Statue Court: a little cover and a kite loop
+      { name: 'Fountain',      kind: 'cover',    x: -8,  z: 7,     r: 2.6, h: 1.1 },
+      { name: 'North Planter', kind: 'cover',    x: 5,   z: -9,    w: 5,   d: 1.4, h: 1.0 },
+      { name: 'East Planter',  kind: 'cover',    x: 9,   z: 5,     w: 1.4, d: 5,   h: 1.0 },
+      // Mid ring: hiding hedges, the shed loop, the jump-only tower
+      { name: 'Tool Shed',     kind: 'building', x: 25,  z: 16,    w: 8,   d: 6,   h: 4.2 },
+      { name: 'Long Hedge',    kind: 'hedge',    x: 36,  z: -36,   w: 2.5, d: 20,  h: 3.2 },
+      { name: 'Rose Hedge',    kind: 'hedge',    x: -36, z: 12,    w: 2.5, d: 16,  h: 3.2 },
+      { name: 'Arc Hedge',     kind: 'hedge',    x: -6,  z: -38,   w: 16,  d: 2.5, h: 3.2 },
+      { name: 'Water Tower',   kind: 'platform', x: -28, z: -26,   w: 4,   d: 4,   h: 2.6 },
+      { name: 'Tower Crate',   kind: 'platform', x: -25, z: -23.2, w: 2,   d: 2,   h: 1.25 },
+      // Short flank: the greenhouse hides the spawn
+      { name: 'Greenhouse',    kind: 'building', x: 42,  z: -6,    w: 6,   d: 18,  h: 5 },
+      // Long road: low wall on the mound in the lane
+      { name: 'Mound Wall',    kind: 'cover',    x: 24,  z: -64.5, w: 4,   d: 0.8, h: 1.0 },
+      // Windmill Ridge: landmark + low cover looking down the road
+      { name: 'Windmill',      kind: 'building', x: -16, z: -106,  r: 2.5, h: 11 },
+      { name: 'Ridge Cover E', kind: 'cover',    x: 6.5, z: -104,  w: 0.8, d: 6,   h: 1.1 },
+      { name: 'Ridge Cover S', kind: 'cover',    x: -2,  z: -97.4, w: 5,   d: 0.8, h: 1.1 },
+      // Garden Gate: posts squeeze the gap, a low wall inside faces it
+      { name: 'Gate Post N',   kind: 'building', x: -62.5, z: 21.5, r: 0.9, h: 5 },
+      { name: 'Gate Post S',   kind: 'building', x: -62.5, z: 30.5, r: 0.9, h: 5 },
+      { name: 'Gate Cover',    kind: 'cover',    x: -48, z: 18,    w: 1,   d: 5,   h: 1.1 },
+      // Bandstand rails (open toward the quarry cliffs)
+      { name: 'Bandstand Rail N', kind: 'cover', x: 12,  z: 32.6,  w: 5,   d: 0.6, h: 1.0 },
+      { name: 'Bandstand Rail W', kind: 'cover', x: 8.4, z: 36,    w: 0.6, d: 3,   h: 1.0 },
+    ],
+    // Named spots (theming anchors). Shown in the debug map (M).
+    landmarks: [
+      { name: 'Statue Court',   x: 0,   z: 0,    note: 'sunken, open, a little cover' },
+      { name: 'Windmill Ridge', x: -2,  z: -104, note: 'vantage: sees Orchard Road, far from statue' },
+      { name: 'Bandstand',      x: 12,  z: 36,   note: 'vantage: near statue, open to the quarry' },
+      { name: 'Water Tower',    x: -28, z: -26,  note: 'vantage: jump-only' },
+      { name: 'Well Mound',     x: 24,  z: -62,  note: 'vantage: right in the lane' },
+      { name: 'Tool Shed',      x: 25,  z: 16,   note: 'kite loop' },
+      { name: 'Fountain',       x: -8,  z: 7,    note: 'kite loop' },
+    ],
+  },
+  // Aggro leash: zombies only notice the hero with line of sight, and give up the chase when
+  // they lose sight for loseSightTime, or get pulled maxChase metres from where the chase began.
+  leash: { loseSightTime: 2.5, maxChase: 35, cooldown: 4, losInterval: 0.2, playerFieldInterval: 0.4 },
+  // Spawn lanes — each one a different tactical problem. Wave packs reference these by key.
   SPAWN_POINTS: {
-    north: { x: 0, z: -45 },
-    east:  { x: 45, z: 10 },
-    west:  { x: -45, z: 10 },
+    longRoad: { x: -20,  z: -138, label: 'Orchard Road',   note: 'long and open: you see them coming', color: '#ffd23a' },
+    flank:    { x: 51,   z: -6,   label: 'Greenhouse Gap', note: 'short flank, ~15 s', color: '#ff5a3a' },
+    choke:    { x: -130, z: 30,   label: 'Garden Gate',    note: 'choke: packs bunch at the gate', color: '#5ad0ff' },
+    climb:    { x: -5,   z: 95,   label: 'Quarry Top',     note: 'climb: ramp down beside the cliffs', color: '#c07aff' },
   },
   packSpread: 4,                // random scatter around the spawn point
   spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
+  packDelayTighten: 0.04,       // each wave shortens the hidden pack timers by this fraction…
+  packDelayMin: 0.65,           // …down to this multiplier
   waveCountdown: 5,             // seconds of countdown before each wave (banner + spawn markers)
   incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
   maxParticles: 450,
 
-  // Waves as data. Each wave: { packs: [{ spawn, zombies: { type: count } }], modifiers: [] }
-  //   packs     — all spawn at once at the start of the wave, each at its own spawn point
+  // Waves as data. Each wave: { packs: [{ spawn, delay, zombies: { type: count } }], modifiers: [] }
+  //   packs     — spawn in order; `delay` = hidden seconds after the previous pack (shrunk by packDelayTighten)
   //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
+  // Lanes rotate between waves so no single spot covers everything.
   WAVES: [
-    { packs: [{ spawn: 'north', zombies: { shambler: 10 } }] },
-    { packs: [{ spawn: 'east',  zombies: { shambler: 12, sprinter: 4 } }] },
-    { packs: [{ spawn: 'west',  zombies: { shambler: 10, plated: 3 } }] },
-    { packs: [{ spawn: 'north', zombies: { shambler: 12, spitter: 4 } }] },
-    { packs: [{ spawn: 'north', zombies: { miniBoss: 1, shambler: 15, sprinter: 4 } }] },
-    { packs: [{ spawn: 'east',  zombies: { shambler: 10, sprinter: 6, plated: 4, spitter: 3 } }] },
-    { packs: [{ spawn: 'west',  zombies: { shambler: 12, bomber: 4, banner: 2 } }] },
+    { packs: [{ spawn: 'longRoad', zombies: { shambler: 8 } }, { spawn: 'longRoad', delay: 12, zombies: { shambler: 6 } }] },
+    { packs: [{ spawn: 'flank', zombies: { shambler: 6, sprinter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8 } }] },
+    { packs: [{ spawn: 'choke', zombies: { shambler: 10, plated: 2 } }, { spawn: 'choke', delay: 12, zombies: { shambler: 6, plated: 1 } }] },
+    { packs: [{ spawn: 'climb', zombies: { shambler: 8, spitter: 3 } }, { spawn: 'longRoad', delay: 10, zombies: { shambler: 8, spitter: 2 } }] },
+    { packs: [{ spawn: 'longRoad', zombies: { miniBoss: 1, shambler: 10 } }, { spawn: 'flank', delay: 14, zombies: { sprinter: 6, shambler: 4 } }] },
     { packs: [
-      { spawn: 'east', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
-      { spawn: 'west', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
+      { spawn: 'choke', zombies: { shambler: 8, plated: 3 } },
+      { spawn: 'climb', delay: 10, zombies: { spitter: 4, shambler: 6 } },
+      { spawn: 'flank', delay: 10, zombies: { sprinter: 5 } },
     ] },
-    { packs: [{ spawn: 'north', zombies: { shambler: 25, sprinter: 8, plated: 5, spitter: 5, bomber: 4, banner: 2 } }] },
-    { packs: [{ spawn: 'north', zombies: { finalBoss: 1, shambler: 20, sprinter: 8, plated: 6, spitter: 4, bomber: 3, banner: 2 } }] },
+    { packs: [
+      { spawn: 'longRoad', zombies: { shambler: 10, bomber: 2, banner: 1 } },
+      { spawn: 'choke', delay: 10, zombies: { shambler: 8, bomber: 2, banner: 1 } },
+    ] },
+    { packs: [
+      { spawn: 'climb', zombies: { shambler: 10, sprinter: 3, plated: 2, banner: 1 } },
+      { spawn: 'flank', delay: 8, zombies: { shambler: 8, sprinter: 3 } },
+      { spawn: 'choke', delay: 8, zombies: { plated: 3, spitter: 3 } },
+    ] },
+    { packs: [
+      { spawn: 'longRoad', zombies: { shambler: 15, plated: 3, spitter: 3, banner: 1 } },
+      { spawn: 'flank', delay: 8, zombies: { sprinter: 6, bomber: 2 } },
+      { spawn: 'climb', delay: 8, zombies: { shambler: 10, spitter: 2 } },
+      { spawn: 'choke', delay: 8, zombies: { shambler: 8, plated: 3, bomber: 2, banner: 1 } },
+    ] },
+    { packs: [
+      { spawn: 'longRoad', zombies: { finalBoss: 1, shambler: 12, plated: 3 } },
+      { spawn: 'choke', delay: 10, zombies: { shambler: 10, spitter: 3, banner: 1 } },
+      { spawn: 'flank', delay: 8, zombies: { sprinter: 8, bomber: 3 } },
+      { spawn: 'climb', delay: 8, zombies: { shambler: 10, plated: 3, spitter: 2, banner: 1 } },
+    ] },
   ],
 };
 const WAVES = CONFIG.WAVES;
@@ -242,8 +339,8 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fd0f0);
-scene.fog = new THREE.Fog(0x8fd0f0, 70, 190);
-const camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, innerWidth / innerHeight, 0.1, 500);
+scene.fog = new THREE.Fog(0x8fd0f0, 90, 260);
+const camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, innerWidth / innerHeight, 0.1, 700);
 
 // Soft studio reflections for the hero's PBR materials (zombies use Lambert and ignore it)
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -265,36 +362,6 @@ scene.add(rimLight);
 // Muzzle flash light, moved to whichever cob just fired
 const muzzleLight = new THREE.PointLight(0xffc860, 0, 7, 2);
 scene.add(muzzleLight);
-
-// Ground
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(CONFIG.arenaSize, CONFIG.arenaSize),
-  new THREE.MeshLambertMaterial({ color: 0x4a7a2c })
-);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-// Spawn point markers: a dim disc each, plus a tall red beacon shown when that point is about to be used
-const spawnMarkers = {};
-for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), new THREE.MeshLambertMaterial({ color: 0x552222 }));
-  disc.position.set(sp.x, 0.05, sp.z);
-  disc.receiveShadow = true;
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 30, 12),
-    new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.5, depthWrite: false }));
-  beacon.position.set(sp.x, 15, sp.z);
-  beacon.visible = false;
-  scene.add(disc, beacon);
-  spawnMarkers[name] = { disc, beacon };
-}
-function showSpawnMarkers(names) {
-  for (const [name, m] of Object.entries(spawnMarkers)) {
-    const on = names.includes(name);
-    m.beacon.visible = on;
-    m.disc.material.color.setHex(on ? 0xcc2222 : 0x552222);
-  }
-}
 
 // Statue (box) with a floating health bar
 const S = CONFIG.statue.size;
@@ -599,6 +666,377 @@ const butterMat = new THREE.MeshStandardMaterial({ color: 0xffe07a, roughness: 0
 const butterGeo = new THREE.BoxGeometry(1.0, 0.34, 0.66);
 const FWD_Z = new THREE.Vector3(0, 0, 1);
 
+// =====================================================================
+// World — terrain heightfield, obstacles, collision queries, nav grid
+// =====================================================================
+const MAP = CONFIG.MAP;
+const HALF = MAP.size / 2;
+const smooth01 = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+
+// 1 inside a plateau, 0 outside, smooth across its edge band
+function plateauMask(f, x, z) {
+  const out = f.r !== undefined
+    ? Math.hypot(x - f.x, z - f.z) - f.r
+    : Math.max(Math.abs(x - f.x) - f.w / 2, Math.abs(z - f.z) - f.d / 2);
+  return 1 - smooth01(out / f.edge);
+}
+// Analytic terrain: bowl around the statue, raised plateaus, ramps between tiers
+function terrainHeight(x, z) {
+  const B = MAP.bowl;
+  let h = MAP.tiers.mid * smooth01((Math.hypot(x, z) - B.floorRadius) / (B.rimRadius - B.floorRadius));
+  for (const p of MAP.plateaus) {
+    const m = plateauMask(p, x, z);
+    if (m > 0) h = Math.max(h, h + (p.h - h) * m);
+  }
+  for (const r of MAP.ramps) {
+    const [x0, z0, h0] = r.from, [x1, z1, h1] = r.to;
+    const dx = x1 - x0, dz = z1 - z0, len2 = dx * dx + dz * dz;
+    const t = ((x - x0) * dx + (z - z0) * dz) / len2;
+    if (t < 0 || t > 1) continue;
+    const side = Math.abs((x - x0) * dz - (z - z0) * dx) / Math.sqrt(len2);
+    if (side <= r.width / 2) h = Math.max(h, h0 + (h1 - h0) * t);
+  }
+  return h;
+}
+// Sample once into a 1 m grid; heightAt() is a cheap bilinear lookup
+const HRES = MAP.size + 1;
+const HGRID = new Float32Array(HRES * HRES);
+for (let j = 0; j < HRES; j++) for (let i = 0; i < HRES; i++) HGRID[j * HRES + i] = terrainHeight(i - HALF, j - HALF);
+function heightAt(x, z) {
+  const fx = THREE.MathUtils.clamp(x + HALF, 0, MAP.size - 0.001), fz = THREE.MathUtils.clamp(z + HALF, 0, MAP.size - 0.001);
+  const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j, k = j * HRES + i;
+  return (HGRID[k] * (1 - u) + HGRID[k + 1] * u) * (1 - v) + (HGRID[k + HRES] * (1 - u) + HGRID[k + HRES + 1] * u) * v;
+}
+
+// Obstacles: resolve their base on the terrain, precompute top and LOS flag
+const OBSTACLES = MAP.obstacles.map(o => {
+  const base = heightAt(o.x, o.z);
+  return { ...o, base, top: base + o.h, blocksLOS: o.kind === 'hedge' || o.kind === 'building' || o.h >= 2 };
+});
+// Is (x,z) inside the footprint of o, grown by `pad`?
+function inFootprint(o, x, z, pad = 0) {
+  if (o.r !== undefined) return Math.hypot(x - o.x, z - o.z) < o.r + pad;
+  return Math.abs(x - o.x) < o.w / 2 + pad && Math.abs(z - o.z) < o.d / 2 + pad;
+}
+// Push a circle (x,z,radius) out of o's footprint; returns the corrected [x, z] or null if not touching
+function pushOut(o, x, z, rad) {
+  if (o.r !== undefined) {
+    const dx = x - o.x, dz = z - o.z, d = Math.hypot(dx, dz), min = o.r + rad;
+    if (d >= min) return null;
+    const k = d > 1e-4 ? min / d : 0;
+    return d > 1e-4 ? [o.x + dx * k, o.z + dz * k] : [o.x + min, z];
+  }
+  const cx = THREE.MathUtils.clamp(x, o.x - o.w / 2, o.x + o.w / 2), cz = THREE.MathUtils.clamp(z, o.z - o.d / 2, o.z + o.d / 2);
+  const dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz);
+  if (d >= rad) return null;
+  if (d > 1e-4) return [cx + dx / d * rad, cz + dz / d * rad];
+  // center inside the box: exit through the nearest face
+  const ex = o.w / 2 - Math.abs(x - o.x), ez = o.d / 2 - Math.abs(z - o.z);
+  return ex < ez ? [o.x + Math.sign(x - o.x || 1) * (o.w / 2 + rad), z] : [x, o.z + Math.sign(z - o.z || 1) * (o.d / 2 + rad)];
+}
+// Highest surface under (x,z) that someone with feet at feetY can stand on (terrain or a prop top)
+function groundAt(x, z, feetY = Infinity, rad = 0) {
+  let h = heightAt(x, z);
+  for (const o of OBSTACLES) if (o.top > h && o.top <= feetY + MAP.stepUp && inFootprint(o, x, z, rad * 0.5)) h = o.top;
+  return h;
+}
+// Point is inside terrain or a solid prop (projectiles, camera)
+function solidAt(p, pad = 0) {
+  if (p.y < heightAt(p.x, p.z) + pad) return true;
+  for (const o of OBSTACLES) if (p.y < o.top + pad && p.y > o.base - 1 && inFootprint(o, p.x, p.z, pad)) return true;
+  return hitsStatue(p, pad);
+}
+// Line of sight between two points: terrain and tall props (hedges, buildings) block it
+function losClear(a, b) {
+  const dist = a.distanceTo(b), n = Math.ceil(dist / 1.0);
+  for (let s = 1; s < n; s++) {
+    const t = s / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t;
+    if (y < heightAt(x, z)) return false;
+    for (const o of OBSTACLES) if (o.blocksLOS && y < o.top && inFootprint(o, x, z)) return false;
+  }
+  return true;
+}
+// March a ray until it enters something solid; returns distance or maxT
+function raycastWorld(o, d, maxT, minT = 0) {
+  const p = new THREE.Vector3();
+  let prev = minT;
+  for (let t = minT; t <= maxT; t += 0.6) {
+    if (solidAt(p.copy(o).addScaledVector(d, t))) {
+      let lo = prev, hi = t;   // refine
+      for (let k = 0; k < 6; k++) { const m = (lo + hi) / 2; if (solidAt(p.copy(o).addScaledVector(d, m))) hi = m; else lo = m; }
+      return hi;
+    }
+    prev = t;
+  }
+  return maxT;
+}
+
+// ---- Terrain + prop meshes (grey boxes: tiers read as shades, cliffs darker) ----
+{
+  const seg = MAP.size;
+  const geo = new THREE.PlaneGeometry(MAP.size, MAP.size, seg, seg);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
+  for (let k = 0; k < pos.count; k++) {
+    const x = pos.getX(k), z = pos.getZ(k), h = heightAt(x, z);
+    pos.setY(k, h);
+    const slope = Math.hypot(heightAt(x + 0.5, z) - heightAt(x - 0.5, z), heightAt(x, z + 0.5) - heightAt(x, z - 0.5));
+    let g = 0.42 + h * 0.022 - Math.min(0.18, slope * 0.12);
+    // faint 4 m checker so scale and slopes read in grey-box
+    if ((Math.floor(x / 4) + Math.floor(z / 4)) & 1) g -= 0.025;
+    col[k * 3] = g * 0.92; col[k * 3 + 1] = g; col[k * 3 + 2] = g * 0.88;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const KIND_COLOR = { cover: 0xb8b8b0, hedge: 0x587a50, building: 0x8a8a92, platform: 0x7d93a8 };
+  for (const o of OBSTACLES) {
+    const g = o.r !== undefined ? new THREE.CylinderGeometry(o.r, o.r, o.h + 1, 24) : new THREE.BoxGeometry(o.w, o.h + 1, o.d);
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: KIND_COLOR[o.kind] }));
+    m.position.set(o.x, o.base + (o.h - 1) / 2, o.z);   // sunk 1 m so it sits flush on slopes
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+  }
+}
+
+// Spawn point markers: a dim disc each, plus a tall beacon shown when that lane is about to be used
+const spawnMarkers = {};
+for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
+  sp.y = heightAt(sp.x, sp.z);
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), new THREE.MeshLambertMaterial({ color: 0x552222 }));
+  disc.position.set(sp.x, sp.y + 0.05, sp.z);
+  disc.receiveShadow = true;
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 30, 12),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(sp.color), transparent: true, opacity: 0.55, depthWrite: false }));
+  beacon.position.set(sp.x, sp.y + 15, sp.z);
+  beacon.visible = false;
+  scene.add(disc, beacon);
+  spawnMarkers[name] = { disc, beacon };
+}
+function showSpawnMarkers(names) {
+  for (const [name, m] of Object.entries(spawnMarkers)) {
+    const on = names.includes(name);
+    m.beacon.visible = on;
+    m.disc.material.color.setHex(on ? 0xcc2222 : 0x552222);
+  }
+}
+
+// ---- Nav grid + flow fields ----
+// Each open cell knows which of its 8 neighbours it can step to (slope ≤ maxSlope, no corner cutting).
+// A flow field is Dijkstra distance from a goal set; zombies walk downhill on it.
+const NAV = (() => {
+  const C = MAP.cell, N = Math.round(MAP.size / C);
+  const h = new Float32Array(N * N), open = new Uint8Array(N * N), pass = new Uint8Array(N * N);
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const cx = i => -HALF + (i + 0.5) * C;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const k = j * N + i, x = cx(i), z = cx(j);
+    h[k] = heightAt(x, z);
+    open[k] = i > 0 && j > 0 && i < N - 1 && j < N - 1 &&
+      !OBSTACLES.some(o => inFootprint(o, x, z, MAP.navClearance)) && Math.max(Math.abs(x), Math.abs(z)) > S / 2 + 0.6 ? 1 : 0;
+  }
+  for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
+    const k = j * N + i;
+    if (!open[k]) continue;
+    DIRS.forEach(([di, dj], b) => {
+      const n = k + dj * N + di;
+      if (!open[n]) return;
+      if (di && dj && (!open[k + di] || !open[k + dj * N])) return;
+      const run = C * (di && dj ? Math.SQRT2 : 1);
+      // also check the midpoint so a thin cliff band between cell centers still blocks
+      const mid = heightAt((cx(i) + cx(i + di)) / 2, (cx(j) + cx(j + dj)) / 2);
+      if (Math.abs(h[n] - h[k]) > MAP.maxSlope * run || Math.abs(mid - h[k]) > MAP.maxSlope * run * 0.6) return;
+      pass[k] |= 1 << b;
+    });
+  }
+  const cellOf = (x, z) => {
+    const i = THREE.MathUtils.clamp(Math.floor((x + HALF) / C), 0, N - 1), j = THREE.MathUtils.clamp(Math.floor((z + HALF) / C), 0, N - 1);
+    return j * N + i;
+  };
+  return { C, N, h, open, pass, DIRS, cx, cellOf };
+})();
+
+// Dijkstra from a set of goal cells (binary heap)
+function buildFlowField(goals) {
+  const { N, pass, DIRS, C } = NAV;
+  const dist = new Float32Array(N * N).fill(Infinity);
+  const heapK = [], heapD = [];
+  const push = (k, d) => {
+    let i = heapK.length; heapK.push(k); heapD.push(d);
+    while (i > 0) { const p = (i - 1) >> 1; if (heapD[p] <= d) break; heapK[i] = heapK[p]; heapD[i] = heapD[p]; i = p; }
+    heapK[i] = k; heapD[i] = d;
+  };
+  const pop = () => {
+    const k = heapK[0], d = heapD[0], lk = heapK.pop(), ld = heapD.pop();
+    if (heapK.length) {
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= heapK.length) break;
+        if (c + 1 < heapK.length && heapD[c + 1] < heapD[c]) c++;
+        if (heapD[c] >= ld) break;
+        heapK[i] = heapK[c]; heapD[i] = heapD[c]; i = c;
+      }
+      heapK[i] = lk; heapD[i] = ld;
+    }
+    return [k, d];
+  };
+  for (const g of goals) { dist[g] = 0; push(g, 0); }
+  while (heapK.length) {
+    const [k, d] = pop();
+    if (d > dist[k] + 1e-3) continue;   // stale heap entry (dist is float32, so compare loosely)
+    // edges are symmetric enough (slope test is symmetric), so walk outward from goals
+    for (let b = 0; b < 8; b++) {
+      if (!(pass[k] & (1 << b))) continue;
+      const [di, dj] = DIRS[b], n = k + dj * N + di;
+      const nd = d + C * (b < 4 ? 1 : Math.SQRT2);
+      if (nd < dist[n]) { dist[n] = nd; push(n, nd); }
+    }
+  }
+  return dist;
+}
+// Goal cells: open cells within `radius` of (x,z) (widened until some are found)
+function goalCells(x, z, radius) {
+  const { N, C, open, cx } = NAV, out = [];
+  for (let r = radius; out.length === 0 && r < radius + 12; r += 2) {
+    const i0 = Math.floor((x - r + HALF) / C), i1 = Math.floor((x + r + HALF) / C);
+    const j0 = Math.floor((z - r + HALF) / C), j1 = Math.floor((z + r + HALF) / C);
+    for (let j = Math.max(0, j0); j <= Math.min(N - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(N - 1, i1); i++)
+      if (open[j * N + i] && Math.hypot(cx(i) - x, cx(j) - z) <= r) out.push(j * N + i);
+  }
+  return out;
+}
+const STATUE_FIELD = buildFlowField(goalCells(0, 0, S / 2 + 2.6));
+let playerField = null, playerFieldTimer = 0;
+
+// Downhill direction on a flow field from world (x,z): looks two cells ahead for smoother paths.
+// Returns false at the goal or when the field can't help (caller then goes direct).
+function flowDir(field, x, z, out) {
+  const { N, pass, DIRS, cx } = NAV;
+  let k = NAV.cellOf(x, z);
+  const next = (c, needPass) => {
+    let best = field[c], bk = -1;
+    for (let b = 0; b < 8; b++) {
+      if (needPass && !(pass[c] & (1 << b))) continue;
+      const n = c + DIRS[b][1] * N + DIRS[b][0];
+      if (n >= 0 && n < N * N && field[n] < best) { best = field[n]; bk = n; }
+    }
+    return bk;
+  };
+  // Pushed into a closed / unreachable cell: step to the best finite neighbour, ignoring slopes
+  let a = next(k, isFinite(field[k]));
+  if (a < 0) return false;
+  const b = next(a, true);
+  const t = b >= 0 ? b : a;
+  out.set(cx(t % N) - x, 0, cx(Math.floor(t / N)) - z);
+  if (out.lengthSq() < 1e-4) return false;
+  out.normalize();
+  return true;
+}
+// Walking distance to the statue from (x,z) (Infinity if unreachable)
+const statueDistance = (x, z) => STATUE_FIELD[NAV.cellOf(x, z)];
+
+// Trace a lane: follow the statue flow field from a spawn, return the polyline and its length
+function traceLane(sp) {
+  const pts = [[sp.x, sp.z]], d = new THREE.Vector3();
+  let x = sp.x, z = sp.z, len = 0;
+  for (let i = 0; i < 2000 && flowDir(STATUE_FIELD, x, z, d); i++) {
+    x += d.x; z += d.z; len += 1;
+    if (i % 3 === 0) pts.push([x, z]);
+  }
+  pts.push([0, 0]);
+  return { pts, len: len + Math.hypot(x, z) };
+}
+
+// ---- Debug top-down map (M): tiers, props, lanes with walk times, landmarks, live zombies ----
+const debugMap = (() => {
+  const SIZE = 640, k = SIZE / MAP.size;
+  const toPx = (x, z) => [(x + HALF) * k, (z + HALF) * k];
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SIZE;
+  Object.assign(canvas.style, { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%,-50%)',
+    width: 'min(92vmin, 640px)', height: 'min(92vmin, 640px)', border: '2px solid #fff', borderRadius: '8px',
+    display: 'none', zIndex: 20, pointerEvents: 'none', boxShadow: '0 0 30px #000' });
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  // Static layer
+  const bg = document.createElement('canvas');
+  bg.width = bg.height = SIZE;
+  const b = bg.getContext('2d');
+  const { N, C, open, cx } = NAV;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const h = NAV.h[j * N + i], reach = isFinite(STATUE_FIELD[j * N + i]);
+    const g = Math.round(60 + h * 13);
+    b.fillStyle = !open[j * N + i] ? '#222' : reach ? `rgb(${g},${g + 8},${g})` : `rgb(${g + 25},${g - 10},${g - 10})`;
+    b.fillRect(i * C * k, j * C * k, C * k + 0.5, C * k + 0.5);
+  }
+  for (const o of OBSTACLES) {
+    b.fillStyle = { cover: '#ddd', hedge: '#3e8a3a', building: '#9a9aa8', platform: '#7fb0ff' }[o.kind];
+    const [px, pz] = toPx(o.x, o.z);
+    if (o.r !== undefined) { b.beginPath(); b.arc(px, pz, o.r * k, 0, 7); b.fill(); }
+    else b.fillRect(px - o.w * k / 2, pz - o.d * k / 2, o.w * k, o.d * k);
+  }
+  for (const r of MAP.ramps) {
+    b.strokeStyle = '#e8d8a0'; b.lineWidth = r.width * k; b.globalAlpha = 0.35;
+    b.beginPath(); b.moveTo(...toPx(r.from[0], r.from[1])); b.lineTo(...toPx(r.to[0], r.to[1])); b.stroke();
+    b.globalAlpha = 1;
+  }
+  b.fillStyle = '#fff'; b.fillRect(...toPx(-S / 2, -S / 2), S * k, S * k);
+  // Lanes + walk times (shambler speed)
+  const lanes = {};
+  b.font = 'bold 12px Segoe UI'; b.textAlign = 'center';
+  for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
+    const lane = traceLane(sp);
+    lanes[name] = { ...lane, seconds: lane.len / ZT.shambler.speed };
+    b.strokeStyle = sp.color; b.lineWidth = 3; b.setLineDash([8, 5]);
+    b.beginPath(); lane.pts.forEach((p, i) => i ? b.lineTo(...toPx(...p)) : b.moveTo(...toPx(...p))); b.stroke();
+    b.setLineDash([]);
+    const [px, pz] = toPx(sp.x, sp.z);
+    b.fillStyle = sp.color; b.beginPath(); b.arc(px, pz, 7, 0, 7); b.fill();
+    b.fillStyle = '#fff';
+    b.fillText(`${sp.label}`, px, pz - 18);
+    b.fillText(`${Math.round(lane.len)} m · ${lanes[name].seconds.toFixed(0)} s`, px, pz - 5 + 22);
+  }
+  b.font = '11px Segoe UI';
+  for (const l of MAP.landmarks) {
+    const [px, pz] = toPx(l.x, l.z);
+    b.fillStyle = '#ffe14a'; b.beginPath(); b.arc(px, pz, 3.5, 0, 7); b.fill();
+    b.fillStyle = '#fff'; b.fillText(l.name, px, pz - 7);
+  }
+  b.textAlign = 'left'; b.fillStyle = 'rgba(0,0,0,0.6)'; b.fillRect(6, SIZE - 96, 250, 90);
+  b.fillStyle = '#fff';
+  ['DEBUG MAP (M)   K: spawn 100+ test horde',
+   'grey = walkable (lighter = higher)',
+   'red tint = unreachable for zombies',
+   'black = blocked / cliff-locked',
+   'dashed = lane path · time at Shambler speed',
+   'green hedge / grey building block sight'].forEach((t, i) => b.fillText(t, 12, SIZE - 80 + i * 14));
+  return {
+    canvas, lanes,
+    get visible() { return canvas.style.display !== 'none'; },
+    toggle() { canvas.style.display = this.visible ? 'none' : 'block'; },
+    draw() {
+      if (!this.visible) return;
+      ctx.drawImage(bg, 0, 0);
+      for (const z of zombies) {
+        const [px, pz] = toPx(z.mesh.position.x, z.mesh.position.z);
+        ctx.fillStyle = z.chasingPlayer ? '#ff3030' : '#' + z.def.color.toString(16).padStart(6, '0');
+        ctx.fillRect(px - 2, pz - 2, 4, 4);
+      }
+      const p = playerMesh.position, [px, pz] = toPx(p.x, p.z);
+      ctx.fillStyle = '#ffe14a'; ctx.strokeStyle = '#000';
+      ctx.beginPath(); ctx.arc(px, pz, 5, 0, 7); ctx.fill(); ctx.stroke();
+      const f = yawForward();
+      ctx.strokeStyle = '#ffe14a'; ctx.beginPath(); ctx.moveTo(px, pz); ctx.lineTo(px + f.x * 14, pz + f.z * 14); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '12px Segoe UI';
+      ctx.fillText(`zombies: ${zombies.length}   chasing: ${zombies.filter(z => z.chasingPlayer).length}   fps: ${fpsAvg.toFixed(0)}`, 10, 18);
+    },
+  };
+})();
+
 // A simple world-space health bar (two planes) that faces the camera
 function makeWorldBar(width) {
   const group = new THREE.Group();
@@ -667,7 +1105,7 @@ function respawnPlayer() {
   state.hopping = false;
   state.ammo = W.clip; state.reloading = false;
   playerMesh.visible = true;
-  playerMesh.position.set(0, PLAYER_CENTER_Y, S + 2); // just beside the statue
+  playerMesh.position.set(0, heightAt(0, S + 2) + PLAYER_CENTER_Y, S + 2); // just beside the statue
 }
 
 // Build the mesh for a zombie type, plus small primitive extras for readability
@@ -703,15 +1141,14 @@ function makeZombieMesh(type) {
   return mesh;
 }
 
-function spawnZombie(type, spawnName = 'north') {
+const randomLane = () => { const k = Object.keys(CONFIG.SPAWN_POINTS); return k[Math.floor(Math.random() * k.length)]; };
+
+function spawnZombie(type, spawnName = randomLane()) {
   const def = ZT[type];
   const sp = CONFIG.SPAWN_POINTS[spawnName];
   const mesh = makeZombieMesh(type);
-  mesh.position.set(
-    sp.x + (Math.random() - 0.5) * CONFIG.packSpread * 2,
-    def.radius + def.height / 2,
-    sp.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
-  );
+  const x = sp.x + (Math.random() - 0.5) * CONFIG.packSpread * 2, z = sp.z + (Math.random() - 0.5) * CONFIG.packSpread * 2;
+  mesh.position.set(x, heightAt(x, z) + def.radius + def.height / 2, z);
   // "Buttered" marker: a pat of butter on the head, shown while stunned
   const butter = new THREE.Mesh(butterGeo, butterMat);
   butter.scale.setScalar(def.radius * 1.1);
@@ -722,6 +1159,8 @@ function spawnZombie(type, spawnName = 'north') {
   zombies.push({
     type, def, mesh, hp: def.hp, butter,
     chasingPlayer: false, attackingStatue: false, attackTimer: 0,
+    seesPlayer: false, losTimer: Math.random() * CONFIG.leash.losInterval, unseenTime: 0,
+    chaseOrigin: new THREE.Vector3(), leashCooldown: 0,
     buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
     stun: 0, flash: 0,
     dead: false,
@@ -759,11 +1198,15 @@ function startWave(index) {
   state.phase = 'active';
   setBanner(false);
   showSpawnMarkers([]);
+  // Each pack starts `delay` seconds after the previous one (hidden from the player), scaled down on later waves
+  const tighten = Math.max(CONFIG.packDelayMin, 1 - CONFIG.packDelayTighten * index);
+  let packStart = 0;
   for (const pack of WAVES[index].packs) {
+    packStart += (pack.delay || 0) * tighten;
     const list = [];
     for (const [type, n] of Object.entries(pack.zombies)) for (let i = 0; i < n; i++) list.push(type);
     list.sort(() => Math.random() - 0.5);
-    list.forEach((type, i) => state.spawnQueue.push({ t: (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn }));
+    list.forEach((type, i) => state.spawnQueue.push({ t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn }));
   }
   // (Future: apply WAVES[index].modifiers here for special waves.)
 }
@@ -792,6 +1235,14 @@ addEventListener('keydown', e => {
     setMessage(`[debug] skipped to wave ${state.waveIndex + 1}`, 1.5);
   }
   if (e.code === 'KeyB') spawnZombie('miniBoss');
+  // Debug: M = top-down map; K = stress-test horde (100+ zombies, split across every lane)
+  if (e.code === 'KeyM') debugMap.toggle();
+  if (e.code === 'KeyK') {
+    const mix = ['shambler', 'shambler', 'shambler', 'sprinter', 'plated', 'spitter'];
+    for (const lane of Object.keys(CONFIG.SPAWN_POINTS))
+      for (let i = 0; i < 30; i++) spawnZombie(mix[i % mix.length], lane);
+    setMessage(`[debug] stress horde: ${zombies.length} zombies`, 2);
+  }
   // Hero controls
   if (e.code === 'Space') state.jumpQueued = true;
   if (e.code === 'KeyR') startReload();
@@ -912,7 +1363,8 @@ function updateParticles(dt) {
     p.vel.y -= p.gravity * dt;
     if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
     m.position.addScaledVector(p.vel, dt);
-    if (m.position.y < 0.04) { m.position.y = 0.04; p.vel.multiplyScalar(0.4); p.vel.y = Math.abs(p.vel.y) * 0.3; }
+    const fy = heightAt(m.position.x, m.position.z) + 0.04;
+    if (m.position.y < fy) { m.position.y = fy; p.vel.multiplyScalar(0.4); p.vel.y = Math.abs(p.vel.y) * 0.3; }
     m.rotation.x += p.spin.x * dt; m.rotation.y += p.spin.y * dt;
     const k = 1 - p.life / p.maxLife;
     m.scale.setScalar(p.size * (1 + p.grow * k));
@@ -976,8 +1428,7 @@ function addShake(amount, at) {
 function getAimPoint() {
   const o = camera.position, d = camera.getWorldDirection(new THREE.Vector3());
   const minT = o.distanceTo(playerMesh.position) + 0.5;
-  let best = 150;
-  if (d.y < 0) { const tg = -o.y / d.y; if (tg > minT) best = Math.min(best, tg); }
+  let best = raycastWorld(o, d, 150, minT);
   for (const z of zombies) {
     if (z.dead) continue;
     const c = z.mesh.position, R = z.def.radius + z.def.height * 0.35;
@@ -992,10 +1443,11 @@ function getAimPoint() {
 // Ground point under the reticle, clamped to `range` from the player
 function getGroundAimPoint(range) {
   const o = camera.position, d = camera.getWorldDirection(new THREE.Vector3());
-  const p = d.y < -0.01 ? o.clone().addScaledVector(d, -o.y / d.y) : o.clone().addScaledVector(d.setY(0).normalize(), range);
+  const p = o.clone().addScaledVector(d, raycastWorld(o, d, range * 2, 1));
   const pl = playerMesh.position, off = new THREE.Vector3(p.x - pl.x, 0, p.z - pl.z);
   if (off.length() > range) off.setLength(range);
-  return new THREE.Vector3(pl.x + off.x, 0, pl.z + off.z);
+  const x = pl.x + off.x, z = pl.z + off.z;
+  return new THREE.Vector3(x, groundAt(x, z), z);
 }
 const yawForward = () => new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
 
@@ -1040,18 +1492,33 @@ function updatePlayer(dt) {
   const gliding = state.hopping && v.y < 0 && keys.Space;
   v.y -= P.gravity * (gliding ? AB.huskHop.glideGravity : 1) * dt;
   if (gliding) v.y = Math.max(v.y, -3.5);
-  pos.addScaledVector(v, dt);
-  if (pos.y <= PLAYER_CENTER_Y) {
+  // Horizontal move, one axis at a time so cliffs make you slide along them
+  const feetY = pos.y - PLAYER_CENTER_Y;
+  for (const axis of ['x', 'z']) {
+    const old = pos[axis];
+    pos[axis] += v[axis] * dt;
+    if (heightAt(pos.x, pos.z) > feetY + MAP.stepUp) { pos[axis] = old; v[axis] = 0; }
+  }
+  // Props taller than a step push you out; shorter ones you walk onto
+  for (const o of OBSTACLES) {
+    if (o.top <= feetY + MAP.stepUp || feetY + P.height + P.radius * 2 < o.base) continue;
+    const r = pushOut(o, pos.x, pos.z, P.radius);
+    if (r) { pos.x = r[0]; pos.z = r[1]; }
+  }
+  // Vertical: land on whatever surface is under the feet
+  pos.y += v.y * dt;
+  const floor = groundAt(pos.x, pos.z, feetY, P.radius) + PLAYER_CENTER_Y;
+  if (pos.y <= floor || (state.onGround && v.y <= 0 && pos.y - floor < 0.35)) {   // stick to slopes walking down
     if (!state.onGround) landed(-v.y);
-    pos.y = PLAYER_CENTER_Y; v.y = 0; state.onGround = true;
+    pos.y = floor; v.y = 0; state.onGround = true;
   } else state.onGround = false;
 
-  // Keep inside arena, and out of the statue
-  const half = CONFIG.arenaSize / 2 - 1;
+  // Keep inside the map, and out of the statue
+  const half = HALF - 1;
   pos.x = THREE.MathUtils.clamp(pos.x, -half, half);
   pos.z = THREE.MathUtils.clamp(pos.z, -half, half);
   const lim = S / 2 + P.radius;
-  if (Math.abs(pos.x) < lim && Math.abs(pos.z) < lim && pos.y - PLAYER_CENTER_Y < S) {
+  if (Math.abs(pos.x) < lim && Math.abs(pos.z) < lim && pos.y - PLAYER_CENTER_Y < S - 0.1) {
     if (lim - Math.abs(pos.x) < lim - Math.abs(pos.z)) pos.x = Math.sign(pos.x || 1) * lim;
     else pos.z = Math.sign(pos.z || 1) * lim;
   }
@@ -1087,7 +1554,7 @@ function updatePlayer(dt) {
 
 function landed(impactSpeed) {
   state.anim.squash = Math.min(0.22, impactSpeed * 0.014);
-  const feet = playerMesh.position.clone().setY(0.1);
+  const feet = playerMesh.position.clone(); feet.y -= PLAYER_CENTER_Y - 0.1;
   if (state.hopping) {
     // Husk Hop ground slam
     state.hopping = false;
@@ -1206,13 +1673,13 @@ function updateRockets(dt) {
     let hit = r.life <= 0;
     for (let s = 0; s < 2 && !hit; s++) {
       pos.addScaledVector(r.vel, dt / 2);
-      if (pos.y < 0.1 || hitsStatue(pos, 0.2) || zombies.some(z => !z.dead && hitsZombie(z, pos, 0.35))) hit = true;
+      if (solidAt(pos, 0.1) || zombies.some(z => !z.dead && hitsZombie(z, pos, 0.35))) hit = true;
     }
     r.mesh.rotateZ(dt * 14);
     spawnParticle('puff', 0xdddddd, pos.clone().addScaledVector(r.vel, -0.012), rand3(0.6), { life: 0.45, gravity: -0.5, grow: 2.5, drag: 2, size: 0.45 });
     if (Math.random() < 0.5) spawnParticle('puff', 0xffb23a, pos.clone(), rand3(0.5), { life: 0.15, gravity: 0, grow: 1, size: 0.4, additive: true });
     if (hit) {
-      pos.y = Math.max(pos.y, 0.3);
+      pos.y = Math.max(pos.y, heightAt(pos.x, pos.z) + 0.3);
       explodeAt(pos, A.radius, A.damage, { color: 0xffb030 });
       for (let k = 0; k < 10; k++) spawnParticle('chip', 0xffd23a, pos, rand3(12, 5), { life: 0.8 });
       scene.remove(r.mesh);
@@ -1235,7 +1702,7 @@ function useHuskHop() {
   state.fovKick = 10;
   addShake(0.25);
   burstLeaves(playerMesh.position, 16);
-  spawnRing(playerMesh.position.clone().setY(0), 3, 0xd8ff9a, 0.35);
+  spawnRing(playerMesh.position.clone().setY(playerMesh.position.y - PLAYER_CENTER_Y), 3, 0xd8ff9a, 0.35);
 }
 
 // ---- Butter Barrage: target an area, then butter rains down and stuns ----
@@ -1265,14 +1732,14 @@ function cancelButterTargeting() {
 }
 function updateButterReticle() {
   const p = getGroundAimPoint(AB.butterBarrage.range);
-  butterReticle.position.set(p.x, 0.06, p.z);
+  butterReticle.position.set(p.x, p.y + 0.06, p.z);
   butterReticle.rotation.y += 0.02;
   butterReticle.scale.setScalar(1 + Math.sin(performance.now() * 0.008) * 0.03);
 }
 function confirmButterBarrage() {
   const B = AB.butterBarrage;
   state.cd.butterBarrage = B.cooldown;
-  state.barrages.push({ pos: butterReticle.position.clone().setY(0), t: -B.delay, dropped: 0 });
+  state.barrages.push({ pos: butterReticle.position.clone(), t: -B.delay, dropped: 0 });
   cancelButterTargeting();
   setMessage('Butter incoming!', 1.2);
   // the hero raises both cobs and fires a signal flare into the sky
@@ -1290,18 +1757,19 @@ function updateBarrages(dt) {
       b.dropped++;
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * B.areaRadius;
       const target = b.pos.clone().add(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+      target.y = groundAt(target.x, target.z, b.pos.y + 1);
       const mesh = new THREE.Mesh(butterGeo, butterMat);
       mesh.castShadow = true;
-      mesh.position.copy(target).setY(B.dropHeight + Math.random() * 4);
+      mesh.position.copy(target).setY(target.y + B.dropHeight + Math.random() * 4);
       mesh.rotation.set(Math.random(), Math.random() * 6, Math.random());
       scene.add(mesh);
       // ground marker shrinking in as the pat approaches
       const marker = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 24),
         new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0.6, depthWrite: false }));
       marker.rotation.x = -Math.PI / 2;
-      marker.position.set(target.x, 0.07, target.z);
+      marker.position.set(target.x, target.y + 0.07, target.z);
       scene.add(marker);
-      butterPats.push({ mesh, marker, spin: rand3(10) });
+      butterPats.push({ mesh, marker, spin: rand3(10), floor: target.y });
     }
     if (b.dropped >= B.pats) state.barrages.splice(i, 1);
   }
@@ -1309,10 +1777,10 @@ function updateBarrages(dt) {
     const p = butterPats[i], m = p.mesh;
     m.position.y -= B.fallSpeed * dt;
     m.rotation.x += p.spin.x * dt; m.rotation.z += p.spin.z * dt;
-    const k = THREE.MathUtils.clamp(m.position.y / B.dropHeight, 0, 1);
+    const k = THREE.MathUtils.clamp((m.position.y - p.floor) / B.dropHeight, 0, 1);
     p.marker.scale.setScalar(B.splashRadius * (0.4 + 0.6 * k));
-    if (m.position.y <= 0.17) {
-      const at = m.position.clone().setY(0.3);
+    if (m.position.y <= p.floor + 0.17) {
+      const at = m.position.clone().setY(p.floor + 0.3);
       explodeAt(at, B.splashRadius, B.damage, { color: 0xfff0a0, stun: B.stun });
       spawnDecal(at, B.splashRadius * (0.6 + Math.random() * 0.3), 0xffe27a, 4);
       for (let k2 = 0; k2 < 8; k2++) spawnParticle('chip', 0xffe27a, at, rand3(9, 5), { life: 0.6, size: 1.4 });
@@ -1427,18 +1895,33 @@ function animateCorn(dt) {
 // ---------------------------------------------------------------------
 
 // Decide whether this zombie is after the player or the statue, per its targetPreference.
-// Returns { isPlayer, pos, dist, dir } where dir is a flat unit vector toward the target.
-function selectTarget(z) {
-  const def = z.def, pos = z.mesh.position;
+// Zombies only notice the hero with line of sight (tall hedges / buildings / terrain hide you), and the
+// leash makes them give up after losing sight for a while or being dragged too far from where they started.
+// Returns { isPlayer, pos, dist, dir } where dir is a flat unit vector along the zombie's path to the target.
+const eyeA = new THREE.Vector3(), eyeB = new THREE.Vector3();
+function selectTarget(z, dt) {
+  const def = z.def, pos = z.mesh.position, L = CONFIG.leash;
   const distToPlayer = state.playerDead ? Infinity : tmp.copy(playerMesh.position).sub(pos).setY(0).length();
 
-  if (def.targetPreference === 'statueOnly') {
+  // Line-of-sight check (throttled), only when the player is close enough to matter
+  z.losTimer -= dt;
+  if (z.losTimer <= 0) {
+    z.losTimer = L.losInterval;
+    z.seesPlayer = distToPlayer < Math.max(def.aggroRange, def.deaggroRange) &&
+      losClear(eyeA.copy(pos).setY(pos.y + def.height / 2), eyeB.copy(playerMesh.position).setY(playerMesh.position.y + 0.5));
+  }
+  z.unseenTime = z.seesPlayer ? 0 : z.unseenTime + dt;
+  z.leashCooldown = Math.max(0, z.leashCooldown - dt);
+
+  if (def.targetPreference === 'statueOnly' || state.playerDead) {
     z.chasingPlayer = false;
-  } else if (!z.chasingPlayer && distToPlayer < def.aggroRange) {
+  } else if (!z.chasingPlayer && distToPlayer < def.aggroRange && z.seesPlayer && z.leashCooldown <= 0) {
     // 'statue' types commit to the statue once they've started hitting it
-    if (def.targetPreference === 'player' || !z.attackingStatue) z.chasingPlayer = true;
-  } else if (z.chasingPlayer && distToPlayer > def.deaggroRange) {
+    if (def.targetPreference === 'player' || !z.attackingStatue) { z.chasingPlayer = true; z.chaseOrigin.copy(pos); }
+  } else if (z.chasingPlayer && (distToPlayer > def.deaggroRange || z.unseenTime > L.loseSightTime ||
+             pos.distanceTo(z.chaseOrigin) > L.maxChase)) {
     z.chasingPlayer = false;
+    z.leashCooldown = L.cooldown;
   }
 
   const isPlayer = z.chasingPlayer;
@@ -1447,13 +1930,39 @@ function selectTarget(z) {
   // For the box statue, distance to its face ≈ largest axis distance minus half-size
   const dist = isPlayer ? dir.length() - P.radius : Math.max(Math.abs(dir.x), Math.abs(dir.z)) - S / 2;
   dir.normalize();
+  // Path: straight at a visible nearby player, otherwise walk the flow field
+  const direct = isPlayer ? (z.seesPlayer && dist < 8) : dist < 2;
+  if (!direct) {
+    const field = isPlayer ? playerField : STATUE_FIELD;
+    if (field) flowDir(field, pos.x, pos.z, dir);
+  }
   return { isPlayer, pos: targetPos, dist, dir };
 }
 
-// Step toward a flat direction and face it (facing matters for the Plated front plate)
+// Step along a flat direction and face it (facing matters for the Plated front plate)
 function moveZombie(z, dir, dt) {
   z.mesh.position.addScaledVector(dir, z.def.speed * z.buff.speed * dt);
   faceDir(z, dir);
+}
+// Keep a zombie on walkable ground: out of props, off cliffs, snapped to the terrain
+function constrainZombie(z) {
+  const p = z.mesh.position, def = z.def;
+  for (const o of OBSTACLES) {
+    if (o.top < p.y - def.height) continue;
+    const r = pushOut(o, p.x, p.z, def.radius);
+    if (r) { p.x = r[0]; p.z = r[1]; }
+  }
+  // Too steep (a cliff)? Slide along it on one axis, else stay put
+  const h0 = heightAt(z.prevX, z.prevZ);
+  const ok = (x, zz) => heightAt(x, zz) - h0 <= MAP.maxSlope * Math.hypot(x - z.prevX, zz - z.prevZ) * 1.6 + 0.02;
+  if (!ok(p.x, p.z)) {
+    if (ok(p.x, z.prevZ)) p.z = z.prevZ;
+    else if (ok(z.prevX, p.z)) p.x = z.prevX;
+    else { p.x = z.prevX; p.z = z.prevZ; }
+  }
+  p.x = THREE.MathUtils.clamp(p.x, -HALF + 1, HALF - 1);
+  p.z = THREE.MathUtils.clamp(p.z, -HALF + 1, HALF - 1);
+  p.y = heightAt(p.x, p.z) + def.radius + def.height / 2;
 }
 function faceDir(z, dir) { z.mesh.rotation.y = Math.atan2(dir.x, dir.z); }
 
@@ -1482,12 +1991,14 @@ function meleeBehavior(z, target, dt) {
 function rangedBehavior(z, target, dt) {
   const def = z.def;
   if (target.dist > def.range) { moveZombie(z, target.dir, dt); return; }
-  faceDir(z, target.dir);
+  const start = z.mesh.position.clone().add(new THREE.Vector3(0, def.height / 2, 0));
+  const aim = target.isPlayer ? playerMesh.position.clone() : new THREE.Vector3(0, S / 2, 0);
+  // No clear shot (hedge, cliff lip)? Keep walking the path until there is one
+  if (!losClear(start, aim)) { moveZombie(z, target.dir, dt); return; }
+  faceDir(z, new THREE.Vector3().copy(aim).sub(z.mesh.position).setY(0).normalize());
   z.attackingStatue = !target.isPlayer;
   if (z.attackTimer > 0) return;
   z.attackTimer = def.attackCooldown;
-  const start = z.mesh.position.clone().add(new THREE.Vector3(0, def.height / 2, 0));
-  const aim = target.isPlayer ? playerMesh.position.clone() : new THREE.Vector3(0, S / 2, 0);
   const vel = aim.sub(start).normalize().multiplyScalar(def.projectileSpeed);
   const mesh = new THREE.Mesh(spitGeo, spitMat);
   mesh.position.copy(start);
@@ -1508,19 +2019,15 @@ function bomberBehavior(z, target, dt) {
   z.dead = true;
 }
 
-// Hang behind the pack's centroid (Banner). With no pack left, behave as a weak melee zombie.
+// Hang behind the pack along the path (Banner): stay backOffset metres of walking distance behind
+// the pack's average. With no pack left, behave as a weak melee zombie.
 function bannerBehavior(z, target, dt) {
   const others = zombies.filter(o => o !== z && o.type !== 'banner' && !o.dead);
   if (others.length === 0) { meleeBehavior(z, target, dt); return; }
-  const centroid = new THREE.Vector3();
-  others.forEach(o => centroid.add(o.mesh.position));
-  centroid.divideScalar(others.length).setY(0);
-  // "Behind" = further from the statue than the centroid
-  const back = centroid.clone().normalize();
-  if (back.lengthSq() === 0) back.set(0, 0, -1);
-  const desired = centroid.addScaledVector(back, z.def.backOffset);
-  const toDesired = desired.sub(z.mesh.position).setY(0);
-  if (toDesired.length() > 0.5) moveZombie(z, toDesired.normalize(), dt);
+  let avg = 0, n = 0;
+  for (const o of others) { const d = statueDistance(o.mesh.position.x, o.mesh.position.z); if (isFinite(d)) { avg += d; n++; } }
+  const mine = statueDistance(z.mesh.position.x, z.mesh.position.z);
+  if (n && mine > avg / n + z.def.backOffset) moveZombie(z, target.dir, dt);
 }
 
 const BEHAVIORS = {
@@ -1550,6 +2057,14 @@ function applyBannerBuffs() {
 
 function updateZombies(dt) {
   applyBannerBuffs();
+  for (const z of zombies) { z.prevX = z.mesh.position.x; z.prevZ = z.mesh.position.z; }
+  // Flow field toward the hero, refreshed a few times a second while anyone is chasing
+  playerFieldTimer -= dt;
+  if (playerFieldTimer <= 0 && !state.playerDead && zombies.some(z => z.chasingPlayer)) {
+    playerFieldTimer = CONFIG.leash.playerFieldInterval;
+    const p = playerMesh.position;
+    playerField = buildFlowField(goalCells(p.x, p.z, 2.5));
+  }
 
   for (const z of zombies) {
     if (z.dead) continue;
@@ -1565,7 +2080,7 @@ function updateZombies(dt) {
       continue;
     }
     z.mesh.rotation.z = 0;
-    const target = selectTarget(z);
+    const target = selectTarget(z, dt);
     BEHAVIORS[z.def.behavior](z, target, dt);
   }
   removeDeadZombies();
@@ -1582,6 +2097,7 @@ function updateZombies(dt) {
       }
     }
   }
+  for (const z of zombies) constrainZombie(z);
 }
 
 function removeDeadZombies() {
@@ -1629,7 +2145,7 @@ function updateEnemyProjectiles(dt) {
     const p = enemyProjectiles[i], pp = p.mesh.position;
     pp.addScaledVector(p.vel, dt);
     p.life -= dt;
-    let dead = p.life <= 0 || pp.y < 0;
+    let dead = p.life <= 0 || solidAt(pp);
     const r = ZT.spitter.projectileRadius;
     // Hit player (vertical segment approximation of the capsule)
     if (!dead && !state.playerDead) {
@@ -1655,9 +2171,9 @@ function updateProjectiles(dt) {
     let dead = p.life <= 0;
     for (let s = 0; s < STEPS && !dead; s++) {
       pos.addScaledVector(p.vel, dt / STEPS);
-      if (pos.y < 0 || hitsStatue(pos, 0)) {
+      if (solidAt(pos)) {
         dead = true;
-        for (let k = 0; k < 3; k++) spawnParticle('chip', 0xffd23a, pos.clone().setY(Math.max(0.05, pos.y)), rand3(4, 3), { life: 0.4, size: 0.6 });
+        for (let k = 0; k < 3; k++) spawnParticle('chip', 0xffd23a, pos.clone().addScaledVector(p.vel, -0.01), rand3(4, 3), { life: 0.4, size: 0.6 });
         break;
       }
       for (const z of zombies) {
@@ -1714,10 +2230,10 @@ function updateCamera(dt) {
   let reach = 1;
   for (let i = 1; i <= 24; i++) {
     const p = tmp.copy(target).addScaledVector(offset, i / 24);
-    if (hitsStatue(p, margin)) { reach = (i - 1) / 24; break; }
+    if (solidAt(p, margin)) { reach = (i - 1) / 24; break; }
   }
   camera.position.copy(target).addScaledVector(offset, reach);
-  camera.position.y = Math.max(0.4, camera.position.y);
+  camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.4, camera.position.y);
   camera.lookAt(target);
   // trauma shake: squared for a nicer falloff
   state.shake = Math.max(0, state.shake - dt * 1.8);
@@ -1784,10 +2300,14 @@ function updateHud(dt) {
 }
 
 const clock = new THREE.Clock();
+let fpsAvg = 60;
+// Debug: ?autoplay runs the simulation without pointer lock (headless playtests, stress tests)
+const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
 function loop() {
-  requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const playing = document.pointerLockElement === renderer.domElement && !state.over;
+  if (AUTOPLAY) setTimeout(loop, 16); else requestAnimationFrame(loop);   // background panes may get no frames
+  const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
+  if (raw > 0) fpsAvg += (1 / raw - fpsAvg) * 0.05;
+  const playing = (document.pointerLockElement === renderer.domElement || AUTOPLAY) && !state.over;
 
   if (playing) {
     updatePlayer(dt);
@@ -1807,12 +2327,14 @@ function loop() {
   updatePopups(playing ? dt : 0);
   updateHud(playing ? dt : 0);
   renderer.render(scene, camera);
+  debugMap.draw();
 }
 
 resetGame();
 animateCorn(0);
 // Debug handle for the browser console (inspect / pose the hero)
-window.__game = { CONFIG, get state() { return state; }, corn, camera, scene, spawnZombie, explodeAt, get zombies() { return zombies; } };
+window.__game = { CONFIG, get state() { return state; }, corn, camera, scene, spawnZombie, explodeAt, get zombies() { return zombies; },
+  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, get fps() { return fpsAvg; } };
 loop();
 </script>
 </body>

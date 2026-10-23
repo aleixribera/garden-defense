@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.3.0)
+## Current state (v1.4.0)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -24,12 +24,23 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   `targetPreference`: statue / player / statueOnly, with aggro/deaggro hysteresis) → `BEHAVIORS[def.behavior]`
   (melee, ranged, bomber, banner — one small function each). Plated takes reduced front damage.
   Bosses (`miniBoss`, `finalBoss`) are placeholder scaled-up Plated (`boss: true`, `look: 'plated'`), HUD boss bar.
-- Spawning: named `CONFIG.SPAWN_POINTS` (north/east/west). Packs spawn shuffled over `spawnBurst` seconds.
-- Waves: `CONFIG.WAVES` entries are `{ packs: [{ spawn, zombies: { type: count } }], modifiers }`.
-  `modifiers` is reserved for future special waves (not implemented). Flow: countdown phase (Wave X banner,
-  "Incoming" preview, red beacon at used spawn points) → active phase → next countdown. Win after wave 10.
+- Map (`CONFIG.MAP`, grey-box, 300×300 m): terrain = bowl (sunken Statue Court, tier 0) + `plateaus`
+  (rect/circle, `edge` ≈1 = cliff, 4+ = slope) + `ramps`, sampled into a 1 m heightfield (`heightAt`).
+  `obstacles` (cover / hedge / building / platform) sit on the terrain; hedges+buildings block line of sight.
+  Queries: `groundAt`, `solidAt`, `losClear`, `raycastWorld`, `pushOut`. Landmark names (`landmarks`) are theming anchors.
+- Pathing: 2 m nav grid (`NAV`, slope ≤ `maxSlope`, obstacles inflated). `STATUE_FIELD` = Dijkstra flow field
+  to the statue; a player field is rebuilt while anyone chases. `flowDir` steers, `constrainZombie` keeps them
+  out of props/off cliffs. Future Climbers can ignore the cliff slope check.
+- Aggro: needs line of sight; `CONFIG.leash` drops the chase after losing sight / being dragged too far.
+- Lanes (`CONFIG.SPAWN_POINTS`): longRoad (Orchard Road, ~44 s), flank (Greenhouse Gap, ~17 s),
+  choke (Garden Gate), climb (Quarry Top, ramp beside cliffs). Vantages: Windmill Ridge (far), Bandstand (near,
+  exposed), Water Tower (jump-only), Well Mound (in the lane). Kite loops: Fountain, Tool Shed, hedges.
+- Waves: packs spawn in order; `delay` is a hidden timer after the previous pack, shrunk per wave by
+  `packDelayTighten` (floor `packDelayMin`). Lanes rotate per wave.
 - HUD: wave, zombies remaining (alive + queued), boss bar, statue/player HP.
-- Debug: keys 1–6 spawn `debugPackSize` of the type in `DEBUG_SPAWN_KEYS`; N skips to next wave; B spawns mini-boss.
+- Debug: keys 1–6 spawn `debugPackSize` of a type at a random lane; N next wave; B mini-boss; M top-down map
+  (tiers, lanes + walk times, landmarks, live zombies); K spawns a 120-zombie stress horde. `?autoplay` runs
+  without pointer lock (headless playtests).
   `window.__game` exposes state/corn/camera/CONFIG/explodeAt for console inspection.
 
 ## Code rules
