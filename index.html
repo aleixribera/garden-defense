@@ -45,23 +45,69 @@ const CONFIG = {
   },
   projectile: { speed: 60, damage: 25, life: 1.5, radius: 0.2 },
   camera: { distance: 8, height: 3, sensitivity: 0.0025 },
-  zombie: {                    // the single basic zombie type
-    hp: 50, speed: 3.5, radius: 0.6, height: 1.2,
-    damage: 10, attackCooldown: 1.0, // seconds between hits
-    aggroRange: 15,            // starts chasing player inside this
-    deaggroRange: 25,          // returns to statue beyond this
-    color: 0x6a8f3a,
+  // Zombie roster. Shared fields:
+  //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (player chase hysteresis),
+  //   radius, height, color, behavior (key into BEHAVIORS), targetPreference:
+  //     'statue'     — heads for the statue; chases the player if they come within aggroRange,
+  //                    but once it's attacking the statue it stays on it
+  //     'player'     — switches to the player whenever they're within aggroRange, even mid-attack
+  //     'statueOnly' — ignores the player entirely
+  ZOMBIE_TYPES: {
+    shambler: {
+      hp: 50, speed: 3.5, damage: 10, attackCooldown: 1.0,
+      aggroRange: 15, deaggroRange: 25, targetPreference: 'statue',
+      radius: 0.6, height: 1.2, color: 0x6a8f3a, behavior: 'melee',
+    },
+    sprinter: {
+      hp: 25, speed: 8, damage: 6, attackCooldown: 0.6,
+      aggroRange: 22, deaggroRange: 32, targetPreference: 'player',
+      radius: 0.45, height: 0.9, color: 0xe0c020, behavior: 'melee',
+    },
+    plated: {
+      hp: 300, speed: 2.2, damage: 20, attackCooldown: 1.5,
+      aggroRange: 12, deaggroRange: 20, targetPreference: 'statue',
+      radius: 0.9, height: 1.6, color: 0x5a6f7f, behavior: 'melee',
+      frontDamageMult: 0.25,   // damage taken from shots hitting its front plate
+      frontArc: 0.5,           // cos of half-angle that counts as "front" (0.5 = ±60°)
+    },
+    spitter: {
+      hp: 40, speed: 3, damage: 8, attackCooldown: 2.0,
+      aggroRange: 20, deaggroRange: 28, targetPreference: 'statue',
+      radius: 0.55, height: 1.1, color: 0x9a40c0, behavior: 'ranged',
+      range: 14,               // stops at this distance from its target and fires
+      projectileSpeed: 10, projectileRadius: 0.35, projectileLife: 4,
+    },
+    bomber: {
+      hp: 35, speed: 5, damage: 0, attackCooldown: 0,
+      aggroRange: 0, deaggroRange: 0, targetPreference: 'statueOnly',
+      radius: 0.7, height: 0.6, color: 0xd03020, behavior: 'bomber',
+      explosionDamage: 150,    // statue damage on contact
+      explosionRadius: 5,      // player within this also takes playerExplosionDamage
+      playerExplosionDamage: 40,
+    },
+    banner: {
+      hp: 30, speed: 3.5, damage: 5, attackCooldown: 1.0,
+      aggroRange: 0, deaggroRange: 0, targetPreference: 'statueOnly',
+      radius: 0.5, height: 1.0, color: 0xf08aa0, behavior: 'banner',
+      buffRadius: 8,           // allies inside this circle are buffed
+      speedMult: 1.4, damageMult: 1.5,
+      backOffset: 4,           // how far behind the pack centroid it hangs back
+    },
   },
+  debugPackSize: 4,             // zombies spawned per debug key press (keys 1–6)
   spawnPoint: { x: 0, z: -45 }, // single pack spawn at arena edge
   packSpread: 4,                // random scatter around the spawn point
   timeBetweenWaves: 4,          // seconds after last zombie dies
 };
 
-// Waves as data: each entry is how many basic zombies spawn in that wave.
+// Waves as data: each entry maps zombie type name -> count.
 const WAVES = [
-  { count: 10 }, { count: 12 }, { count: 14 }, { count: 16 }, { count: 18 },
-  { count: 20 }, { count: 23 }, { count: 26 }, { count: 29 }, { count: 32 },
+  { shambler: 10 }, { shambler: 12 }, { shambler: 14 }, { shambler: 16 }, { shambler: 18 },
+  { shambler: 20 }, { shambler: 23 }, { shambler: 26 }, { shambler: 29 }, { shambler: 32 },
 ];
+
+// Debug keys 1..6 spawn a pack of these types, in order.
+const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber', 'banner'];
 
 // =====================================================================
 // Scene setup
@@ -109,10 +155,17 @@ const P = CONFIG.player;
 const playerMesh = new THREE.Mesh(new THREE.CapsuleGeometry(P.radius, P.height, 4, 12), new THREE.MeshLambertMaterial({ color: 0x33cc33 }));
 scene.add(playerMesh);
 
-// Shared zombie resources
-const Z = CONFIG.zombie;
-const zombieGeo = new THREE.CapsuleGeometry(Z.radius, Z.height, 4, 12);
-const zombieMat = new THREE.MeshLambertMaterial({ color: Z.color });
+// Shared zombie resources: one geometry + material per type, built from CONFIG
+const ZT = CONFIG.ZOMBIE_TYPES;
+const zombieAssets = {};
+for (const [name, def] of Object.entries(ZT)) {
+  zombieAssets[name] = {
+    geo: new THREE.CapsuleGeometry(def.radius, def.height, 4, 12),
+    mat: new THREE.MeshLambertMaterial({ color: def.color }),
+  };
+}
+const spitGeo = new THREE.SphereGeometry(ZT.spitter.projectileRadius, 8, 8);
+const spitMat = new THREE.MeshBasicMaterial({ color: 0xb060ff });
 const projGeo = new THREE.SphereGeometry(CONFIG.projectile.radius, 8, 8);
 const projMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
 
@@ -137,11 +190,12 @@ function setWorldBar(bar, ratio) {
 let state;          // reset by resetGame()
 let zombies = [];
 let projectiles = [];
+let enemyProjectiles = [];   // spitter globs
+let effects = [];            // short-lived visuals (explosions)
 
 function resetGame() {
-  zombies.forEach(z => scene.remove(z.mesh));
-  projectiles.forEach(p => scene.remove(p.mesh));
-  zombies = []; projectiles = [];
+  [...zombies, ...projectiles, ...enemyProjectiles, ...effects].forEach(o => scene.remove(o.mesh));
+  zombies = []; projectiles = []; enemyProjectiles = []; effects = [];
   state = {
     statueHp: CONFIG.statue.hp,
     playerHp: P.hp,
@@ -164,17 +218,56 @@ function respawnPlayer() {
   playerMesh.position.set(0, P.radius + P.height / 2, S + 2); // just beside the statue
 }
 
+// Build the mesh for a zombie type, plus small primitive extras for readability
+function makeZombieMesh(type) {
+  const def = ZT[type];
+  const mesh = new THREE.Mesh(zombieAssets[type].geo, zombieAssets[type].mat);
+  const halfH = def.radius + def.height / 2;   // mesh origin is at its center
+  if (type === 'plated') {
+    // Front plate on local +Z (the facing direction)
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 2, def.height + def.radius, 0.2),
+      new THREE.MeshLambertMaterial({ color: 0xbfc8d0 }));
+    plate.position.z = def.radius + 0.1;
+    mesh.add(plate);
+  } else if (type === 'bomber') {
+    const bomb = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 10), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+    bomb.position.y = halfH + 0.3;
+    mesh.add(bomb);
+  } else if (type === 'banner') {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.5), new THREE.MeshLambertMaterial({ color: 0x664422 }));
+    pole.position.set(0.4, halfH + 0.6, 0);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.6), new THREE.MeshLambertMaterial({ color: 0xff3366, side: THREE.DoubleSide }));
+    flag.position.set(0.85, halfH + 1.5, 0);
+    // Buff area: translucent disc on the ground
+    const ring = new THREE.Mesh(new THREE.CircleGeometry(def.buffRadius, 40),
+      new THREE.MeshBasicMaterial({ color: 0xff6699, transparent: true, opacity: 0.2, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = -halfH + 0.03;
+    mesh.add(pole, flag, ring);
+  }
+  return mesh;
+}
+
+function spawnZombie(type) {
+  const def = ZT[type];
+  const mesh = makeZombieMesh(type);
+  mesh.position.set(
+    CONFIG.spawnPoint.x + (Math.random() - 0.5) * CONFIG.packSpread * 2,
+    def.radius + def.height / 2,
+    CONFIG.spawnPoint.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
+  );
+  scene.add(mesh);
+  zombies.push({
+    type, def, mesh, hp: def.hp,
+    chasingPlayer: false, attackingStatue: false, attackTimer: 0,
+    buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
+    dead: false,
+  });
+}
+
 function spawnWave(index) {
-  const wave = WAVES[index];
-  for (let i = 0; i < wave.count; i++) {
-    const mesh = new THREE.Mesh(zombieGeo, zombieMat);
-    mesh.position.set(
-      CONFIG.spawnPoint.x + (Math.random() - 0.5) * CONFIG.packSpread * 2,
-      Z.radius + Z.height / 2,
-      CONFIG.spawnPoint.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
-    );
-    scene.add(mesh);
-    zombies.push({ mesh, hp: Z.hp, chasingPlayer: false, attackTimer: 0 });
+  for (const [type, count] of Object.entries(WAVES[index])) {
+    for (let i = 0; i < count; i++) spawnZombie(type);
   }
   setMessage(`Wave ${index + 1}`, 2);
 }
@@ -183,7 +276,16 @@ function spawnWave(index) {
 // Input
 // =====================================================================
 const keys = {};
-addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  // Debug: Digit1..Digit6 spawn a small pack of that type at the spawn point
+  const m = /^Digit([1-9])$/.exec(e.code);
+  const type = m && DEBUG_SPAWN_KEYS[m[1] - 1];
+  if (type && !e.repeat && !state.over) {
+    for (let i = 0; i < CONFIG.debugPackSize; i++) spawnZombie(type);
+    setMessage(`[debug] spawned ${CONFIG.debugPackSize} ${type}`, 1.5);
+  }
+});
 addEventListener('keyup', e => keys[e.code] = false);
 let mouseDown = false;
 const overlay = document.getElementById('overlay');
@@ -284,40 +386,155 @@ function damagePlayer(amount) {
   }
 }
 
-function updateZombies(dt) {
-  const statueReach = S / 2 + Z.radius + 0.2;   // contact distance to statue
-  const playerReach = P.radius + Z.radius + 0.2;
+// ---------------------------------------------------------------------
+// Zombie helpers shared by all behaviors
+// ---------------------------------------------------------------------
 
-  for (const z of zombies) {
-    const pos = z.mesh.position;
-    const distToPlayer = state.playerDead ? Infinity : tmp.copy(playerMesh.position).sub(pos).setY(0).length();
+// Decide whether this zombie is after the player or the statue, per its targetPreference.
+// Returns { isPlayer, pos, dist, dir } where dir is a flat unit vector toward the target.
+function selectTarget(z) {
+  const def = z.def, pos = z.mesh.position;
+  const distToPlayer = state.playerDead ? Infinity : tmp.copy(playerMesh.position).sub(pos).setY(0).length();
 
-    // Aggro rule with hysteresis
-    if (!z.chasingPlayer && distToPlayer < Z.aggroRange) z.chasingPlayer = true;
-    else if (z.chasingPlayer && distToPlayer > Z.deaggroRange) z.chasingPlayer = false;
+  if (def.targetPreference === 'statueOnly') {
+    z.chasingPlayer = false;
+  } else if (!z.chasingPlayer && distToPlayer < def.aggroRange) {
+    // 'statue' types commit to the statue once they've started hitting it
+    if (def.targetPreference === 'player' || !z.attackingStatue) z.chasingPlayer = true;
+  } else if (z.chasingPlayer && distToPlayer > def.deaggroRange) {
+    z.chasingPlayer = false;
+  }
 
-    const target = z.chasingPlayer ? playerMesh.position : statueMesh.position;
-    const reach = z.chasingPlayer ? playerReach : statueReach;
-    const toTarget = tmp.copy(target).sub(pos).setY(0);
-    // For the box statue, use the larger axis distance (approx. distance to its face)
-    const dist = z.chasingPlayer ? toTarget.length() : Math.max(Math.abs(toTarget.x), Math.abs(toTarget.z));
+  const isPlayer = z.chasingPlayer;
+  const targetPos = isPlayer ? playerMesh.position : statueMesh.position;
+  const dir = new THREE.Vector3().copy(targetPos).sub(pos).setY(0);
+  // For the box statue, distance to its face ≈ largest axis distance minus half-size
+  const dist = isPlayer ? dir.length() - P.radius : Math.max(Math.abs(dir.x), Math.abs(dir.z)) - S / 2;
+  dir.normalize();
+  return { isPlayer, pos: targetPos, dist, dir };
+}
 
-    z.attackTimer -= dt;
-    if (dist > reach) {
-      pos.addScaledVector(toTarget.normalize(), Z.speed * dt);
-    } else if (z.attackTimer <= 0) {
-      z.attackTimer = Z.attackCooldown;
-      if (z.chasingPlayer) damagePlayer(Z.damage);
-      else state.statueHp -= Z.damage;
+// Step toward a flat direction and face it (facing matters for the Plated front plate)
+function moveZombie(z, dir, dt) {
+  z.mesh.position.addScaledVector(dir, z.def.speed * z.buff.speed * dt);
+  faceDir(z, dir);
+}
+function faceDir(z, dir) { z.mesh.rotation.y = Math.atan2(dir.x, dir.z); }
+
+function dealDamage(target, amount) {
+  if (target.isPlayer) damagePlayer(amount);
+  else state.statueHp -= amount;
+}
+
+// ---------------------------------------------------------------------
+// Behaviors — one small function per zombie style, keyed by def.behavior
+// ---------------------------------------------------------------------
+
+// Walk to target, hit it on cooldown when in contact (Shambler, Sprinter, Plated)
+function meleeBehavior(z, target, dt) {
+  const reach = z.def.radius + 0.2;
+  z.attackingStatue = !target.isPlayer && target.dist <= reach;
+  if (target.dist > reach) { moveZombie(z, target.dir, dt); return; }
+  faceDir(z, target.dir);
+  if (z.attackTimer <= 0) {
+    z.attackTimer = z.def.attackCooldown;
+    dealDamage(target, z.def.damage * z.buff.damage);
+  }
+}
+
+// Close to `range`, then stand and lob slow globs at the target (Spitter)
+function rangedBehavior(z, target, dt) {
+  const def = z.def;
+  if (target.dist > def.range) { moveZombie(z, target.dir, dt); return; }
+  faceDir(z, target.dir);
+  z.attackingStatue = !target.isPlayer;
+  if (z.attackTimer > 0) return;
+  z.attackTimer = def.attackCooldown;
+  const start = z.mesh.position.clone().add(new THREE.Vector3(0, def.height / 2, 0));
+  const aim = target.isPlayer ? playerMesh.position.clone() : new THREE.Vector3(0, S / 2, 0);
+  const vel = aim.sub(start).normalize().multiplyScalar(def.projectileSpeed);
+  const mesh = new THREE.Mesh(spitGeo, spitMat);
+  mesh.position.copy(start);
+  scene.add(mesh);
+  enemyProjectiles.push({ mesh, vel, life: def.projectileLife, damage: def.damage * z.buff.damage });
+}
+
+// Rush the statue and blow up on contact (Bomber). Killing it first means no explosion.
+function bomberBehavior(z, target, dt) {
+  const def = z.def;
+  if (target.dist > def.radius + 0.2) { moveZombie(z, target.dir, dt); return; }
+  state.statueHp -= def.explosionDamage * z.buff.damage;
+  if (!state.playerDead && playerMesh.position.distanceTo(z.mesh.position) < def.explosionRadius) {
+    damagePlayer(def.playerExplosionDamage);
+  }
+  spawnExplosion(z.mesh.position, def.explosionRadius);
+  z.dead = true;
+}
+
+// Hang behind the pack's centroid (Banner). With no pack left, behave as a weak melee zombie.
+function bannerBehavior(z, target, dt) {
+  const others = zombies.filter(o => o !== z && o.type !== 'banner' && !o.dead);
+  if (others.length === 0) { meleeBehavior(z, target, dt); return; }
+  const centroid = new THREE.Vector3();
+  others.forEach(o => centroid.add(o.mesh.position));
+  centroid.divideScalar(others.length).setY(0);
+  // "Behind" = further from the statue than the centroid
+  const back = centroid.clone().normalize();
+  if (back.lengthSq() === 0) back.set(0, 0, -1);
+  const desired = centroid.addScaledVector(back, z.def.backOffset);
+  const toDesired = desired.sub(z.mesh.position).setY(0);
+  if (toDesired.length() > 0.5) moveZombie(z, toDesired.normalize(), dt);
+}
+
+const BEHAVIORS = {
+  melee: meleeBehavior,
+  ranged: rangedBehavior,
+  bomber: bomberBehavior,
+  banner: bannerBehavior,
+};
+
+// Reset all buffs, then let every living banner buff allies inside its radius
+function applyBannerBuffs() {
+  for (const z of zombies) { z.buff.speed = 1; z.buff.damage = 1; }
+  for (const b of zombies) {
+    if (b.type !== 'banner') continue;
+    const r2 = b.def.buffRadius ** 2;
+    for (const z of zombies) {
+      if (z === b || z.type === 'banner') continue;
+      tmp.copy(z.mesh.position).sub(b.mesh.position).setY(0);
+      if (tmp.lengthSq() < r2) {
+        // Multiple banners don't stack — take the strongest
+        z.buff.speed = Math.max(z.buff.speed, b.def.speedMult);
+        z.buff.damage = Math.max(z.buff.damage, b.def.damageMult);
+      }
     }
   }
+}
+
+function spawnExplosion(pos, radius) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.7 }));
+  mesh.position.copy(pos);
+  scene.add(mesh);
+  effects.push({ mesh, t: 0, duration: 0.35, radius });
+}
+
+function updateZombies(dt) {
+  applyBannerBuffs();
+
+  for (const z of zombies) {
+    z.attackTimer -= dt;
+    const target = selectTarget(z);
+    BEHAVIORS[z.def.behavior](z, target, dt);
+  }
+  removeDeadZombies();
 
   // Light separation so the pack doesn't collapse into one point
   for (let i = 0; i < zombies.length; i++) {
     for (let j = i + 1; j < zombies.length; j++) {
       const a = zombies[i].mesh.position, b = zombies[j].mesh.position;
       tmp.copy(a).sub(b).setY(0);
-      const d = tmp.length(), min = Z.radius * 2;
+      const d = tmp.length(), min = zombies[i].def.radius + zombies[j].def.radius;
       if (d > 0 && d < min) {
         tmp.multiplyScalar((min - d) / d / 2);
         a.add(tmp); b.sub(tmp);
@@ -326,8 +543,54 @@ function updateZombies(dt) {
   }
 }
 
+function removeDeadZombies() {
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    if (zombies[i].dead) { scene.remove(zombies[i].mesh); zombies.splice(i, 1); }
+  }
+}
+
+// Plated takes reduced damage when a shot travels into its front plate
+function damageMultiplierFor(z, shotVel) {
+  if (z.def.frontDamageMult === undefined) return 1;
+  const facing = new THREE.Vector3(Math.sin(z.mesh.rotation.y), 0, Math.cos(z.mesh.rotation.y));
+  const incoming = shotVel.clone().setY(0).normalize();
+  return -incoming.dot(facing) > z.def.frontArc ? z.def.frontDamageMult : 1;
+}
+
+function updateEnemyProjectiles(dt) {
+  for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+    const p = enemyProjectiles[i], pp = p.mesh.position;
+    pp.addScaledVector(p.vel, dt);
+    p.life -= dt;
+    let dead = p.life <= 0 || pp.y < 0;
+    const r = ZT.spitter.projectileRadius;
+    // Hit player (vertical segment approximation of the capsule)
+    if (!dead && !state.playerDead) {
+      const pl = playerMesh.position;
+      const dy = Math.max(0, Math.abs(pp.y - pl.y) - P.height / 2);
+      const dx = pp.x - pl.x, dz = pp.z - pl.z;
+      if (dx * dx + dy * dy + dz * dz < (P.radius + r) ** 2) { damagePlayer(p.damage); dead = true; }
+    }
+    // Hit statue (box)
+    if (!dead && Math.abs(pp.x) < S / 2 + r && Math.abs(pp.z) < S / 2 + r && pp.y < S + r) {
+      state.statueHp -= p.damage; dead = true;
+    }
+    if (dead) { scene.remove(p.mesh); enemyProjectiles.splice(i, 1); }
+  }
+}
+
+function updateEffects(dt) {
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const e = effects[i];
+    e.t += dt;
+    const k = e.t / e.duration;
+    e.mesh.scale.setScalar(e.radius * k);
+    e.mesh.material.opacity = 0.7 * (1 - k);
+    if (k >= 1) { scene.remove(e.mesh); effects.splice(i, 1); }
+  }
+}
+
 function updateProjectiles(dt) {
-  const hitDist = CONFIG.projectile.radius + Z.radius;
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
     p.mesh.position.addScaledVector(p.vel, dt);
@@ -337,10 +600,11 @@ function updateProjectiles(dt) {
     // Hit test against zombies (capsule approximated by vertical segment)
     for (let j = zombies.length - 1; j >= 0 && !dead; j--) {
       const z = zombies[j], zp = z.mesh.position;
-      const dy = Math.max(0, Math.abs(p.mesh.position.y - zp.y) - Z.height / 2);
+      const hitDist = CONFIG.projectile.radius + z.def.radius;
+      const dy = Math.max(0, Math.abs(p.mesh.position.y - zp.y) - z.def.height / 2);
       const dx = p.mesh.position.x - zp.x, dz = p.mesh.position.z - zp.z;
       if (dx * dx + dy * dy + dz * dz < hitDist * hitDist) {
-        z.hp -= CONFIG.projectile.damage;
+        z.hp -= CONFIG.projectile.damage * damageMultiplierFor(z, p.vel);
         dead = true;
         if (z.hp <= 0) { scene.remove(z.mesh); zombies.splice(j, 1); }
       }
@@ -396,6 +660,8 @@ function loop() {
     updatePlayer(dt);
     updateZombies(dt);
     updateProjectiles(dt);
+    updateEnemyProjectiles(dt);
+    updateEffects(dt);
     updateWaves(dt);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
     if (state.statueHp <= 0) endGame(false);
