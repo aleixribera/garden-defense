@@ -2,12 +2,23 @@
 
 ## Main idea
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
-The player is a plant hero defending a statue in the center of a flat arena from waves of zombies.
+The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.2.0)
-- Single file: `index.html`, three.js via CDN (importmap). No build step.
+## Current state (v1.3.0)
+- Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
+- Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
-- Player: capsule, WASD + pointer-lock mouse aim, left click fires fast projectiles, 100 HP, respawns at statue after 3s.
+- Player = **Kernel Corn** (125 HP, respawns at statue after 3s). `playerMesh` is a group at capsule center
+  (collision is still the capsule); `buildKernelCorn()` builds the model procedurally: `makeLeaf` (bent/folded
+  vertex-colored planes), `makeCob` (lathe core + instanced kernels, `skip` carves the face), `placeLeaf` pivots
+  keep their rest rotation in `userData.base`. `animateCorn()` is the procedural rig (waddle, lean, squash/stretch,
+  leaf feet, collar flutter, aiming arms, recoil, spinning cob barrels, blink).
+- Controls: WASD (accelerated), Space jump, over-the-shoulder camera, RMB zoom, R reload.
+  Weapon `CONFIG.weapon`: Cob Busters — alternating-arm kernel shots, clip/reload, spread + bloom.
+  Abilities `CONFIG.abilities`: Q Shuck Shot (cob missile volley, AoE), E Husk Hop (leap, hold Space to glide,
+  ground slam), F Butter Barrage (target area → falling butter, damage + stun; stunned zombies show butter).
+- Feedback: hitmarkers, damage numbers, particles (`spawnParticle`), rings/decals, camera shake, hurt vignette.
+  Zombie damage goes through `damageZombie()`; area damage through `explodeAt()`.
 - Zombies: roster in `CONFIG.ZOMBIE_TYPES` (shambler, sprinter, plated, spitter, bomber, banner), each a
   colored capsule plus small primitive extras. Per frame: `applyBannerBuffs` → `selectTarget` (uses
   `targetPreference`: statue / player / statueOnly, with aggro/deaggro hysteresis) → `BEHAVIORS[def.behavior]`
@@ -19,16 +30,17 @@ The player is a plant hero defending a statue in the center of a flat arena from
   "Incoming" preview, red beacon at used spawn points) → active phase → next countdown. Win after wave 10.
 - HUD: wave, zombies remaining (alive + queued), boss bar, statue/player HP.
 - Debug: keys 1–6 spawn `debugPackSize` of the type in `DEBUG_SPAWN_KEYS`; N skips to next wave; B spawns mini-boss.
+  `window.__game` exposes state/corn/camera/CONFIG/explodeAt for console inspection.
 
 ## Code rules
-- Primitive shapes only — no models, textures, or sounds (until direction changes).
 - All tuning numbers live in the `CONFIG` object at the top of the file.
 - Waves are data (`WAVES` array), never hardcoded logic.
 - Keep code readable and commented.
 
 ## Direction
 - New zombie types: add an entry to `ZOMBIE_TYPES`; new special abilities get their own behavior function.
-- Likely next: special waves (via `modifiers`), real bosses, player classes/abilities, real art & audio.
+- Likely next: special waves (via `modifiers`), real bosses, more plant heroes (same builder helpers), audio.
+- "Primitive shapes only" now means procedural geometry built in code (no external models/textures).
 
 ## Maintaining this file
 If considerable changes are made (new systems, new direction, structural changes), update this file to

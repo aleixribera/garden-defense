@@ -5,18 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Garden Defense</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
   #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-size: 18px; text-shadow: 1px 1px 2px #000; pointer-events: none; }
   #hud .bar { width: 200px; height: 14px; background: #400; border: 1px solid #fff; margin: 4px 0 10px; }
-  #hud .fill { height: 100%; background: #3c3; }
-  #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; background: #fff; border-radius: 50%; pointer-events: none; }
+  #hud .fill { height: 100%; background: #3c3; transition: width 0.15s; }
   #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-             color: #fff; background: rgba(0,0,0,0.6); font-size: 28px; text-align: center; cursor: pointer; }
-  #overlay small { font-size: 16px; margin-top: 12px; opacity: 0.8; }
+             color: #fff; background: rgba(0,0,0,0.6); font-size: 28px; text-align: center; cursor: pointer; z-index: 10; }
+  #overlay small { font-size: 16px; margin-top: 12px; opacity: 0.85; line-height: 1.6; }
   #banner { position: fixed; top: 18%; width: 100%; text-align: center; color: #fff; text-shadow: 2px 2px 4px #000; pointer-events: none; }
   #banner .title { font-size: 56px; font-weight: bold; }
   #banner .sub { font-size: 20px; margin-top: 6px; }
   #message { position: fixed; top: 30%; width: 100%; text-align: center; color: #fff; font-size: 32px; text-shadow: 2px 2px 4px #000; pointer-events: none; }
+
+  /* Reticle: four ticks whose gap follows the current weapon spread */
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+  #crosshair i { position: absolute; background: #fff; box-shadow: 0 0 2px #000; }
+  #crosshair .t, #crosshair .b { width: 2px; height: 9px; left: -1px; }
+  #crosshair .l, #crosshair .r { width: 9px; height: 2px; top: -1px; }
+  #crosshair .dot { width: 4px; height: 4px; left: -2px; top: -2px; border-radius: 50%; background: #ffe14a; }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px; pointer-events: none; opacity: 0; }
+  #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 12px; top: 0; width: 2px; height: 26px;
+    background: linear-gradient(to bottom, currentColor 0 34%, transparent 34% 66%, currentColor 66%); }
+  #hitmarker::before { transform: rotate(45deg); } #hitmarker::after { transform: rotate(-45deg); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.65) 100%); }
+  #popups .pop { position: fixed; font-weight: 800; font-size: 17px; pointer-events: none; transform: translate(-50%, -50%);
+    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+
+  /* Ability bar */
+  #abilities { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; pointer-events: none; }
+  .ab { width: 70px; height: 70px; border-radius: 14px; background: linear-gradient(#2f5a1c, #183510); border: 2px solid #6b8a3a;
+        position: relative; overflow: hidden; color: #fff; text-align: center; box-shadow: 0 3px 8px rgba(0,0,0,0.5); transition: border-color 0.2s, box-shadow 0.2s; }
+  .ab .icon { font-size: 28px; margin-top: 9px; filter: drop-shadow(0 2px 2px #000); }
+  .ab .name { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px; }
+  .ab .key { position: absolute; top: 3px; left: 6px; font-size: 12px; font-weight: 800; color: #ffe680; }
+  .ab .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); }
+  .ab .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; text-shadow: 0 0 4px #000; }
+  .ab.ready { border-color: #ffd84a; box-shadow: 0 0 14px rgba(255,216,74,0.6), 0 3px 8px rgba(0,0,0,0.5); }
+  .ab.active { border-color: #fff; box-shadow: 0 0 20px #fff; }
+  #ammo { position: fixed; right: 28px; bottom: 22px; color: #fff; text-align: right; text-shadow: 2px 2px 3px #000; pointer-events: none; }
+  #ammo .n { font-size: 52px; font-weight: 800; }
+  #ammo .max { font-size: 20px; opacity: 0.75; }
+  #ammo .label { font-size: 12px; letter-spacing: 2px; color: #ffe680; }
+  #reloadBar { width: 150px; height: 6px; background: rgba(0,0,0,0.5); margin: 4px 0 4px auto; border-radius: 3px; overflow: hidden; }
+  #reloadFill { height: 100%; width: 0; background: #ffe14a; }
+  #targetHint { position: fixed; bottom: 110px; width: 100%; text-align: center; color: #ffe680; font-size: 18px; font-weight: 700;
+                text-shadow: 1px 1px 3px #000; pointer-events: none; display: none; }
 </style>
 </head>
 <body>
@@ -25,18 +59,34 @@
   <div id="remainingText"></div>
   <div id="bossHud" style="display:none"><div id="bossName">Boss</div><div class="bar"><div class="fill" id="bossBar" style="background:#c33"></div></div></div>
   <div>Statue</div><div class="bar"><div class="fill" id="statueBar"></div></div>
-  <div>You</div><div class="bar"><div class="fill" id="playerBar"></div></div>
+  <div>Kernel Corn</div><div class="bar"><div class="fill" id="playerBar"></div></div>
 </div>
-<div id="crosshair"></div>
+<div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
+<div id="hitmarker"></div>
+<div id="vignette"></div>
+<div id="popups"></div>
+<div id="abilities">
+  <div class="ab" id="ab-shuckShot"><span class="key">Q</span><div class="icon">🌽</div><div class="name">Shuck Shot</div><div class="cd"></div><div class="cdt"></div></div>
+  <div class="ab" id="ab-huskHop"><span class="key">E</span><div class="icon">🍃</div><div class="name">Husk Hop</div><div class="cd"></div><div class="cdt"></div></div>
+  <div class="ab" id="ab-butterBarrage"><span class="key">F</span><div class="icon">🧈</div><div class="name">Butter Barrage</div><div class="cd"></div><div class="cdt"></div></div>
+</div>
+<div id="ammo"><span class="n" id="ammoN">0</span><span class="max" id="ammoMax"></span>
+  <div id="reloadBar"><div id="reloadFill"></div></div><div class="label">COB BUSTERS</div></div>
+<div id="targetHint">BUTTER BARRAGE — Left click to call the strike · Right click to cancel</div>
 <div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div></div>
 <div id="message"></div>
-<div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div><small id="overlaySub">Click to play — WASD move, mouse aim, left click shoot</small></div>
+<div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
+  <small id="overlaySub">Click to play<br>WASD move · Mouse aim · LMB fire · RMB zoom · Space jump (hold to glide) · R reload<br>Q Shuck Shot · E Husk Hop · F Butter Barrage</small></div>
 
 <script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -44,13 +94,37 @@ import * as THREE from 'three';
 const CONFIG = {
   arenaSize: 100,              // ground plane width/depth
   statue: { hp: 1000, size: 4 },
+  // Kernel Corn (the hero). Collision is still a capsule of radius/height; the model is cosmetic.
   player: {
-    hp: 100, speed: 12, radius: 0.6, height: 1.2,
+    hp: 125, speed: 10, radius: 0.6, height: 1.4,
+    accel: 14,                 // how fast velocity approaches the wished velocity (1/s)
+    airControl: 0.35,          // fraction of accel available while airborne
+    jumpSpeed: 9, gravity: 26,
+    aimSpeedMult: 0.65,        // move speed while zoomed (RMB)
     respawnDelay: 3,           // seconds
-    fireRate: 0.15,            // seconds between shots
   },
-  projectile: { speed: 60, damage: 25, life: 1.5, radius: 0.2 },
-  camera: { distance: 8, height: 3, sensitivity: 0.0025 },
+  // Primary weapon: twin cob blasters that alternate kernel shots
+  weapon: {
+    fireRate: 0.075, damage: 12, clip: 60, reloadTime: 1.7,
+    spread: 0.02, aimSpread: 0.004,   // radians of random deviation (hip / zoomed)
+    bloomPerShot: 0.004, bloomMax: 0.03, bloomRecovery: 0.12,
+    kernelSpeed: 95, kernelLife: 1.0, kernelRadius: 0.12,
+    recoilKick: 0.0022,        // camera pitch kick per shot
+  },
+  abilities: {
+    // Volley of explosive corn-cob missiles, alternating arms
+    shuckShot: { cooldown: 9, missiles: 6, interval: 0.09, speed: 38, spread: 0.035, damage: 45, radius: 3.2, life: 2.5 },
+    // Leaf-powered leap; hold Space while falling to glide; slams on landing
+    huskHop: { cooldown: 7, upSpeed: 16, forwardSpeed: 10, slamDamage: 50, slamRadius: 4.5, glideGravity: 0.22 },
+    // Call a rain of butter on a ground target: damages and stuns ("buttered")
+    butterBarrage: { cooldown: 18, range: 45, delay: 0.7, pats: 12, interval: 0.11, areaRadius: 6,
+                     damage: 40, splashRadius: 2.6, stun: 2.5, dropHeight: 26, fallSpeed: 34 },
+  },
+  camera: {
+    distance: 5.2, aimDistance: 3.4,  // hip / zoomed
+    height: 1.0, shoulder: 1.05,      // pivot above player center, and to the right
+    fov: 70, aimFov: 50, sensitivity: 0.0025,
+  },
   // Zombie roster. Shared fields:
   //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (player chase hysteresis),
   //   radius, height, color, behavior (key into BEHAVIORS), targetPreference:
@@ -126,6 +200,7 @@ const CONFIG = {
   spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
   waveCountdown: 5,             // seconds of countdown before each wave (banner + spawn markers)
   incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
+  maxParticles: 450,
 
   // Waves as data. Each wave: { packs: [{ spawn, zombies: { type: count } }], modifiers: [] }
   //   packs     — all spawn at once at the start of the wave, each at its own spawn point
@@ -147,6 +222,8 @@ const CONFIG = {
   ],
 };
 const WAVES = CONFIG.WAVES;
+const W = CONFIG.weapon;
+const AB = CONFIG.abilities;
 
 // Debug keys 1..6 spawn a pack of these types, in order.
 const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber', 'banner'];
@@ -155,17 +232,39 @@ const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber',
 // Scene setup
 // =====================================================================
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 500);
+scene.background = new THREE.Color(0x8fd0f0);
+scene.fog = new THREE.Fog(0x8fd0f0, 70, 190);
+const camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, innerWidth / innerHeight, 0.1, 500);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x445522, 1.0));
-const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-sun.position.set(30, 50, 20);
-scene.add(sun);
+// Soft studio reflections for the hero's PBR materials (zombies use Lambert and ignore it)
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+scene.add(new THREE.HemisphereLight(0xe4f4ff, 0x40601e, 1.1));
+// Sun follows the player so the shadow map stays sharp around the action
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
+const SUN_OFFSET = new THREE.Vector3(18, 34, 14);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 120 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+const rimLight = new THREE.DirectionalLight(0xcfe6ff, 0.9);   // cool back light to pop silhouettes
+rimLight.position.set(-20, 15, -30);
+scene.add(rimLight);
+// Muzzle flash light, moved to whichever cob just fired
+const muzzleLight = new THREE.PointLight(0xffc860, 0, 7, 2);
+scene.add(muzzleLight);
 
 // Ground
 const ground = new THREE.Mesh(
@@ -173,6 +272,7 @@ const ground = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x4a7a2c })
 );
 ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
 scene.add(ground);
 
 // Spawn point markers: a dim disc each, plus a tall red beacon shown when that point is about to be used
@@ -180,6 +280,7 @@ const spawnMarkers = {};
 for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
   const disc = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), new THREE.MeshLambertMaterial({ color: 0x552222 }));
   disc.position.set(sp.x, 0.05, sp.z);
+  disc.receiveShadow = true;
   const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 30, 12),
     new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.5, depthWrite: false }));
   beacon.position.set(sp.x, 15, sp.z);
@@ -199,14 +300,286 @@ function showSpawnMarkers(names) {
 const S = CONFIG.statue.size;
 const statueMesh = new THREE.Mesh(new THREE.BoxGeometry(S, S, S), new THREE.MeshLambertMaterial({ color: 0xccccbb }));
 statueMesh.position.y = S / 2;
+statueMesh.castShadow = statueMesh.receiveShadow = true;
 scene.add(statueMesh);
 const statueHpBar = makeWorldBar(6);
 statueHpBar.group.position.set(0, S + 1.5, 0);
 scene.add(statueHpBar.group);
 
-// Player (capsule)
+// =====================================================================
+// Kernel Corn — the hero model, built entirely from procedural primitives.
+// Model space: feet at y = 0, facing +Z. Leaves are bent/folded planes,
+// cobs are a lathe core covered in instanced kernels.
+// =====================================================================
+const CORN_MAT = {
+  kernel:   new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, envMapIntensity: 0.6 }),
+  cobCore:  new THREE.MeshStandardMaterial({ color: 0xc7900f, roughness: 0.7, envMapIntensity: 0.4 }),
+  skin:     new THREE.MeshStandardMaterial({ color: 0xf2bf2a, roughness: 0.45, envMapIntensity: 0.6 }),
+  leaf:     new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.5, side: THREE.DoubleSide, envMapIntensity: 0.5 }),
+  stalk:    new THREE.MeshStandardMaterial({ color: 0x3b7a22, roughness: 0.55, envMapIntensity: 0.5 }),
+  eyeWhite: new THREE.MeshStandardMaterial({ color: 0xfafaf0, roughness: 0.12, envMapIntensity: 0.9 }),
+  pupil:    new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.05, envMapIntensity: 1.2 }),
+  brow:     new THREE.MeshStandardMaterial({ color: 0xc98a12, roughness: 0.5 }),
+  mouth:    new THREE.MeshStandardMaterial({ color: 0x3a1806, roughness: 0.8 }),
+  teeth:    new THREE.MeshStandardMaterial({ color: 0xfff4d8, roughness: 0.25, envMapIntensity: 0.8 }),
+};
+const KERNEL_GEO = new THREE.SphereGeometry(1, 10, 8);
+
+// A leaf blade: grows along +Y, curls toward +Z by `bend` radians over its length,
+// edges folded up around the midrib (`fold`), optional `twist`. Vertex colors give a
+// dark base → bright tip gradient with a lighter midrib.
+function makeLeaf({ length = 1, width = 0.3, bend = 1, fold = 0.35, twist = 0, base = 0.25,
+                    dark = 0x1c561a, light = 0x5fae3c }) {
+  const geo = new THREE.PlaneGeometry(1, 1, 6, 18);
+  const pos = geo.attributes.position;
+  const colors = [];
+  const cDark = new THREE.Color(dark), cLight = new THREE.Color(light), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i);          // -0.5..0.5 across the blade
+    const v = pos.getY(i) + 0.5;    // 0..1 along the blade
+    // Outline: some width at the base, widest ~30% along, sharp tip
+    const w = width * (base * (1 - v) + (1 - base) * Math.sin(Math.PI * Math.pow(v, 0.55)));
+    const across = u * w;
+    const tw = twist * v;
+    const off = Math.abs(u) * 2 * w * fold + across * Math.sin(tw);   // offset along the spine normal
+    const a = bend * v;
+    const sy = bend ? Math.sin(a) / bend * length : v * length;
+    const sz = bend ? (1 - Math.cos(a)) / bend * length : 0;
+    pos.setXYZ(i, across * Math.cos(tw), sy - Math.sin(a) * off, sz + Math.cos(a) * off);
+    c.lerpColors(cDark, cLight, 0.15 + 0.85 * Math.pow(v, 0.7));
+    if (Math.abs(u) < 0.01) c.offsetHSL(0.01, -0.1, 0.1);            // midrib
+    else c.offsetHSL(0, 0, -0.06 * Math.abs(u) * 2);                 // darker edges
+    colors.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, CORN_MAT.leaf);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+// Attach a leaf on a pivot at (x,y,z): yaw around Y, then tilt away from vertical toward the yaw direction.
+// The pivot remembers its rest rotation in userData.base so animation can add on top of it.
+function placeLeaf(parent, opts, x, y, z, yaw, tilt, roll = 0) {
+  const pivot = new THREE.Group();
+  pivot.position.set(x, y, z);
+  pivot.rotation.set(tilt, yaw, roll, 'YXZ');
+  pivot.userData.base = pivot.rotation.clone();
+  pivot.add(makeLeaf(opts));
+  parent.add(pivot);
+  return pivot;
+}
+
+// A corn cob along +Y (base at 0): tapered lathe core + staggered rows of instanced kernels.
+// `skip(angle, t)` can carve out kernels (used for the face). Angle 0 = +Z.
+function makeCob({ length, radius, rows = 12, tipTaper = 0.45, skip = null }) {
+  const group = new THREE.Group();
+  const profile = t => radius * (1 - tipTaper * t * t) * Math.sqrt(Math.max(0, 1 - Math.pow(t, 8)))
+                              * Math.sqrt(Math.min(1, (t + 0.03) / 0.14));
+  const pts = [];
+  for (let i = 0; i <= 28; i++) { const t = i / 28; pts.push(new THREE.Vector2(profile(t) * 0.86, t * length)); }
+  const core = new THREE.Mesh(new THREE.LatheGeometry(pts, 28), CORN_MAT.cobCore);
+  core.castShadow = true;
+  group.add(core);
+
+  const ringStep = (2 * Math.PI * radius) / rows * 0.95;
+  const rings = Math.floor(length / ringStep);
+  const list = [];
+  for (let r = 0; r < rings; r++) {
+    const t = (r + 0.5) / rings;
+    const rad = profile(t);
+    if (rad < radius * 0.22) continue;
+    const n = Math.max(5, Math.round(rows * rad / radius));
+    for (let k = 0; k < n; k++) {
+      const a = ((k + (r % 2) * 0.5) / n) * Math.PI * 2;
+      if (skip && skip(Math.atan2(Math.sin(a), Math.cos(a)), t)) continue;
+      list.push({ a, y: t * length, rad, s: (2 * Math.PI * rad / n) * 0.62 });
+    }
+  }
+  const im = new THREE.InstancedMesh(KERNEL_GEO, CORN_MAT.kernel, list.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(),
+        sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+  list.forEach((k, i) => {
+    p.set(Math.sin(k.a) * k.rad, k.y, Math.cos(k.a) * k.rad);
+    q.setFromEuler(e.set(0, k.a, 0));                // local +Z points outward
+    sc.set(k.s, ringStep * 0.64, k.s * 0.6);
+    im.setMatrixAt(i, m.compose(p, q, sc));
+    col.setHSL(0.115 + (Math.random() - 0.5) * 0.02, 0.95, 0.43 + (Math.random() - 0.5) * 0.08);
+    im.setColorAt(i, col);
+  });
+  im.castShadow = true;
+  group.add(im);
+  return group;
+}
+
+function makeMuzzleFlash() {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  const g = new THREE.Group();
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 7), mat);
+  cone.position.y = 0.22;
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), mat);
+  g.add(cone, core);
+  g.visible = false;
+  return g;
+}
+
+function buildKernelCorn() {
+  const root = new THREE.Group();
+  const hips = new THREE.Group();
+  const HIPS_Y = 0.52;
+  hips.position.y = HIPS_Y;
+  root.add(hips);
+
+  // --- Leaf feet: four broad blades splayed on the ground, tips curling up ---
+  const legs = [];
+  const footLeaf = { length: 1.0, width: 0.4, bend: -1.25, fold: 0.35, base: 0.35, dark: 0x174a15, light: 0x4f9a33 };
+  [[0.6, 0], [-0.6, Math.PI], [Math.PI - 0.75, Math.PI], [Math.PI + 0.75, 0]].forEach(([yaw, phase]) => {
+    legs.push({ pivot: placeLeaf(hips, footLeaf, 0, 0.02, 0, yaw, 2.55), phase });
+  });
+
+  // --- Torso: stalk + chest/back leaves wrapping it ---
+  const torso = new THREE.Group();
+  hips.add(torso);
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 1.0, 16), CORN_MAT.stalk);
+  stalk.position.y = 0.35;
+  stalk.castShadow = true;
+  torso.add(stalk);
+  // stalk nodes (rings) for that plant-stem look
+  for (const y of [0.05, 0.42]) {
+    const node = new THREE.Mesh(new THREE.TorusGeometry(0.125, 0.025, 8, 18), CORN_MAT.stalk);
+    node.rotation.x = Math.PI / 2;
+    node.position.y = y;
+    torso.add(node);
+  }
+  const chestLeaf = { length: 0.9, width: 0.66, bend: -0.55, fold: 0.32, base: 0.55, dark: 0x1d5c1a, light: 0x62b03f };
+  placeLeaf(torso, chestLeaf, 0, 0.86, 0.1, 0, Math.PI - 0.1);
+  placeLeaf(torso, { ...chestLeaf, width: 0.55, length: 0.8 }, 0, 0.84, -0.08, Math.PI, Math.PI - 0.12);
+  placeLeaf(torso, { ...chestLeaf, width: 0.42, length: 0.7 }, 0.08, 0.82, 0, Math.PI / 2, Math.PI - 0.15);
+  placeLeaf(torso, { ...chestLeaf, width: 0.42, length: 0.7 }, -0.08, 0.82, 0, -Math.PI / 2, Math.PI - 0.15);
+
+  // --- Head: big cob with a carved-out face ---
+  const head = new THREE.Group();
+  head.position.set(0, 0.9, 0.02);
+  torso.add(head);
+  const HEAD_LEN = 1.2, HEAD_R = 0.31;
+  const faceSkip = (a, t) => Math.abs(a) < 0.95 && t > 0.08 && t < 0.72;
+  const headCob = makeCob({ length: HEAD_LEN, radius: HEAD_R, rows: 20, tipTaper: 0.5, skip: faceSkip });
+  headCob.position.y = -0.05;
+  head.add(headCob);
+  const face = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), CORN_MAT.skin);
+  face.scale.set(0.28, 0.4, 0.2);
+  face.position.set(0, 0.43, 0.13);
+  face.castShadow = true;
+  head.add(face);
+
+  // Eyes (white + pupil + angry upper lid), grouped so they can blink
+  const eyes = [];
+  for (const side of [1, -1]) {
+    const eye = new THREE.Group();
+    eye.position.set(0.1 * side, 0.53, 0.29);
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.078, 20, 16), CORN_MAT.eyeWhite);
+    white.scale.z = 0.75;
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10), CORN_MAT.pupil);
+    pupil.position.set(-0.012 * side, -0.008, 0.055);
+    // Upper lid: skin-colored hemisphere tilted forward, angled down toward the nose = scowl
+    const lidPivot = new THREE.Group();
+    lidPivot.rotation.z = 0.38 * side;
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.084, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), CORN_MAT.skin);
+    lid.rotation.x = 0.35;
+    lid.scale.z = 0.8;
+    lidPivot.add(lid);
+    eye.add(white, pupil, lidPivot);
+    head.add(eye);
+    eyes.push(eye);
+    // Brow: thick angled ridge
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.026, 0.12, 4, 8), CORN_MAT.brow);
+    brow.rotation.z = Math.PI / 2 + 0.42 * side;
+    brow.position.set(0.105 * side, 0.625, 0.315);
+    head.add(brow);
+  }
+  // Clenched grimace: dark mouth, teeth row with a bite line, lower lip
+  const mouth = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.17, 4, 10), CORN_MAT.mouth);
+  mouth.rotation.z = Math.PI / 2;
+  mouth.scale.z = 0.6;
+  mouth.position.set(0, 0.33, 0.3);
+  const teeth = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.052, 0.03), CORN_MAT.teeth);
+  teeth.position.set(0, 0.33, 0.322);
+  const bite = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.006, 0.032), CORN_MAT.mouth);
+  bite.position.set(0, 0.33, 0.324);
+  const lip = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.16, 4, 8), CORN_MAT.skin);
+  lip.rotation.z = Math.PI / 2;
+  lip.position.set(0, 0.293, 0.322);
+  head.add(mouth, teeth, bite, lip);
+
+  // --- Collar: husk leaves flaring out around the neck; the side ones rise beside the face ---
+  const collar = [];
+  const collarDefs = [ // yaw, tilt, length, width, bend
+    [1.05, 0.35, 0.78, 0.24, 2.1], [-1.05, 0.35, 0.78, 0.24, 2.1],
+    [1.5, 0.75, 0.85, 0.26, 2.4],  [-1.5, 0.75, 0.85, 0.26, 2.4],
+    [2.2, 0.6, 0.8, 0.26, 2.3],    [-2.2, 0.6, 0.8, 0.26, 2.3],
+    [2.8, 0.45, 0.85, 0.28, 2.0],  [-2.8, 0.45, 0.85, 0.28, 2.0],
+    [Math.PI, 0.3, 0.7, 0.26, 1.8],
+    [0.7, 1.1, 0.55, 0.2, 2.2],    [-0.7, 1.1, 0.55, 0.2, 2.2],
+  ];
+  for (const [yaw, tilt, length, width, bend] of collarDefs) {
+    collar.push(placeLeaf(head, { length, width, bend, fold: 0.4 }, Math.sin(yaw) * 0.17, 0.0, Math.cos(yaw) * 0.17, yaw, tilt));
+  }
+
+  // --- Arms: curved stalks ending in husk-cupped cob blasters pointing forward ---
+  const arms = [];
+  for (const side of [1, -1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(0.09 * side, 0.55, 0.02);
+    torso.add(pivot);
+    const end = new THREE.Vector3(0.66 * side, -0.3, 0.2);
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.28 * side, 0.04, 0),
+      new THREE.Vector3(0.55 * side, -0.12, 0.08), end,
+    ]);
+    const armMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.05, 8), CORN_MAT.stalk);
+    armMesh.castShadow = true;
+    pivot.add(armMesh);
+    placeLeaf(pivot, { length: 0.5, width: 0.17, bend: 1.8, fold: 0.4 }, 0.3 * side, 0.03, 0, 1.6 * side, 0.5);
+    placeLeaf(pivot, { length: 0.4, width: 0.14, bend: 2.0, fold: 0.4 }, 0.5 * side, -0.1, 0.05, 2.4 * side, 0.6);
+
+    const hand = new THREE.Group();
+    hand.position.copy(end);
+    pivot.add(hand);
+    const aim = new THREE.Group();          // rotates the cob's +Y axis to point forward (+Z)
+    aim.rotation.x = Math.PI / 2;
+    hand.add(aim);
+    const spin = new THREE.Group();         // the cob barrel spins like a gatling when firing
+    aim.add(spin);
+    const handCob = makeCob({ length: 0.62, radius: 0.2, rows: 12, tipTaper: 0.3 });
+    handCob.position.y = -0.22;
+    spin.add(handCob);
+    for (let i = 0; i < 7; i++) {           // husk cup around the back of the cob
+      placeLeaf(aim, { length: 0.42, width: 0.2, bend: 1.3, fold: 0.45, dark: 0x1a5418, light: 0x58a838 },
+        0, -0.2, 0, (i / 7) * Math.PI * 2, 0.95);
+    }
+    const muzzle = new THREE.Object3D();
+    muzzle.position.y = 0.44;
+    aim.add(muzzle);
+    const flash = makeMuzzleFlash();
+    flash.position.y = 0.46;
+    aim.add(flash);
+    arms.push({ side, pivot, hand, spin, muzzle, flash, handBase: end.clone(), recoil: 0, spinSpeed: 0, flashT: 0 });
+  }
+
+  root.traverse(o => { if (o.isMesh && o.material.blending !== THREE.AdditiveBlending) o.castShadow = true; });
+  return { root, hips, HIPS_Y, torso, head, eyes, legs, collar, arms };
+}
+
+// Player: an invisible-origin group at capsule center (so all existing hit tests keep working),
+// carrying the Kernel Corn model offset down to the feet and turned to face the camera's forward (-Z).
 const P = CONFIG.player;
-const playerMesh = new THREE.Mesh(new THREE.CapsuleGeometry(P.radius, P.height, 4, 12), new THREE.MeshLambertMaterial({ color: 0x33cc33 }));
+const PLAYER_CENTER_Y = P.radius + P.height / 2;
+const playerMesh = new THREE.Group();
+const corn = buildKernelCorn();
+corn.root.position.y = -PLAYER_CENTER_Y;
+corn.root.rotation.y = Math.PI;
+playerMesh.add(corn.root);
 scene.add(playerMesh);
 
 // Shared zombie resources: one geometry + material per type, built from CONFIG
@@ -220,8 +593,11 @@ for (const [name, def] of Object.entries(ZT)) {
 }
 const spitGeo = new THREE.SphereGeometry(ZT.spitter.projectileRadius, 8, 8);
 const spitMat = new THREE.MeshBasicMaterial({ color: 0xb060ff });
-const projGeo = new THREE.SphereGeometry(CONFIG.projectile.radius, 8, 8);
-const projMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
+const kernelShotGeo = new THREE.SphereGeometry(1, 8, 6);
+const kernelShotMat = new THREE.MeshBasicMaterial({ color: 0xffe24a });
+const butterMat = new THREE.MeshStandardMaterial({ color: 0xffe07a, roughness: 0.25, emissive: 0x3a2a00 });
+const butterGeo = new THREE.BoxGeometry(1.0, 0.34, 0.66);
+const FWD_Z = new THREE.Vector3(0, 0, 1);
 
 // A simple world-space health bar (two planes) that faces the camera
 function makeWorldBar(width) {
@@ -243,13 +619,19 @@ function setWorldBar(bar, ratio) {
 // =====================================================================
 let state;          // reset by resetGame()
 let zombies = [];
-let projectiles = [];
+let projectiles = [];        // kernel shots
+let rockets = [];            // Shuck Shot missiles
+let butterPats = [];         // falling Butter Barrage pats
 let enemyProjectiles = [];   // spitter globs
-let effects = [];            // short-lived visuals (explosions)
+let effects = [];            // short-lived visuals (explosions, rings, splats)
+let particles = [];          // chips, smoke, leaves
+let popups = [];             // floating damage numbers
 
 function resetGame() {
-  [...zombies, ...projectiles, ...enemyProjectiles, ...effects].forEach(o => scene.remove(o.mesh));
-  zombies = []; projectiles = []; enemyProjectiles = []; effects = [];
+  [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects, ...particles]
+    .forEach(o => scene.remove(o.mesh));
+  popups.forEach(p => p.el.remove());
+  zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
   state = {
     statueHp: CONFIG.statue.hp,
     playerHp: P.hp,
@@ -259,9 +641,18 @@ function resetGame() {
     phase: 'countdown', // 'countdown' | 'active'
     waveTimer: 0,
     spawnQueue: [],     // pending staggered spawns: { t, type, spawn }
-    fireTimer: 0,
     yaw: 0, pitch: 0.2,
     over: false,
+    // hero
+    vel: new THREE.Vector3(), onGround: true, jumpQueued: false,
+    hopping: false,     // airborne from Husk Hop (slams on landing)
+    ammo: W.clip, reloading: false, reloadT: 0, fireTimer: 0, bloom: 0, nextArm: 0,
+    zoom: 0, aimPoint: new THREE.Vector3(), aimElev: 0,
+    cd: { shuckShot: 0, huskHop: 0, butterBarrage: 0 },
+    shuckQueue: 0, shuckTimer: 0,
+    targeting: false, barrages: [],
+    shake: 0, fovKick: 0, hurt: 0, hitmarker: 0,
+    anim: { t: 0, phase: 0, leanF: 0, leanS: 0, squash: 0, air: 0, blink: 3 },
   };
   respawnPlayer();
   setMessage('');
@@ -272,20 +663,26 @@ function resetGame() {
 function respawnPlayer() {
   state.playerHp = P.hp;
   state.playerDead = false;
+  state.vel.set(0, 0, 0);
+  state.hopping = false;
+  state.ammo = W.clip; state.reloading = false;
   playerMesh.visible = true;
-  playerMesh.position.set(0, P.radius + P.height / 2, S + 2); // just beside the statue
+  playerMesh.position.set(0, PLAYER_CENTER_Y, S + 2); // just beside the statue
 }
 
 // Build the mesh for a zombie type, plus small primitive extras for readability
 function makeZombieMesh(type) {
   const def = ZT[type];
-  const mesh = new THREE.Mesh(zombieAssets[type].geo, zombieAssets[type].mat);
+  // Per-zombie material clone so hits can flash just this zombie
+  const mesh = new THREE.Mesh(zombieAssets[type].geo, zombieAssets[type].mat.clone());
+  mesh.castShadow = true;
   const halfH = def.radius + def.height / 2;   // mesh origin is at its center
   if ((def.look || type) === 'plated') {
     // Front plate on local +Z (the facing direction)
     const plate = new THREE.Mesh(new THREE.BoxGeometry(def.radius * 2, def.height + def.radius, 0.2),
       new THREE.MeshLambertMaterial({ color: 0xbfc8d0 }));
     plate.position.z = def.radius + 0.1;
+    plate.castShadow = true;
     mesh.add(plate);
   } else if (type === 'bomber') {
     const bomb = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 10), new THREE.MeshLambertMaterial({ color: 0x111111 }));
@@ -315,11 +712,18 @@ function spawnZombie(type, spawnName = 'north') {
     def.radius + def.height / 2,
     sp.z + (Math.random() - 0.5) * CONFIG.packSpread * 2
   );
+  // "Buttered" marker: a pat of butter on the head, shown while stunned
+  const butter = new THREE.Mesh(butterGeo, butterMat);
+  butter.scale.setScalar(def.radius * 1.1);
+  butter.position.y = def.radius + def.height / 2 + 0.12 * def.radius;
+  butter.visible = false;
+  mesh.add(butter);
   scene.add(mesh);
   zombies.push({
-    type, def, mesh, hp: def.hp,
+    type, def, mesh, hp: def.hp, butter,
     chasingPlayer: false, attackingStatue: false, attackTimer: 0,
     buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
+    stun: 0, flash: 0,
     dead: false,
   });
 }
@@ -372,24 +776,31 @@ function setBanner(visible) { document.getElementById('banner').style.display = 
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (e.repeat || !state || state.over) return;
   // Debug: Digit1..Digit6 spawn a small pack of that type at the spawn point
   const m = /^Digit([1-9])$/.exec(e.code);
   const type = m && DEBUG_SPAWN_KEYS[m[1] - 1];
-  if (type && !e.repeat && !state.over) {
+  if (type) {
     for (let i = 0; i < CONFIG.debugPackSize; i++) spawnZombie(type);
     setMessage(`[debug] spawned ${CONFIG.debugPackSize} ${type}`, 1.5);
   }
   // Debug: N = skip to the next wave's countdown (clears current zombies); B = spawn the mini-boss
-  if (!e.repeat && !state.over && e.code === 'KeyN') {
+  if (e.code === 'KeyN') {
     zombies.forEach(z => scene.remove(z.mesh));
     zombies = []; state.spawnQueue = [];
     if (state.waveIndex < WAVES.length - 1) { beginCountdown(state.waveIndex + 1); setBanner(true); }
     setMessage(`[debug] skipped to wave ${state.waveIndex + 1}`, 1.5);
   }
-  if (!e.repeat && !state.over && e.code === 'KeyB') spawnZombie('miniBoss');
+  if (e.code === 'KeyB') spawnZombie('miniBoss');
+  // Hero controls
+  if (e.code === 'Space') state.jumpQueued = true;
+  if (e.code === 'KeyR') startReload();
+  if (e.code === 'KeyQ') useShuckShot();
+  if (e.code === 'KeyE') useHuskHop();
+  if (e.code === 'KeyF') toggleButterTargeting();
 });
 addEventListener('keyup', e => keys[e.code] = false);
-let mouseDown = false;
+let mouseDown = false, rightDown = false;
 const overlay = document.getElementById('overlay');
 
 overlay.addEventListener('click', () => {
@@ -406,11 +817,23 @@ document.addEventListener('pointerlockchange', () => {
 });
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement !== renderer.domElement) return;
-  state.yaw -= e.movementX * CONFIG.camera.sensitivity;
-  state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * CONFIG.camera.sensitivity, -0.6, 1.2);
+  const sens = CONFIG.camera.sensitivity * (1 - 0.35 * state.zoom);
+  state.yaw -= e.movementX * sens;
+  state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, -0.6, 1.2);
 });
-addEventListener('mousedown', e => { if (e.button === 0) mouseDown = true; });
-addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+addEventListener('mousedown', e => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  if (e.button === 0) {
+    if (state.targeting) confirmButterBarrage();
+    else mouseDown = true;
+  }
+  if (e.button === 2) {
+    if (state.targeting) cancelButterTargeting();
+    else rightDown = true;
+  }
+});
+addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; if (e.button === 2) rightDown = false; });
+addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -433,59 +856,570 @@ function endGame(won) {
   overlay.style.display = 'flex';
 }
 
+// Floating damage number at a world position
+function spawnPopup(pos, amount, color) {
+  const el = document.createElement('div');
+  el.className = 'pop';
+  el.textContent = amount;
+  el.style.color = color;
+  document.getElementById('popups').appendChild(el);
+  popups.push({ el, pos: pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4, (Math.random() - 0.5) * 0.6)), t: 0 });
+}
+function updatePopups(dt) {
+  const v = new THREE.Vector3();
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.t += dt;
+    p.pos.y += dt * 1.6;
+    v.copy(p.pos).project(camera);
+    const k = p.t / 0.7;
+    if (k >= 1) { p.el.remove(); popups.splice(i, 1); continue; }
+    p.el.style.display = v.z < 1 ? 'block' : 'none';
+    p.el.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
+    p.el.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
+    p.el.style.opacity = 1 - k * k;
+    p.el.style.transform = `translate(-50%,-50%) scale(${1 + 0.5 * Math.max(0, 1 - p.t * 8)})`;
+  }
+}
+
 // =====================================================================
-// Update loop
+// Particles & effects
+// =====================================================================
+const PARTICLE_GEO = {
+  chip: new THREE.BoxGeometry(0.08, 0.08, 0.08),
+  puff: new THREE.SphereGeometry(0.3, 8, 6),
+  leaf: new THREE.PlaneGeometry(0.22, 0.1),
+};
+function spawnParticle(kind, color, pos, vel, { life = 0.6, gravity = 18, grow = 0, size = 1, additive = false, drag = 0 } = {}) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false,
+    side: THREE.DoubleSide, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+  const mesh = new THREE.Mesh(PARTICLE_GEO[kind], mat);
+  mesh.position.copy(pos);
+  mesh.scale.setScalar(size);
+  mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  scene.add(mesh);
+  particles.push({ mesh, vel, life, maxLife: life, gravity, grow, size, drag,
+    spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14) });
+  if (particles.length > CONFIG.maxParticles) { const old = particles.shift(); scene.remove(old.mesh); old.mesh.material.dispose(); }
+}
+const rand3 = (s, up = 0) => new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s + up, (Math.random() - 0.5) * s);
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i], m = p.mesh;
+    p.life -= dt;
+    if (p.life <= 0) { scene.remove(m); m.material.dispose(); particles.splice(i, 1); continue; }
+    p.vel.y -= p.gravity * dt;
+    if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
+    m.position.addScaledVector(p.vel, dt);
+    if (m.position.y < 0.04) { m.position.y = 0.04; p.vel.multiplyScalar(0.4); p.vel.y = Math.abs(p.vel.y) * 0.3; }
+    m.rotation.x += p.spin.x * dt; m.rotation.y += p.spin.y * dt;
+    const k = 1 - p.life / p.maxLife;
+    m.scale.setScalar(p.size * (1 + p.grow * k));
+    m.material.opacity = Math.min(1, (1 - k) * 2);
+  }
+}
+
+// Expanding fading sphere (kind 'sphere'), ground shockwave ring ('ring'), or a fading ground splat ('decal')
+function spawnExplosion(pos, radius, color = 0xff8800) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false }));
+  mesh.position.copy(pos);
+  scene.add(mesh);
+  effects.push({ mesh, t: 0, duration: 0.35, radius, kind: 'sphere' });
+}
+function spawnRing(pos, radius, color, duration = 0.4) {
+  const mesh = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(pos.x, 0.08, pos.z);
+  scene.add(mesh);
+  effects.push({ mesh, t: 0, duration, radius, kind: 'ring' });
+}
+function spawnDecal(pos, radius, color, duration) {
+  const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 24),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.2, transparent: true, opacity: 0.85, depthWrite: false }));
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(pos.x, 0.03 + Math.random() * 0.01, pos.z);
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  effects.push({ mesh, t: 0, duration, radius, kind: 'decal' });
+}
+
+function updateEffects(dt) {
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const e = effects[i];
+    e.t += dt;
+    const k = Math.min(1, e.t / e.duration);
+    if (e.kind === 'sphere') {
+      e.mesh.scale.setScalar(e.radius * (1 - Math.pow(1 - k, 3)));
+      e.mesh.material.opacity = 0.7 * (1 - k);
+    } else if (e.kind === 'ring') {
+      e.mesh.scale.setScalar(e.radius * (1 - Math.pow(1 - k, 2)));
+      e.mesh.material.opacity = 0.9 * (1 - k);
+    } else if (e.kind === 'decal') {
+      e.mesh.material.opacity = 0.85 * Math.min(1, (1 - k) * 4);
+    }
+    if (k >= 1) { scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); effects.splice(i, 1); }
+  }
+}
+
+function addShake(amount, at) {
+  const falloff = at ? Math.max(0, 1 - at.distanceTo(playerMesh.position) / 25) : 1;
+  state.shake = Math.min(1, state.shake + amount * falloff);
+}
+
+// =====================================================================
+// Aiming helpers
+// =====================================================================
+// Where the reticle points: first zombie or ground the camera ray hits beyond the player (else far away)
+function getAimPoint() {
+  const o = camera.position, d = camera.getWorldDirection(new THREE.Vector3());
+  const minT = o.distanceTo(playerMesh.position) + 0.5;
+  let best = 150;
+  if (d.y < 0) { const tg = -o.y / d.y; if (tg > minT) best = Math.min(best, tg); }
+  for (const z of zombies) {
+    if (z.dead) continue;
+    const c = z.mesh.position, R = z.def.radius + z.def.height * 0.35;
+    const ox = c.x - o.x, oy = c.y - o.y, oz = c.z - o.z;
+    const t = ox * d.x + oy * d.y + oz * d.z;
+    if (t < minT) continue;
+    const d2 = ox * ox + oy * oy + oz * oz - t * t;
+    if (d2 < R * R) best = Math.min(best, t - Math.sqrt(R * R - d2));
+  }
+  return o.clone().addScaledVector(d, best);
+}
+// Ground point under the reticle, clamped to `range` from the player
+function getGroundAimPoint(range) {
+  const o = camera.position, d = camera.getWorldDirection(new THREE.Vector3());
+  const p = d.y < -0.01 ? o.clone().addScaledVector(d, -o.y / d.y) : o.clone().addScaledVector(d.setY(0).normalize(), range);
+  const pl = playerMesh.position, off = new THREE.Vector3(p.x - pl.x, 0, p.z - pl.z);
+  if (off.length() > range) off.setLength(range);
+  return new THREE.Vector3(pl.x + off.x, 0, pl.z + off.z);
+}
+const yawForward = () => new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
+
+// =====================================================================
+// Hero: movement, weapon, abilities
 // =====================================================================
 const tmp = new THREE.Vector3();
 
 function updatePlayer(dt) {
+  for (const k in state.cd) state.cd[k] = Math.max(0, state.cd[k] - dt);
   if (state.playerDead) {
     state.respawnTimer -= dt;
     if (state.respawnTimer <= 0) respawnPlayer();
     return;
   }
-  // WASD relative to camera yaw
-  const fwd = new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
-  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-  const move = new THREE.Vector3();
-  if (keys.KeyW) move.add(fwd);
-  if (keys.KeyS) move.sub(fwd);
-  if (keys.KeyD) move.add(right);
-  if (keys.KeyA) move.sub(right);
-  if (move.lengthSq() > 0) playerMesh.position.addScaledVector(move.normalize(), P.speed * dt);
+  const pos = playerMesh.position, v = state.vel;
+  state.zoom += ((rightDown && !state.targeting ? 1 : 0) - state.zoom) * Math.min(1, dt * 12);
 
-  // Keep inside arena
+  // WASD relative to camera yaw → wished velocity, approached smoothly for weight
+  const fwd = yawForward();
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const wish = new THREE.Vector3();
+  if (keys.KeyW) wish.add(fwd);
+  if (keys.KeyS) wish.sub(fwd);
+  if (keys.KeyD) wish.add(right);
+  if (keys.KeyA) wish.sub(right);
+  if (wish.lengthSq() > 0) wish.normalize();
+  const speed = P.speed * (1 - (1 - P.aimSpeedMult) * state.zoom);
+  // In the air with no input, keep momentum (so Husk Hop carries you)
+  if (state.onGround || wish.lengthSq() > 0) {
+    const k = Math.min(1, dt * P.accel * (state.onGround ? 1 : P.airControl));
+    v.x += (wish.x * speed - v.x) * k;
+    v.z += (wish.z * speed - v.z) * k;
+  }
+
+  // Jump / gravity / glide (hold Space while falling after a Husk Hop)
+  if (state.jumpQueued && state.onGround) {
+    v.y = P.jumpSpeed; state.onGround = false;
+    burstLeaves(pos, 4);
+  }
+  state.jumpQueued = false;
+  const gliding = state.hopping && v.y < 0 && keys.Space;
+  v.y -= P.gravity * (gliding ? AB.huskHop.glideGravity : 1) * dt;
+  if (gliding) v.y = Math.max(v.y, -3.5);
+  pos.addScaledVector(v, dt);
+  if (pos.y <= PLAYER_CENTER_Y) {
+    if (!state.onGround) landed(-v.y);
+    pos.y = PLAYER_CENTER_Y; v.y = 0; state.onGround = true;
+  } else state.onGround = false;
+
+  // Keep inside arena, and out of the statue
   const half = CONFIG.arenaSize / 2 - 1;
-  playerMesh.position.x = THREE.MathUtils.clamp(playerMesh.position.x, -half, half);
-  playerMesh.position.z = THREE.MathUtils.clamp(playerMesh.position.z, -half, half);
+  pos.x = THREE.MathUtils.clamp(pos.x, -half, half);
+  pos.z = THREE.MathUtils.clamp(pos.z, -half, half);
+  const lim = S / 2 + P.radius;
+  if (Math.abs(pos.x) < lim && Math.abs(pos.z) < lim && pos.y - PLAYER_CENTER_Y < S) {
+    if (lim - Math.abs(pos.x) < lim - Math.abs(pos.z)) pos.x = Math.sign(pos.x || 1) * lim;
+    else pos.z = Math.sign(pos.z || 1) * lim;
+  }
   playerMesh.rotation.y = state.yaw;
 
-  // Shooting: projectile travels toward the camera's aim point
-  state.fireTimer -= dt;
-  if (mouseDown && state.fireTimer <= 0 && document.pointerLockElement) {
-    state.fireTimer = P.fireRate;
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    const aimPoint = camera.position.clone().addScaledVector(dir, 100);
-    const start = playerMesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
-    const vel = aimPoint.sub(start).normalize().multiplyScalar(CONFIG.projectile.speed);
-    const mesh = new THREE.Mesh(projGeo, projMat);
-    mesh.position.copy(start);
-    scene.add(mesh);
-    projectiles.push({ mesh, vel, life: CONFIG.projectile.life });
+  // Aim: point under the reticle, and the elevation the arms should take toward it
+  state.aimPoint = getAimPoint();
+  const shoulderY = pos.y + 0.4;
+  const flat = Math.hypot(state.aimPoint.x - pos.x, state.aimPoint.z - pos.z);
+  state.aimElev = Math.atan2(state.aimPoint.y - shoulderY, Math.max(1.5, flat));
+
+  // Weapon
+  state.fireTimer = Math.max(state.fireTimer - dt, -dt);   // carry leftover time so fire rate is frame-rate independent
+  state.bloom = Math.max(0, state.bloom - W.bloomRecovery * dt);
+  if (state.reloading) {
+    state.reloadT -= dt;
+    if (state.reloadT <= 0) { state.reloading = false; state.ammo = W.clip; }
   }
+  const wantsFire = mouseDown && !state.targeting;
+  if (wantsFire && !state.reloading && state.ammo <= 0) startReload();
+  if (wantsFire && !state.reloading && state.ammo > 0 && state.fireTimer <= 0) {
+    state.fireTimer += W.fireRate;
+    fireKernel();
+  }
+
+  // Shuck Shot volley in progress
+  if (state.shuckQueue > 0) {
+    state.shuckTimer -= dt;
+    if (state.shuckTimer <= 0) { state.shuckTimer = AB.shuckShot.interval; state.shuckQueue--; fireShuckMissile(); }
+  }
+  if (state.targeting) updateButterReticle();
+}
+
+function landed(impactSpeed) {
+  state.anim.squash = Math.min(0.22, impactSpeed * 0.014);
+  const feet = playerMesh.position.clone().setY(0.1);
+  if (state.hopping) {
+    // Husk Hop ground slam
+    state.hopping = false;
+    const H = AB.huskHop;
+    explodeAt(feet, H.slamRadius, H.slamDamage, { color: 0x9be05a, sphere: false });
+    spawnRing(feet, H.slamRadius * 1.2, 0xd8ff9a, 0.45);
+    burstLeaves(playerMesh.position, 14);
+    for (let i = 0; i < 10; i++) spawnParticle('puff', 0xb7a27a, feet.clone().add(rand3(1.5)), rand3(8, 2).setY(1.5), { life: 0.7, gravity: 0, grow: 2, drag: 4 });
+    addShake(0.5);
+  } else if (impactSpeed > 6) {
+    for (let i = 0; i < 5; i++) spawnParticle('puff', 0xb7a27a, feet.clone().add(rand3(1)), rand3(4).setY(0.8), { life: 0.5, gravity: 0, grow: 1.5, drag: 4, size: 0.6 });
+  }
+}
+
+function burstLeaves(pos, n) {
+  for (let i = 0; i < n; i++) {
+    spawnParticle('leaf', Math.random() < 0.5 ? 0x3f8f2a : 0x6cbf45, pos.clone().add(new THREE.Vector3(0, -0.8, 0)),
+      rand3(7, 4), { life: 0.9 + Math.random() * 0.5, gravity: 6, drag: 1.5 });
+  }
+}
+
+function startReload() {
+  if (state.reloading || state.ammo >= W.clip || state.playerDead) return;
+  state.reloading = true;
+  state.reloadT = W.reloadTime;
+}
+
+// Pick the next arm (alternating) and return its muzzle's world position
+function nextMuzzle() {
+  const arm = corn.arms[state.nextArm];
+  state.nextArm = 1 - state.nextArm;
+  playerMesh.updateMatrixWorld(true);
+  return { arm, start: arm.muzzle.getWorldPosition(new THREE.Vector3()) };
+}
+
+// Shot direction from a muzzle to the reticle point, with random cone deviation
+function aimedDir(start, spread) {
+  const dir = state.aimPoint.clone().sub(start).normalize();
+  dir.x += (Math.random() - 0.5) * 2 * spread;
+  dir.y += (Math.random() - 0.5) * 2 * spread;
+  dir.z += (Math.random() - 0.5) * 2 * spread;
+  return dir.normalize();
+}
+
+function muzzleFx(arm, start, power = 1) {
+  arm.recoil = Math.min(1.5, arm.recoil + power);
+  arm.spinSpeed = Math.max(arm.spinSpeed, 26);
+  arm.flashT = 0.05;
+  arm.flash.rotation.y = Math.random() * Math.PI;
+  arm.flash.scale.setScalar((0.8 + Math.random() * 0.5) * power);
+  muzzleLight.position.copy(start);
+  muzzleLight.intensity = 6 * power;
+}
+
+function currentSpread() { return THREE.MathUtils.lerp(W.spread, W.aimSpread, state.zoom) + state.bloom; }
+
+function fireKernel() {
+  const { arm, start } = nextMuzzle();
+  const dir = aimedDir(start, currentSpread());
+  const mesh = new THREE.Mesh(kernelShotGeo, kernelShotMat);
+  mesh.scale.set(0.075, 0.075, 0.32);
+  mesh.position.copy(start);
+  mesh.quaternion.setFromUnitVectors(FWD_Z, dir);
+  scene.add(mesh);
+  projectiles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: W.kernelLife });
+  state.ammo--;
+  state.bloom = Math.min(W.bloomMax, state.bloom + W.bloomPerShot);
+  state.pitch = Math.max(-0.6, state.pitch - W.recoilKick * (1 - 0.5 * state.zoom));
+  addShake(0.035);
+  muzzleFx(arm, start, 1);
+  // a little husk chaff kicked off the cob
+  spawnParticle('chip', 0xffd23a, start, rand3(3, 2).add(new THREE.Vector3(arm.side * 2, 0, 0)), { life: 0.4, size: 0.6 });
+}
+
+// ---- Shuck Shot: volley of explosive cob missiles ----
+function useShuckShot() {
+  if (state.playerDead || state.cd.shuckShot > 0) return;
+  state.cd.shuckShot = AB.shuckShot.cooldown;
+  state.shuckQueue = AB.shuckShot.missiles;
+  state.shuckTimer = 0;
+}
+function makeRocketMesh() {
+  const g = new THREE.Group();
+  const inner = new THREE.Group();
+  inner.rotation.x = Math.PI / 2;                 // cob +Y → +Z (flight direction)
+  const cob = makeCob({ length: 0.5, radius: 0.12, rows: 8, tipTaper: 0.4 });
+  cob.position.y = -0.25;
+  inner.add(cob);
+  const tail = new THREE.Group();
+  tail.rotation.x = Math.PI;                       // tail leaves trail behind
+  tail.position.y = -0.22;
+  for (let i = 0; i < 3; i++) placeLeaf(tail, { length: 0.35, width: 0.13, bend: 0.8, fold: 0.4 }, 0, 0, 0, (i / 3) * Math.PI * 2, 0.35);
+  inner.add(tail);
+  g.add(inner);
+  return g;
+}
+function fireShuckMissile() {
+  if (state.playerDead) { state.shuckQueue = 0; return; }
+  const A = AB.shuckShot;
+  const { arm, start } = nextMuzzle();
+  const dir = aimedDir(start, A.spread);
+  const mesh = makeRocketMesh();
+  mesh.position.copy(start);
+  mesh.quaternion.setFromUnitVectors(FWD_Z, dir);
+  scene.add(mesh);
+  rockets.push({ mesh, vel: dir.multiplyScalar(A.speed), life: A.life });
+  muzzleFx(arm, start, 1.6);
+  addShake(0.12);
+  for (let i = 0; i < 4; i++) spawnParticle('puff', 0xeeeeee, start, rand3(2, 1), { life: 0.5, gravity: -1, grow: 2, drag: 3, size: 0.6 });
+}
+function updateRockets(dt) {
+  const A = AB.shuckShot;
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    const r = rockets[i], pos = r.mesh.position;
+    r.life -= dt;
+    let hit = r.life <= 0;
+    for (let s = 0; s < 2 && !hit; s++) {
+      pos.addScaledVector(r.vel, dt / 2);
+      if (pos.y < 0.1 || hitsStatue(pos, 0.2) || zombies.some(z => !z.dead && hitsZombie(z, pos, 0.35))) hit = true;
+    }
+    r.mesh.rotateZ(dt * 14);
+    spawnParticle('puff', 0xdddddd, pos.clone().addScaledVector(r.vel, -0.012), rand3(0.6), { life: 0.45, gravity: -0.5, grow: 2.5, drag: 2, size: 0.45 });
+    if (Math.random() < 0.5) spawnParticle('puff', 0xffb23a, pos.clone(), rand3(0.5), { life: 0.15, gravity: 0, grow: 1, size: 0.4, additive: true });
+    if (hit) {
+      pos.y = Math.max(pos.y, 0.3);
+      explodeAt(pos, A.radius, A.damage, { color: 0xffb030 });
+      for (let k = 0; k < 10; k++) spawnParticle('chip', 0xffd23a, pos, rand3(12, 5), { life: 0.8 });
+      scene.remove(r.mesh);
+      rockets.splice(i, 1);
+    }
+  }
+}
+
+// ---- Husk Hop: big leaf-powered leap, glide by holding Space, slam on landing ----
+function useHuskHop() {
+  if (state.playerDead || state.cd.huskHop > 0) return;
+  const H = AB.huskHop;
+  state.cd.huskHop = H.cooldown;
+  const v = state.vel;
+  const dir = new THREE.Vector3(v.x, 0, v.z);
+  if (dir.lengthSq() < 1) dir.copy(yawForward()); else dir.normalize();
+  v.set(dir.x * H.forwardSpeed, H.upSpeed, dir.z * H.forwardSpeed);
+  state.onGround = false;
+  state.hopping = true;
+  state.fovKick = 10;
+  addShake(0.25);
+  burstLeaves(playerMesh.position, 16);
+  spawnRing(playerMesh.position.clone().setY(0), 3, 0xd8ff9a, 0.35);
+}
+
+// ---- Butter Barrage: target an area, then butter rains down and stuns ----
+const butterReticle = new THREE.Group();
+{
+  const R = AB.butterBarrage.areaRadius;
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(R - 0.25, R, 64), ringMat);
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(R, 64),
+    new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0.15, depthWrite: false }));
+  const dot = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.6, 32), ringMat);
+  for (const m of [ring, fill, dot]) { m.rotation.x = -Math.PI / 2; butterReticle.add(m); }
+  butterReticle.position.y = 0.06;
+  butterReticle.visible = false;
+  scene.add(butterReticle);
+}
+function toggleButterTargeting() {
+  if (state.targeting) { cancelButterTargeting(); return; }
+  if (state.playerDead || state.cd.butterBarrage > 0) return;
+  state.targeting = true;
+  butterReticle.visible = true;
+  updateButterReticle();
+}
+function cancelButterTargeting() {
+  state.targeting = false;
+  butterReticle.visible = false;
+}
+function updateButterReticle() {
+  const p = getGroundAimPoint(AB.butterBarrage.range);
+  butterReticle.position.set(p.x, 0.06, p.z);
+  butterReticle.rotation.y += 0.02;
+  butterReticle.scale.setScalar(1 + Math.sin(performance.now() * 0.008) * 0.03);
+}
+function confirmButterBarrage() {
+  const B = AB.butterBarrage;
+  state.cd.butterBarrage = B.cooldown;
+  state.barrages.push({ pos: butterReticle.position.clone().setY(0), t: -B.delay, dropped: 0 });
+  cancelButterTargeting();
+  setMessage('Butter incoming!', 1.2);
+  // the hero raises both cobs and fires a signal flare into the sky
+  for (const arm of corn.arms) arm.recoil = 1.5;
+  const start = playerMesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+  for (let i = 0; i < 12; i++) spawnParticle('puff', 0xffe14a, start, new THREE.Vector3((Math.random() - 0.5) * 2, 18 + Math.random() * 6, (Math.random() - 0.5) * 2),
+    { life: 0.8, gravity: 0, size: 0.5, additive: true, drag: 1 });
+}
+function updateBarrages(dt) {
+  const B = AB.butterBarrage;
+  for (let i = state.barrages.length - 1; i >= 0; i--) {
+    const b = state.barrages[i];
+    b.t += dt;
+    while (b.dropped < B.pats && b.t >= b.dropped * B.interval) {
+      b.dropped++;
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * B.areaRadius;
+      const target = b.pos.clone().add(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+      const mesh = new THREE.Mesh(butterGeo, butterMat);
+      mesh.castShadow = true;
+      mesh.position.copy(target).setY(B.dropHeight + Math.random() * 4);
+      mesh.rotation.set(Math.random(), Math.random() * 6, Math.random());
+      scene.add(mesh);
+      // ground marker shrinking in as the pat approaches
+      const marker = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 24),
+        new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0.6, depthWrite: false }));
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(target.x, 0.07, target.z);
+      scene.add(marker);
+      butterPats.push({ mesh, marker, spin: rand3(10) });
+    }
+    if (b.dropped >= B.pats) state.barrages.splice(i, 1);
+  }
+  for (let i = butterPats.length - 1; i >= 0; i--) {
+    const p = butterPats[i], m = p.mesh;
+    m.position.y -= B.fallSpeed * dt;
+    m.rotation.x += p.spin.x * dt; m.rotation.z += p.spin.z * dt;
+    const k = THREE.MathUtils.clamp(m.position.y / B.dropHeight, 0, 1);
+    p.marker.scale.setScalar(B.splashRadius * (0.4 + 0.6 * k));
+    if (m.position.y <= 0.17) {
+      const at = m.position.clone().setY(0.3);
+      explodeAt(at, B.splashRadius, B.damage, { color: 0xfff0a0, stun: B.stun });
+      spawnDecal(at, B.splashRadius * (0.6 + Math.random() * 0.3), 0xffe27a, 4);
+      for (let k2 = 0; k2 < 8; k2++) spawnParticle('chip', 0xffe27a, at, rand3(9, 5), { life: 0.6, size: 1.4 });
+      scene.remove(m, p.marker);
+      p.marker.geometry.dispose(); p.marker.material.dispose();
+      butterPats.splice(i, 1);
+    }
+  }
+}
+
+// Area damage to zombies (explosions bypass Plated fronts), with visuals and shake
+function explodeAt(pos, radius, damage, { color = 0xff8800, stun = 0, sphere = true } = {}) {
+  for (const z of zombies) {
+    if (z.dead) continue;
+    const d = tmp.copy(z.mesh.position).sub(pos).setY(0).length() - z.def.radius;
+    if (d > radius) continue;
+    if (stun) z.stun = Math.max(z.stun, stun);
+    damageZombie(z, damage * (1 - 0.4 * Math.max(0, d) / radius), z.mesh.position.clone().setY(z.mesh.position.y + z.def.height / 2));
+  }
+  if (sphere) spawnExplosion(pos, radius, color);
+  spawnRing(pos, radius, color, 0.3);
+  for (let i = 0; i < 6; i++) spawnParticle('puff', 0x8a8a7a, pos.clone().add(rand3(radius * 0.5)), rand3(4, 2), { life: 0.8, gravity: -1, grow: 2.5, drag: 3, size: 0.8 });
+  addShake(0.3, pos);
 }
 
 function damagePlayer(amount) {
   if (state.playerDead) return;
   state.playerHp -= amount;
+  state.hurt = Math.min(1, state.hurt + amount / 40);
+  addShake(0.15);
   if (state.playerHp <= 0) {
     state.playerHp = 0;
     state.playerDead = true;
     state.respawnTimer = P.respawnDelay;
+    state.shuckQueue = 0;
+    cancelButterTargeting();
     playerMesh.visible = false;
+    burstLeaves(playerMesh.position, 24);
+    for (let i = 0; i < 20; i++) spawnParticle('chip', 0xffd23a, playerMesh.position, rand3(10, 5), { life: 1.2 });
     setMessage(`You were eaten! Respawning in ${P.respawnDelay}s`, P.respawnDelay);
   }
+}
+
+// =====================================================================
+// Kernel Corn procedural animation
+// =====================================================================
+function animateCorn(dt) {
+  const A = state.anim, C = corn, v = state.vel;
+  A.t += dt;
+  const fwd = yawForward(), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const hv = Math.hypot(v.x, v.z);
+  const s = state.onGround ? Math.min(1, hv / P.speed) : 0;      // stride strength
+  A.phase += dt * 12 * s;
+  const damp = Math.min(1, dt * 10);
+  A.leanF += ((v.x * fwd.x + v.z * fwd.z) / P.speed - A.leanF) * damp;
+  A.leanS += ((v.x * right.x + v.z * right.z) / P.speed - A.leanS) * damp;
+  A.air += ((state.onGround ? 0 : 1) - A.air) * Math.min(1, dt * 8);
+  A.squash *= Math.exp(-dt * 12);
+
+  // Body: bouncy waddle, lean into motion, squash on landing / stretch while rising
+  C.hips.position.y = C.HIPS_Y + Math.abs(Math.sin(A.phase)) * 0.07 * s + Math.sin(A.t * 2.4) * 0.012 * (1 - s) - A.squash * 0.35;
+  C.hips.rotation.z = Math.sin(A.phase) * 0.07 * s;
+  C.torso.rotation.x = A.leanF * 0.16 - A.air * THREE.MathUtils.clamp(v.y * 0.012, -0.15, 0.15);
+  C.torso.rotation.z = A.leanS * 0.12;
+  const st = THREE.MathUtils.clamp(v.y * 0.01 * A.air, -0.08, 0.1) - A.squash;
+  C.root.scale.set(1 - st * 0.5, 1 + st, 1 - st * 0.5);
+
+  // Leaf feet lift alternately while walking; tuck in the air
+  for (const l of C.legs) {
+    const b = l.pivot.userData.base;
+    l.pivot.rotation.x = b.x - Math.max(0, Math.sin(A.phase + l.phase)) * 0.45 * s - A.air * 0.5;
+  }
+
+  // Head looks toward the aim, with a little counter-sway
+  const breathe = Math.sin(A.t * 2.4 + 0.6);
+  C.head.rotation.x = -state.aimElev * 0.35 + breathe * 0.015 - A.leanF * 0.06;
+  C.head.rotation.z = -C.hips.rotation.z * 0.8;
+  C.head.position.y = 0.9 + breathe * 0.006;
+
+  // Collar leaves flutter; they flop down when jumping up and flare when falling
+  C.collar.forEach((p, i) => {
+    const b = p.userData.base;
+    p.rotation.x = b.x + Math.sin(A.t * 3 + i * 1.7) * 0.05 + hv * 0.008 + A.air * THREE.MathUtils.clamp(v.y * 0.03, -0.4, 0.4);
+  });
+
+  // Arms track the aim; recoil kicks, barrels spin, flashes flicker; reload drops and spins the cobs
+  const reloadK = state.reloading ? Math.sin(Math.PI * (1 - state.reloadT / W.reloadTime)) : 0;
+  for (const a of C.arms) {
+    a.recoil *= Math.exp(-dt * 16);
+    a.spinSpeed *= Math.exp(-dt * 3);
+    if (state.reloading) a.spinSpeed = 30;
+    a.flashT -= dt;
+    a.spin.rotation.y += a.spinSpeed * dt;
+    a.pivot.rotation.x = -state.aimElev - a.recoil * 0.1 + reloadK * 0.8
+      + Math.sin(A.phase + (a.side > 0 ? 0 : Math.PI)) * 0.06 * s - A.air * 0.15;
+    a.pivot.rotation.z = reloadK * 0.3 * a.side;
+    a.hand.position.z = a.handBase.z - a.recoil * 0.12;
+    a.flash.visible = a.flashT > 0;
+  }
+
+  // Blink every few seconds
+  A.blink -= dt;
+  if (A.blink < 0) A.blink = 2.5 + Math.random() * 3;
+  const lid = A.blink < 0.12 ? 0.12 : 1;
+  for (const e of C.eyes) e.scale.y = lid;
+
+  muzzleLight.intensity *= Math.exp(-dt * 30);
 }
 
 // ---------------------------------------------------------------------
@@ -570,6 +1504,7 @@ function bomberBehavior(z, target, dt) {
     damagePlayer(def.playerExplosionDamage);
   }
   spawnExplosion(z.mesh.position, def.explosionRadius);
+  addShake(0.3, z.mesh.position);
   z.dead = true;
 }
 
@@ -613,19 +1548,23 @@ function applyBannerBuffs() {
   }
 }
 
-function spawnExplosion(pos, radius) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16),
-    new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.7 }));
-  mesh.position.copy(pos);
-  scene.add(mesh);
-  effects.push({ mesh, t: 0, duration: 0.35, radius });
-}
-
 function updateZombies(dt) {
   applyBannerBuffs();
 
   for (const z of zombies) {
+    if (z.dead) continue;
     z.attackTimer -= dt;
+    // hit flash
+    z.flash = Math.max(0, z.flash - dt);
+    z.mesh.material.emissive.setScalar(z.flash > 0 ? 0.55 : 0);
+    // Buttered: frozen in place, wobbling
+    if (z.stun > 0) {
+      z.stun -= dt;
+      z.butter.visible = z.stun > 0;
+      z.mesh.rotation.z = Math.sin(state.anim.t * 18 + z.mesh.position.x) * 0.06;
+      continue;
+    }
+    z.mesh.rotation.z = 0;
     const target = selectTarget(z);
     BEHAVIORS[z.def.behavior](z, target, dt);
   }
@@ -647,9 +1586,35 @@ function updateZombies(dt) {
 
 function removeDeadZombies() {
   for (let i = zombies.length - 1; i >= 0; i--) {
-    if (zombies[i].dead) { scene.remove(zombies[i].mesh); zombies.splice(i, 1); }
+    if (zombies[i].dead) { scene.remove(zombies[i].mesh); zombies[i].mesh.material.dispose(); zombies.splice(i, 1); }
   }
 }
+
+// Apply damage to a zombie with feedback (flash, number, hitmarker); death is removed next frame
+function damageZombie(z, amount, at, reduced = false) {
+  if (z.dead) return;
+  amount = Math.max(1, Math.round(amount));
+  z.hp -= amount;
+  z.flash = 0.08;
+  spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a');
+  state.hitmarker = z.hp <= 0 ? -0.25 : 0.12;   // negative = kill marker (red)
+  if (z.hp <= 0) {
+    z.dead = true;
+    const c = new THREE.Color(z.def.color);
+    for (let i = 0; i < 12; i++) spawnParticle('chip', c, z.mesh.position.clone().add(rand3(z.def.radius)), rand3(8, 5), { life: 0.9, size: 1.5 });
+    for (let i = 0; i < 4; i++) spawnParticle('puff', 0x9ab07a, z.mesh.position.clone().add(rand3(z.def.radius)), rand3(2, 1), { life: 0.7, gravity: -1, grow: 2, drag: 3 });
+  }
+}
+
+// Capsule (vertical segment) vs sphere test
+function hitsZombie(z, pos, r) {
+  const zp = z.mesh.position;
+  const hitDist = r + z.def.radius;
+  const dy = Math.max(0, Math.abs(pos.y - zp.y) - z.def.height / 2);
+  const dx = pos.x - zp.x, dz = pos.z - zp.z;
+  return dx * dx + dy * dy + dz * dz < hitDist * hitDist;
+}
+const hitsStatue = (p, r) => Math.abs(p.x) < S / 2 + r && Math.abs(p.z) < S / 2 + r && p.y < S + r;
 
 // Plated takes reduced damage when a shot travels into its front plate
 function damageMultiplierFor(z, shotVel) {
@@ -674,41 +1639,34 @@ function updateEnemyProjectiles(dt) {
       if (dx * dx + dy * dy + dz * dz < (P.radius + r) ** 2) { damagePlayer(p.damage); dead = true; }
     }
     // Hit statue (box)
-    if (!dead && Math.abs(pp.x) < S / 2 + r && Math.abs(pp.z) < S / 2 + r && pp.y < S + r) {
+    if (!dead && hitsStatue(pp, r)) {
       state.statueHp -= p.damage; dead = true;
     }
     if (dead) { scene.remove(p.mesh); enemyProjectiles.splice(i, 1); }
   }
 }
 
-function updateEffects(dt) {
-  for (let i = effects.length - 1; i >= 0; i--) {
-    const e = effects[i];
-    e.t += dt;
-    const k = e.t / e.duration;
-    e.mesh.scale.setScalar(e.radius * k);
-    e.mesh.material.opacity = 0.7 * (1 - k);
-    if (k >= 1) { scene.remove(e.mesh); effects.splice(i, 1); }
-  }
-}
-
+// Kernel shots: sub-stepped so fast shots don't tunnel through small zombies
 function updateProjectiles(dt) {
+  const STEPS = 3;
   for (let i = projectiles.length - 1; i >= 0; i--) {
-    const p = projectiles[i];
-    p.mesh.position.addScaledVector(p.vel, dt);
+    const p = projectiles[i], pos = p.mesh.position;
     p.life -= dt;
-    let dead = p.life <= 0 || p.mesh.position.y < 0;
-
-    // Hit test against zombies (capsule approximated by vertical segment)
-    for (let j = zombies.length - 1; j >= 0 && !dead; j--) {
-      const z = zombies[j], zp = z.mesh.position;
-      const hitDist = CONFIG.projectile.radius + z.def.radius;
-      const dy = Math.max(0, Math.abs(p.mesh.position.y - zp.y) - z.def.height / 2);
-      const dx = p.mesh.position.x - zp.x, dz = p.mesh.position.z - zp.z;
-      if (dx * dx + dy * dy + dz * dz < hitDist * hitDist) {
-        z.hp -= CONFIG.projectile.damage * damageMultiplierFor(z, p.vel);
+    let dead = p.life <= 0;
+    for (let s = 0; s < STEPS && !dead; s++) {
+      pos.addScaledVector(p.vel, dt / STEPS);
+      if (pos.y < 0 || hitsStatue(pos, 0)) {
         dead = true;
-        if (z.hp <= 0) { scene.remove(z.mesh); zombies.splice(j, 1); }
+        for (let k = 0; k < 3; k++) spawnParticle('chip', 0xffd23a, pos.clone().setY(Math.max(0.05, pos.y)), rand3(4, 3), { life: 0.4, size: 0.6 });
+        break;
+      }
+      for (const z of zombies) {
+        if (z.dead || !hitsZombie(z, pos, W.kernelRadius)) continue;
+        const mult = damageMultiplierFor(z, p.vel);
+        damageZombie(z, W.damage * mult, pos, mult < 1);
+        for (let k = 0; k < 3; k++) spawnParticle('chip', mult < 1 ? 0xdddddd : 0xffd23a, pos, rand3(5, 2).addScaledVector(p.vel, -0.03), { life: 0.35, size: 0.7 });
+        dead = true;
+        break;
       }
     }
     if (dead) { scene.remove(p.mesh); projectiles.splice(i, 1); }
@@ -736,34 +1694,93 @@ function updateWaves(dt) {
   }
 }
 
-function updateCamera() {
-  // Orbit behind the player based on yaw/pitch
+// Over-the-shoulder orbit camera with zoom, FOV kick and trauma-based shake
+function updateCamera(dt) {
   const c = CONFIG.camera;
-  const target = playerMesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+  const z = state.zoom;
+  state.fovKick *= Math.exp(-dt * 4);
+  const fov = THREE.MathUtils.lerp(c.fov, c.aimFov, z) + state.fovKick;
+  if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  const dist = THREE.MathUtils.lerp(c.distance, c.aimDistance, z);
+  const fwd = yawForward(), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const target = playerMesh.position.clone().add(new THREE.Vector3(0, c.height, 0)).addScaledVector(right, c.shoulder);
   const offset = new THREE.Vector3(
-    Math.sin(state.yaw) * Math.cos(state.pitch) * c.distance,
-    Math.sin(state.pitch) * c.distance + c.height * 0.3,
-    Math.cos(state.yaw) * Math.cos(state.pitch) * c.distance
+    Math.sin(state.yaw) * Math.cos(state.pitch) * dist,
+    Math.sin(state.pitch) * dist,
+    Math.cos(state.yaw) * Math.cos(state.pitch) * dist
   );
-  camera.position.copy(target).add(offset);
-  camera.position.y = Math.max(0.5, camera.position.y);
+  // Don't let the camera clip into the statue: march out from the pivot and stop just before the box
+  const margin = 0.3;
+  let reach = 1;
+  for (let i = 1; i <= 24; i++) {
+    const p = tmp.copy(target).addScaledVector(offset, i / 24);
+    if (hitsStatue(p, margin)) { reach = (i - 1) / 24; break; }
+  }
+  camera.position.copy(target).addScaledVector(offset, reach);
+  camera.position.y = Math.max(0.4, camera.position.y);
   camera.lookAt(target);
+  // trauma shake: squared for a nicer falloff
+  state.shake = Math.max(0, state.shake - dt * 1.8);
+  const t = state.shake * state.shake, now = performance.now() * 0.001;
+  camera.rotation.z += Math.sin(now * 37) * 0.02 * t;
+  camera.rotateX(Math.sin(now * 43 + 1) * 0.02 * t);
+  camera.rotateY(Math.sin(now * 31 + 2) * 0.02 * t);
+  // keep the sun's shadow frustum centered on the player
+  sun.position.copy(playerMesh.position).add(SUN_OFFSET);
+  sun.target.position.copy(playerMesh.position);
 }
 
-function updateHud() {
-  document.getElementById('waveText').textContent = `Wave ${state.waveIndex + 1} / ${WAVES.length}`;
-  document.getElementById('remainingText').textContent =
+const hud = id => document.getElementById(id);
+const crossTicks = { t: document.querySelector('#crosshair .t'), b: document.querySelector('#crosshair .b'),
+                     l: document.querySelector('#crosshair .l'), r: document.querySelector('#crosshair .r') };
+function updateHud(dt) {
+  hud('waveText').textContent = `Wave ${state.waveIndex + 1} / ${WAVES.length}`;
+  hud('remainingText').textContent =
     state.phase === 'active' ? `Zombies remaining: ${zombies.length + state.spawnQueue.length}` : '';
   const boss = zombies.find(z => z.def.boss);
-  document.getElementById('bossHud').style.display = boss ? 'block' : 'none';
+  hud('bossHud').style.display = boss ? 'block' : 'none';
   if (boss) {
-    document.getElementById('bossName').textContent = boss.def.name;
-    document.getElementById('bossBar').style.width = `${Math.max(0, boss.hp / boss.def.hp) * 100}%`;
+    hud('bossName').textContent = boss.def.name;
+    hud('bossBar').style.width = `${Math.max(0, boss.hp / boss.def.hp) * 100}%`;
   }
-  document.getElementById('statueBar').style.width = `${Math.max(0, state.statueHp / CONFIG.statue.hp) * 100}%`;
-  document.getElementById('playerBar').style.width = `${(state.playerHp / P.hp) * 100}%`;
+  hud('statueBar').style.width = `${Math.max(0, state.statueHp / CONFIG.statue.hp) * 100}%`;
+  hud('playerBar').style.width = `${(state.playerHp / P.hp) * 100}%`;
   setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
   statueHpBar.group.quaternion.copy(camera.quaternion);
+
+  // Ammo + reload
+  hud('ammoN').textContent = state.reloading ? '—' : state.ammo;
+  hud('ammoN').style.color = !state.reloading && state.ammo <= W.clip * 0.2 ? '#ff7050' : '#fff';
+  hud('ammoMax').textContent = ` / ${W.clip}`;
+  hud('reloadFill').style.width = state.reloading ? `${(1 - state.reloadT / W.reloadTime) * 100}%` : '0';
+
+  // Abilities: cooldown sweep + seconds left
+  for (const key of Object.keys(AB)) {
+    const el = hud(`ab-${key}`), cd = state.cd[key], max = AB[key].cooldown;
+    el.querySelector('.cd').style.height = `${(cd / max) * 100}%`;
+    el.querySelector('.cdt').textContent = cd > 0 ? Math.ceil(cd) : '';
+    el.classList.toggle('ready', cd <= 0);
+    el.classList.toggle('active', key === 'butterBarrage' && state.targeting);
+  }
+  hud('targetHint').style.display = state.targeting ? 'block' : 'none';
+
+  // Reticle gap follows spread (in pixels at the current FOV)
+  const px = Math.tan(currentSpread()) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * innerHeight / 2;
+  const gap = 4 + px;
+  crossTicks.t.style.top = `${-gap - 9}px`; crossTicks.b.style.top = `${gap}px`;
+  crossTicks.l.style.left = `${-gap - 9}px`; crossTicks.r.style.left = `${gap}px`;
+  hud('crosshair').style.opacity = state.targeting ? 0.3 : 1;
+
+  // Hitmarker (white) / kill marker (red), damage vignette
+  const hm = hud('hitmarker');
+  if (state.hitmarker !== 0) {
+    hm.style.color = state.hitmarker < 0 ? '#ff4030' : '#fff';
+    hm.style.opacity = Math.min(1, Math.abs(state.hitmarker) * 8);
+    hm.style.transform = `scale(${state.hitmarker < 0 ? 1.3 : 1})`;
+    state.hitmarker = Math.sign(state.hitmarker) * Math.max(0, Math.abs(state.hitmarker) - dt);
+  } else hm.style.opacity = 0;
+  state.hurt = Math.max(0, state.hurt - dt * 1.5);
+  hud('vignette').style.opacity = state.hurt;
 }
 
 const clock = new THREE.Clock();
@@ -776,18 +1793,26 @@ function loop() {
     updatePlayer(dt);
     updateZombies(dt);
     updateProjectiles(dt);
+    updateRockets(dt);
+    updateBarrages(dt);
     updateEnemyProjectiles(dt);
     updateEffects(dt);
+    updateParticles(dt);
     updateWaves(dt);
+    animateCorn(dt);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
     if (state.statueHp <= 0) endGame(false);
   }
-  updateCamera();
-  updateHud();
+  updateCamera(dt);
+  updatePopups(playing ? dt : 0);
+  updateHud(playing ? dt : 0);
   renderer.render(scene, camera);
 }
 
 resetGame();
+animateCorn(0);
+// Debug handle for the browser console (inspect / pose the hero)
+window.__game = { CONFIG, get state() { return state; }, corn, camera, scene, spawnZombie, explodeAt, get zombies() { return zombies; } };
 loop();
 </script>
 </body>
