@@ -178,7 +178,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.9.0';
+const VERSION = 'v1.10.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -213,6 +213,18 @@ const CONFIG = {
     // Call a rain of butter on a ground target: damages and stuns ("buttered")
     butterBarrage: { cooldown: 18, range: 45, delay: 0.7, pats: 12, interval: 0.11, areaRadius: 6,
                      damage: 40, splashRadius: 2.6, stun: 2.5, dropHeight: 26, fallSpeed: 34 },
+  },
+  // Procedural sound (section "Audio"): mix levels, 3D falloff, ambient timing
+  audio: {
+    master: 0.8, sfx: 1, ui: 0.75, ambience: 0.3,   // bus gains
+    reverb: 0.55, reverbTime: 1.9, reverbSend: 0.12, // outdoor tail; send grows with distance
+    refDistance: 6, rolloff: 0.75, maxDistance: 95,  // 3D: full volume inside refDistance, silent past maxDistance
+    airAbsorb: 45,                                    // m: distant sounds lose their highs
+    moanRange: 55, moanInterval: [1.2, 3], maxMoans: 3,
+    stepDistance: 1.6,                                // m walked per footstep
+    statueAlarmGap: 9,                                // s between "statue under attack" horns
+    voicePitch: { shambler: 100, sprinter: 150, plated: 82, spitter: 125, bomber: 175, banner: 135, climber: 140,
+                  howler: 115, burrower: 105, miniBoss: 58, finalBoss: 46 },   // moan pitch (Hz)
   },
   camera: {
     distance: 5.2, aimDistance: 3.4,  // hip / zoomed
@@ -366,9 +378,9 @@ const CONFIG = {
     enabled: true,               // join at game start (T toggles in game)
     difficulty: 1,               // multiplier: >1 = faster reactions, tighter aim, faster turning; <1 = sloppier
     thinkRate: 10,               // decisions per second
-    guardRadius: 40,             // stays within this of the statue
+    guardRadius: 65,             // roams up to this far from the statue
     stationRadius: [8, 12],      // idle post: this far out from the statue, toward the threat
-    engageRange: 42,             // looks for targets within this (needs a clear shot)
+    engageRange: 48,             // looks for targets within this (needs a clear shot)
     bomberAlertRange: 35,        // Bombers this close to the statue are priority #1 (then Spitters, Banners, nearest to statue)
     retargetCooldown: 1.2,       // s before switching to a better target (a lost / dead target is replaced at once)
     reactionTime: 0.3,           // s from acquiring a target to the first shot
@@ -386,6 +398,12 @@ const CONFIG = {
     butter: { minPack: 5, statueRange: 28, safeDist: 6 },         // pack this big near the statue; no zombie within safeDist of the teammate
     hop: { escapeCount: 2, escapeRadius: 3.5, travelDist: 24 },   // hop away when surrounded; hop to cover long walks back
     revive: { time: 5, range: 2.6, respawn: 20, hpFraction: 0.5 }, // hold X this long / respawn at the statue after
+    // Never static. Patrol: wander between random points around the statue (biased toward the threat), sometimes
+    // returning to the statue to check the base at least every baseCheckEvery s, glancing around every lookInterval s.
+    patrol: { radius: [10, 55], threatBias: 1.2, baseCheckEvery: 18, baseCheckChance: 0.1, lookInterval: [0.7, 1.8] },  // base check at least every baseCheckEvery s
+    // Combat: circle-strafe the target at preferRange, flipping direction every strafeSwitch s, steering away from
+    // every zombie inside dodgeRadius; a little hop / jump flair (chances per second).
+    combat: { preferRange: [10, 20], strafeSwitch: [1, 2.6], dodgeRadius: 8, dodgeWeight: 3, jumpChance: 0.12, flairHopChance: 0.06 },
   },
   ZOMBIE_SCALE_PER_HERO: 0.6,   // each active hero beyond the first adds this fraction to every non-boss zombie count
   debugPackSize: 4,             // zombies spawned per debug key press (keys 1–9)
@@ -1581,6 +1599,7 @@ function respawnHero(h) {
   h.hopping = false;
   h.ammo = W.clip; h.reloading = false;
   h.mesh.visible = true;
+  if (state?.time > 0) SFX.play('respawn', h.isAI ? h.mesh.position : null);
   h.corn.root.rotation.x = 0;
   const [x, z] = h.spawnAt;
   h.mesh.position.set(x, heightAt(x, z) + PLAYER_CENTER_Y, z); // just beside the statue
@@ -1776,6 +1795,8 @@ function beginCountdown(index) {
 function startWave(index) {
   state.phase = 'active';
   setBanner(false);
+  SFX.play('tick', true);
+  SFX.play('waveHorn');
   showSpawnMarkers([]);
   // Each pack starts `delay` seconds after the previous one (hidden from the player), scaled down on later waves
   const tighten = Math.max(CONFIG.packDelayMin, 1 - CONFIG.packDelayTighten * index);
@@ -1869,7 +1890,7 @@ const overlay = document.getElementById('overlay');
 overlay.addEventListener('click', () => {
   if (state.over) resetGame();
   renderer.domElement.requestPointerLock();
-  try { audioCtx ??= new AudioContext(); } catch { /* no audio */ }
+  SFX.init();
 });
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
@@ -1914,6 +1935,7 @@ function setMessage(text, duration = 0) {
 }
 function endGame(won) {
   state.over = true;
+  SFX.play(won ? 'victory' : 'defeat');
   document.exitPointerLock();
   document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
   document.getElementById('overlaySub').innerHTML = (won ? 'The garden is safe.' : 'The statue fell.') + '<br><b>Click to restart</b>';
@@ -2131,6 +2153,7 @@ function updateHero(h, dt) {
   // Jump / gravity / glide (hold jump while falling after a Husk Hop)
   if (inp.jump && h.onGround) {
     v.y = P.jumpSpeed; h.onGround = false;
+    SFX.play('jump', pos, h.isAI);
     burstLeaves(pos, 4);
   }
   const gliding = h.hopping && v.y < 0 && inp.jumpHeld;
@@ -2182,7 +2205,7 @@ function updateHero(h, dt) {
     h.reloadT -= dt;
     if (h.reloadT <= 0) { h.reloading = false; h.ammo = W.clip; }
   }
-  if (inp.fire && !h.reloading && h.ammo <= 0) startReload(h);
+  if (inp.fire && !h.reloading && h.ammo <= 0) { if (!h.isAI) SFX.play('empty'); startReload(h); }
   if (inp.fire && !h.reloading && h.ammo > 0 && h.fireTimer <= 0) {
     h.fireTimer += W.fireRate;
     fireKernel(h);
@@ -2203,12 +2226,14 @@ function landed(h, impactSpeed) {
     h.hopping = false;
     const H = AB.huskHop;
     explodeAt(feet, H.slamRadius, H.slamDamage, { color: 0x9be05a, sphere: false, owner: h });
+    SFX.play('slam', feet);
     spawnRing(feet, H.slamRadius * 1.2, 0xd8ff9a, 0.45);
     burstLeaves(h.mesh.position, 14);
     for (let i = 0; i < 10; i++) spawnParticle('puff', 0xb7a27a, feet.clone().add(rand3(1.5)), rand3(8, 2).setY(1.5), { life: 0.7, gravity: 0, grow: 2, drag: 4 });
     addShake(0.5, h.isAI ? feet : null);
-  } else if (impactSpeed > 6) {
-    for (let i = 0; i < 5; i++) spawnParticle('puff', 0xb7a27a, feet.clone().add(rand3(1)), rand3(4).setY(0.8), { life: 0.5, gravity: 0, grow: 1.5, drag: 4, size: 0.6 });
+  } else if (impactSpeed > 3) {
+    SFX.play('land', feet, h.isAI, Math.min(1, impactSpeed / 20));
+    if (impactSpeed > 6) for (let i = 0; i < 5; i++) spawnParticle('puff', 0xb7a27a, feet.clone().add(rand3(1)), rand3(4).setY(0.8), { life: 0.5, gravity: 0, grow: 1.5, drag: 4, size: 0.6 });
   }
 }
 
@@ -2223,6 +2248,7 @@ function startReload(h) {
   if (h.reloading || h.ammo >= W.clip || h.dead) return;
   h.reloading = true;
   h.reloadT = W.reloadTime;
+  SFX.play('reload', h.mesh.position, h.isAI);
 }
 
 // Pick the next arm (alternating) and return its muzzle's world position
@@ -2270,13 +2296,14 @@ function fireKernel(h) {
     addShake(0.035);
   }
   muzzleFx(arm, start, 1);
+  SFX.play('shot', start, h.isAI);
   // a little husk chaff kicked off the cob
   spawnParticle('chip', 0xffd23a, start, rand3(3, 2).add(new THREE.Vector3(arm.side * 2, 0, 0)), { life: 0.4, size: 0.6 });
 }
 
 // ---- Shuck Shot: volley of explosive cob missiles ----
 function useShuckShot(h) {
-  if (h.dead || h.cd.shuckShot > 0) return;
+  if (h.dead || h.cd.shuckShot > 0) { if (!h.isAI && !h.dead) SFX.play('denied'); return; }
   h.cd.shuckShot = AB.shuckShot.cooldown;
   h.shuckQueue = AB.shuckShot.missiles;
   h.shuckTimer = 0;
@@ -2307,6 +2334,7 @@ function fireShuckMissile(h) {
   scene.add(mesh);
   rockets.push({ mesh, vel: dir.multiplyScalar(A.speed), life: A.life, owner: h });
   muzzleFx(arm, start, 1.6);
+  SFX.play('shuck', start, h.isAI);
   if (!h.isAI) addShake(0.12);
   for (let i = 0; i < 4; i++) spawnParticle('puff', 0xeeeeee, start, rand3(2, 1), { life: 0.5, gravity: -1, grow: 2, drag: 3, size: 0.6 });
 }
@@ -2326,6 +2354,7 @@ function updateRockets(dt) {
     if (hit) {
       pos.y = Math.max(pos.y, heightAt(pos.x, pos.z) + 0.3);
       explodeAt(pos, A.radius, A.damage, { color: 0xffb030, owner: r.owner });
+      SFX.play('boom', pos, 0.75, true);
       for (let k = 0; k < 10; k++) spawnParticle('chip', 0xffd23a, pos, rand3(12, 5), { life: 0.8 });
       scene.remove(r.mesh);
       rockets.splice(i, 1);
@@ -2335,7 +2364,7 @@ function updateRockets(dt) {
 
 // ---- Husk Hop: big leaf-powered leap along the current velocity, glide by holding jump, slam on landing ----
 function useHuskHop(h) {
-  if (h.dead || h.cd.huskHop > 0) return;
+  if (h.dead || h.cd.huskHop > 0) { if (!h.isAI && !h.dead) SFX.play('denied'); return; }
   const H = AB.huskHop;
   h.cd.huskHop = H.cooldown;
   const v = h.vel;
@@ -2346,6 +2375,7 @@ function useHuskHop(h) {
   h.hopping = true;
   if (!h.isAI) { state.fovKick = 10; addShake(0.25); }
   burstLeaves(h.mesh.position, 16);
+  SFX.play('hop', h.mesh.position, h.isAI);
   spawnRing(h.mesh.position.clone().setY(h.mesh.position.y - PLAYER_CENTER_Y), 3, 0xd8ff9a, 0.35);
 }
 
@@ -2366,7 +2396,7 @@ const butterReticle = new THREE.Group();
 }
 function toggleButterTargeting() {
   if (state.targeting) { cancelButterTargeting(); return; }
-  if (player.dead || player.cd.butterBarrage > 0) return;
+  if (player.dead || player.cd.butterBarrage > 0) { if (!player.dead) SFX.play('denied'); return; }
   state.targeting = true;
   butterReticle.visible = true;
   updateButterReticle();
@@ -2391,6 +2421,7 @@ function callButterBarrage(h, at) {
   h.cd.butterBarrage = B.cooldown;
   state.barrages.push({ pos: at.clone(), t: -B.delay, dropped: 0, owner: h });
   setMessage(h.isAI ? `${h.name}: Butter incoming!` : 'Butter incoming!', 1.2);
+  SFX.play('butterCall', h.mesh.position, h.isAI);
   // the hero raises both cobs and fires a signal flare into the sky
   for (const arm of h.corn.arms) arm.recoil = 1.5;
   const start = h.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
@@ -2418,6 +2449,7 @@ function updateBarrages(dt) {
       marker.rotation.x = -Math.PI / 2;
       marker.position.set(target.x, target.y + 0.07, target.z);
       scene.add(marker);
+      SFX.play('butterFall', target, (mesh.position.y - target.y) / B.fallSpeed);
       butterPats.push({ mesh, marker, spin: rand3(10), floor: target.y, owner: b.owner });
     }
     if (b.dropped >= B.pats) state.barrages.splice(i, 1);
@@ -2431,6 +2463,7 @@ function updateBarrages(dt) {
     if (m.position.y <= p.floor + 0.17) {
       const at = m.position.clone().setY(p.floor + 0.3);
       explodeAt(at, B.splashRadius, B.damage, { color: 0xfff0a0, stun: B.stun, owner: p.owner });
+      SFX.play('splat', at);
       spawnDecal(at, B.splashRadius * (0.6 + Math.random() * 0.3), 0xffe27a, 4);
       for (let k2 = 0; k2 < 8; k2++) spawnParticle('chip', 0xffe27a, at, rand3(9, 5), { life: 0.6, size: 1.4 });
       scene.remove(m, p.marker);
@@ -2463,6 +2496,7 @@ function damageHero(h, amount) {
   if (!targetable(h)) return;
   h.hp -= amount;
   h.lastHurt = state.time;   // pauses passive regen
+  if (h.isAI) SFX.play('mateHurt', h.mesh.position); else SFX.play('hurt', amount > 20);
   if (!h.isAI) {
     state.hurt = Math.min(1, state.hurt + amount / 40);
     state.cam.tint = Math.min(1, state.cam.tint + 0.35 + amount / 50);   // red flash
@@ -2475,6 +2509,7 @@ function damageHero(h, amount) {
   h.dead = true;
   h.shuckQueue = 0;
   if (h.isAI) { downHero(h); return; }
+  SFX.play('death');
   h.respawnTimer = P.respawnDelay;
   cancelButterTargeting();
   h.mesh.visible = false;
@@ -2944,8 +2979,9 @@ function constrainZombie(z, dt) {
 }
 
 function dealDamage(z, target, amount) {
-  if (target.isHero) { damageHero(target.hero, amount); z.chaseTime = 0; }   // landing a hit resets the chase timeout
-  else state.statueHp -= amount;
+  if (target.isHero) { damageHero(target.hero, amount); z.chaseTime = 0; SFX.play('zombieHit', target.hero.mesh.position); }   // landing a hit resets the chase timeout
+  else { state.statueHp -= amount; SFX.play('statueHit', z.mesh.position); }
+  SFX.play('swing', z.mesh.position);
   z.ai.swing = 0.18;   // little lunge-squash for readability
 }
 
@@ -3011,33 +3047,734 @@ function rangedBehavior(z, t, dt) {
   const mesh = new THREE.Mesh(spitGeo, spitMat);
   mesh.position.copy(start);
   scene.add(mesh);
+  SFX.play('spit', start);
   enemyProjectiles.push({ mesh, vel, life: def.projectileLife, damage: def.damage * z.buff.damage });
 }
 
+// =====================================================================
+// Audio — procedural WebAudio sound effects (no sample files), cartoony Garden Warfare flavour:
+// poppy kernel shots, squishy hits, chunky booms with popcorn debris, formant-synth zombie moans,
+// brass wave horns, a garden ambience bed. Tuning in CONFIG.audio.
+// Graph: voice → gain → stereo pan → distance low-pass ─┬→ bus (sfx / ui / ambience) → master → compressor → limiter → out
+//                                                        └→ reverb send (wetter when far) → convolver → master
+// SFX.play(name, pos?, ...args): pos = THREE.Vector3 for a 3D sound, null for 2D (the player's own / UI).
+// SFX.update(dt) runs per frame: listener, footsteps, wind, heartbeat, zombie moans, burrow rumble, birds, cooldown pings.
+// =====================================================================
+const AU = CONFIG.audio;
+const SFX = (() => {
+  let ctx = null, master, sfxBus, uiBus, ambBus, verb, noiseBuf, brownBuf;
+  let windGain, windFilter, ambWind, ambFilter;
+  const lastPlay = {}, live = {};
+  const lis = new THREE.Vector3(), camRight = new THREE.Vector3(), camFwd = new THREE.Vector3(), dir = new THREE.Vector3();
+  const rr = (a, b) => a + (b - a) * Math.random();
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  let muted = false;
+
+  // ---- setup (needs a user gesture) ----
+  function init() {
+    if (ctx) { if (ctx.state !== 'running') ctx.resume(); return; }
+    try { ctx = new AudioContext(); } catch { return; }
+    const comp = ctx.createDynamicsCompressor();   // glue: keeps big fights dense but not clipping
+    comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+    const lim = ctx.createDynamicsCompressor();    // brick-wall safety
+    lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.08;
+    master = ctx.createGain(); master.gain.value = AU.master;
+    master.connect(comp).connect(lim).connect(ctx.destination);
+    sfxBus = gainTo(master, AU.sfx); uiBus = gainTo(master, AU.ui); ambBus = gainTo(master, AU.ambience);
+    verb = ctx.createConvolver(); verb.buffer = makeImpulse(AU.reverbTime);
+    verb.connect(gainTo(master, AU.reverb));
+    noiseBuf = makeNoise(false); brownBuf = makeNoise(true);
+    startLoops();
+  }
+  function gainTo(dest, v) { const g = ctx.createGain(); g.gain.value = v; g.connect(dest); return g; }
+  // 3 s of white (or brown = integrated, rumbly) noise, looped by every noise source at a random offset
+  function makeNoise(brown) {
+    const len = ctx.sampleRate * 3, b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    let y = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      if (brown) { y = (y + 0.02 * w) / 1.02; d[i] = y * 3.5; } else d[i] = w;
+    }
+    return b;
+  }
+  // Outdoor-ish stereo reverb tail: decaying noise that darkens over time, short pre-delay
+  function makeImpulse(sec) {
+    const sr = ctx.sampleRate, len = Math.floor(sr * sec), pre = Math.floor(sr * 0.012), b = ctx.createBuffer(2, len, sr);
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      let y = 0;
+      for (let i = pre; i < len; i++) {
+        const k = (i - pre) / (len - pre);
+        const a = 0.9 - 0.8 * k;   // one-pole low-pass that closes as the tail decays
+        y += ((Math.random() * 2 - 1) - y) * a;
+        d[i] = y * Math.pow(1 - k, 2.6) * (i - pre < sr * 0.03 ? 1.6 : 1);   // a little early-reflection bump
+      }
+    }
+    return b;
+  }
+  function driveCurve(k) {
+    const n = 1024, c = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); }
+    return c;
+  }
+
+  // ---- one sound instance ----
+  // Spatial: distance roll-off + air-absorption low-pass + stereo pan from the camera's right vector, and more reverb
+  // when far. `name` throttles (min gap, max concurrent). Returns { t, out } (connect sources to out) or null.
+  function voice(pos, { vol = 1, name, gap = 0, max = 8, len = 1, bus = sfxBus, rev = AU.reverbSend, range = AU.maxDistance, minGain = 0 } = {}) {
+    if (!ctx || muted || ctx.state !== 'running') return null;
+    const now = ctx.currentTime;
+    let gain = vol, pan = 0, cutoff = 20000, d = 0;
+    if (pos) {
+      d = pos.distanceTo(lis);
+      if (d > range && !minGain) return null;
+      const att = 1 / (1 + Math.max(0, d - AU.refDistance) / AU.refDistance * AU.rolloff);
+      const fade = range === Infinity ? 1 : THREE.MathUtils.smoothstep(1 - d / range, 0, 0.25);
+      gain *= Math.max(minGain, att * fade);
+      if (gain < 0.004) return null;
+      dir.copy(pos).sub(camera.position);
+      const dl = dir.length();
+      if (dl > 0.01) {
+        dir.divideScalar(dl);
+        pan = THREE.MathUtils.clamp(dir.dot(camRight), -1, 1) * 0.85 * Math.min(1, dl / 3);
+        if (dir.dot(camFwd) < -0.2) cutoff *= 0.55;   // behind you: duller
+      }
+      cutoff = THREE.MathUtils.clamp(cutoff * Math.exp(-d / AU.airAbsorb), 700, 20000);
+    }
+    if (name) {
+      if (now - (lastPlay[name] ?? -9) < gap || (live[name] || 0) >= max) return null;
+      lastPlay[name] = now; live[name] = (live[name] || 0) + 1;
+      setTimeout(() => live[name]--, len * 1000);
+    }
+    const out = ctx.createGain(), g = ctx.createGain(), p = ctx.createStereoPanner(), lp = ctx.createBiquadFilter();
+    g.gain.value = gain; p.pan.value = pan; lp.type = 'lowpass'; lp.frequency.value = cutoff; lp.Q.value = 0.5;
+    out.connect(g).connect(p).connect(lp).connect(bus);
+    const send = ctx.createGain();
+    send.gain.value = rev * (1 + d / 25);
+    lp.connect(send).connect(verb);
+    setTimeout(() => { for (const n of [out, g, p, lp, send]) n.disconnect(); }, (len + 0.6) * 1000);
+    return { t: now + 0.005, out, d };
+  }
+  // Punchy exponential envelope (attack → decay to silence)
+  function env(prm, t, attack, dur, vol) {
+    prm.setValueAtTime(0.0001, t);
+    prm.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + attack);
+    prm.exponentialRampToValueAtTime(0.0001, t + Math.max(dur, attack + 0.005));
+  }
+  // Oscillator with an exponential pitch sweep
+  function tone(v, { type = 'sine', f0, f1 = f0, at = 0, dur, vol = 1, attack = 0.003, sweep = dur, dest = v.out, detune = 0, vib = 0, vibRate = 6 }) {
+    const t = v.t + at, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.detune.value = detune;
+    o.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + sweep);
+    if (vib) {
+      const l = ctx.createOscillator(), lg = ctx.createGain();
+      l.frequency.value = vibRate; lg.gain.value = f0 * vib;
+      l.connect(lg).connect(o.frequency); l.start(t); l.stop(t + dur + 0.05);
+    }
+    env(g.gain, t, attack, dur, vol);
+    o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+  }
+  // Filtered noise burst with a moving filter
+  function hiss(v, { at = 0, dur, vol = 1, type = 'bandpass', f0 = 1000, f1 = f0, q = 1, attack = 0.002, brown = false, dest = v.out, rate = 1 }) {
+    const t = v.t + at, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = brown ? brownBuf : noiseBuf; s.loop = true; s.playbackRate.value = rate;
+    f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    env(g.gain, t, attack, dur, vol);
+    s.connect(f).connect(g).connect(dest); s.start(t, Math.random() * 2.5); s.stop(t + dur + 0.05);
+  }
+  // A soft-clipping stage feeding the voice (grit for booms, roars)
+  function drive(v, k) { const w = ctx.createWaveShaper(); w.curve = driveCurve(k); w.oversample = '2x'; w.connect(v.out); return w; }
+  // Sparse crackle (explosion debris, gravel)
+  function crackle(v, n, span, vol = 0.25, lo = 1800, hi = 6000) {
+    for (let i = 0; i < n; i++) hiss(v, { at: Math.random() * span, dur: rr(0.008, 0.02), vol: vol * rr(0.4, 1), f0: rr(lo, hi), q: 3 });
+  }
+  // Formant-synth voice: two detuned saws → three vowel formants that glide (zombie moans, roars, the howl)
+  function vocal(v, { f, dur, vol = 1, at = 0, rise = 1.15, fall = 0.75, formants = [[650, 420], [1080, 820], [2500, 2400]], driveK = 2, breath = 0.15, vibAmt = 0.03 }) {
+    const t = v.t + at, dest = driveK ? drive(v, driveK) : v.out, mix = ctx.createGain();
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, t);
+    amp.gain.linearRampToValueAtTime(vol, t + Math.min(0.15, dur * 0.2));
+    amp.gain.setValueAtTime(vol, t + dur * 0.65);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    mix.connect(amp);
+    formants.forEach(([a, b], i) => {
+      const bp = ctx.createBiquadFilter(), fg = ctx.createGain();
+      bp.type = 'bandpass'; bp.Q.value = 7 + i * 3;
+      bp.frequency.setValueAtTime(a, t); bp.frequency.exponentialRampToValueAtTime(b, t + dur);
+      fg.gain.value = [1.1, 0.6, 0.25][i];
+      mix.connect(bp).connect(fg).connect(dest);
+    });
+    for (const det of [-9, 11]) {
+      const o = ctx.createOscillator(), l = ctx.createOscillator(), lg = ctx.createGain();
+      o.type = 'sawtooth'; o.detune.value = det;
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.linearRampToValueAtTime(f * rise, t + dur * 0.3);
+      o.frequency.exponentialRampToValueAtTime(f * fall, t + dur);
+      l.frequency.value = rr(4.5, 7); lg.gain.value = f * vibAmt;
+      l.connect(lg).connect(o.frequency);
+      o.connect(mix); o.start(t); l.start(t); o.stop(t + dur + 0.05); l.stop(t + dur + 0.05);
+    }
+    if (breath) hiss(v, { at, dur, vol: breath, f0: 1400, f1: 900, q: 0.8, attack: dur * 0.2 });
+  }
+  const note = n => 440 * Math.pow(2, (n - 69) / 12);   // MIDI → Hz
+
+  // ---- the sound library ----
+  const S = {
+    // Cob Buster kernel: corny "pop" + husk chuff + body thump. AI shots are 3D and quieter.
+    shot(pos, ai) {
+      const v = voice(ai ? pos : null, { vol: ai ? 0.45 : 0.5, name: ai ? 'shotAI' : 'shot', gap: 0.02, max: 6, len: 0.3, rev: 0.06 });
+      if (!v) return;
+      const p = rr(0.93, 1.08);
+      tone(v, { f0: 1150 * p, f1: 210 * p, dur: 0.085, vol: 0.55, sweep: 0.05 });
+      tone(v, { type: 'triangle', f0: 2700 * p, f1: 1100, dur: 0.022, vol: 0.22 });
+      tone(v, { f0: 150, f1: 55, dur: 0.11, vol: 0.75 });
+      hiss(v, { dur: 0.06, vol: 0.32, f0: 2000 * p, f1: 650, q: 1.6 });
+      hiss(v, { dur: 0.035, vol: 0.18, type: 'highpass', f0: 4500 });
+    },
+    // Kernel into a zombie: wet thwack (or a metallic tink off armor)
+    hit(pos, armored) {
+      const v = voice(pos, { vol: 0.5, name: 'hit', gap: 0.025, max: 5, len: 0.3 });
+      if (!v) return;
+      if (armored) {
+        tone(v, { type: 'triangle', f0: rr(2900, 3300), dur: 0.14, vol: 0.18 });
+        tone(v, { type: 'triangle', f0: rr(4500, 4900), dur: 0.09, vol: 0.1 });
+        hiss(v, { dur: 0.03, vol: 0.25, type: 'highpass', f0: 3000 });
+        return;
+      }
+      hiss(v, { dur: 0.09, vol: 0.55, f0: rr(1000, 1400), f1: 280, q: 1.4 });
+      tone(v, { f0: rr(380, 460), f1: 110, dur: 0.08, vol: 0.45 });
+    },
+    // Kernel into terrain / props
+    ricochet(pos) {
+      const v = voice(pos, { vol: 0.25, name: 'wall', gap: 0.04, max: 3, len: 0.2 });
+      if (!v) return;
+      hiss(v, { dur: 0.04, vol: 0.4, type: 'highpass', f0: 2200 });
+      tone(v, { type: 'triangle', f0: rr(1300, 1700), f1: 500, dur: 0.035, vol: 0.2 });
+    },
+    // The player's hit confirm: crisp tick; a kill gets the bright "vanquish" chime
+    hitmarker() {
+      const v = voice(null, { vol: 0.35, name: 'hm', gap: 0.045, max: 2, len: 0.1, bus: uiBus, rev: 0 });
+      if (!v) return;
+      tone(v, { type: 'triangle', f0: 2100, dur: 0.035, vol: 0.5 });
+      tone(v, { f0: 3150, dur: 0.025, vol: 0.25 });
+    },
+    vanquish() {
+      const v = voice(null, { vol: 0.42, name: 'vq', gap: 0.06, max: 3, len: 0.6, bus: uiBus, rev: 0.25 });
+      if (!v) return;
+      const p = rr(0.98, 1.03);
+      tone(v, { f0: 1046 * p, dur: 0.38, vol: 0.45, attack: 0.002 });
+      tone(v, { f0: 1568 * p, at: 0.045, dur: 0.42, vol: 0.4 });
+      tone(v, { type: 'triangle', f0: 2093 * p, at: 0.09, dur: 0.3, vol: 0.18 });
+      tone(v, { f0: 700, f1: 180, dur: 0.07, vol: 0.4 });   // pop
+    },
+    // Zombie death: squelchy splat + a dying moan, bigger for bosses
+    zombieDeath(pos, type) {
+      const boss = ZT[type]?.boss, v = voice(pos, { vol: boss ? 1.2 : 0.7, name: 'zdie', gap: 0.03, max: 5, len: boss ? 2.6 : 1 });
+      if (!v) return;
+      hiss(v, { dur: 0.3, vol: 0.7, type: 'lowpass', f0: 1800, f1: 200, q: 2, brown: true });
+      tone(v, { f0: 240, f1: 50, dur: 0.28, vol: 0.6 });
+      tone(v, { f0: 620, f1: 140, at: 0.02, dur: 0.12, vol: 0.3 });   // blorp
+      crackle(v, 5, 0.15, 0.2, 1200, 3500);
+      const f = pitchOf(type);
+      vocal(v, { f, at: 0.04, dur: boss ? 2.2 : rr(0.5, 0.75), vol: boss ? 0.55 : 0.32, rise: 1.25, fall: 0.5, formants: [[750, 350], [1150, 700], [2500, 2200]], driveK: boss ? 4 : 2 });
+      if (boss) { tone(v, { f0: 70, f1: 28, dur: 1.6, vol: 1 }); hiss(v, { dur: 1.6, vol: 0.8, type: 'lowpass', f0: 600, f1: 80, brown: true }); }
+    },
+    // Ambient zombie moan ("braaaains"), pitched per type
+    moan(pos, type) {
+      const boss = ZT[type]?.boss, dur = boss ? rr(1.4, 2) : rr(0.9, 1.6);
+      const v = voice(pos, { vol: boss ? 0.8 : 0.42, name: 'moan', gap: 0.18, max: AU.maxMoans, len: dur + 0.2, range: AU.moanRange });
+      if (!v) return;
+      const vowels = pick([
+        [[700, 420], [1150, 800], [2500, 2300]],    // "aaa-uh"
+        [[350, 600], [800, 1100], [2300, 2500]],   // "ooo-ah"
+        [[600, 320], [1700, 900], [2600, 2300]],   // "eh-ooh"
+      ]);
+      vocal(v, { f: pitchOf(type) * rr(0.9, 1.1), dur, vol: 0.5, rise: rr(1.05, 1.25), fall: rr(0.7, 0.9), formants: vowels, driveK: boss ? 4 : 1.8 });
+    },
+    swing(pos) {
+      const v = voice(pos, { vol: 0.35, name: 'swing', gap: 0.06, max: 3, len: 0.3 });
+      if (!v) return;
+      hiss(v, { dur: 0.2, vol: 0.45, f0: 350, f1: 1500, q: 1.3, attack: 0.06 });
+    },
+    // Zombie lands a hit on a hero: meaty thud
+    zombieHit(pos) {
+      const v = voice(pos, { vol: 0.65, name: 'zhit', gap: 0.07, max: 3, len: 0.3 });
+      if (!v) return;
+      tone(v, { f0: 160, f1: 55, dur: 0.16, vol: 0.9 });
+      hiss(v, { dur: 0.09, vol: 0.55, type: 'lowpass', f0: 1400, f1: 300 });
+      hiss(v, { dur: 0.12, vol: 0.25, f0: 3200, f1: 1200, q: 0.9 });
+    },
+    // Statue struck: stone thunk with a faint ring; an alarm horn now and then
+    statueHit(pos) {
+      const v = voice(pos, { vol: 0.55, name: 'stone', gap: 0.12, max: 3, len: 0.6 });
+      if (v) {
+        tone(v, { f0: 230, f1: 85, dur: 0.22, vol: 0.8 });
+        hiss(v, { dur: 0.13, vol: 0.5, f0: 650, q: 2.5 });
+        tone(v, { type: 'triangle', f0: 760, dur: 0.5, vol: 0.06 });
+        crackle(v, 4, 0.12, 0.12, 900, 2500);
+      }
+      const a = voice(null, { vol: 0.32, name: 'alarm', gap: AU.statueAlarmGap, max: 1, len: 1.4, bus: uiBus, rev: 0.3 });
+      if (!a) return;
+      for (const [at, f] of [[0, note(52)], [0.38, note(48)]]) {
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; lp.connect(a.out);
+        for (const det of [-8, 0, 8]) tone(a, { type: 'sawtooth', f0: f, at, dur: 0.42, vol: 0.22, attack: 0.04, detune: det, dest: lp });
+      }
+    },
+    // The player is hurt: dull body hit + leaf rustle (2D)
+    hurt(heavy) {
+      const v = voice(null, { vol: 0.5 + (heavy ? 0.2 : 0), name: 'hurt', gap: 0.12, max: 2, len: 0.4, rev: 0.05 });
+      if (!v) return;
+      tone(v, { f0: 190, f1: 70, dur: 0.18, vol: 0.8 });
+      hiss(v, { dur: 0.16, vol: 0.35, f0: 2600, f1: 800, q: 0.8 });
+      tone(v, { type: 'square', f0: 95, dur: 0.05, vol: 0.12 });
+    },
+    mateHurt(pos) {
+      const v = voice(pos, { vol: 0.35, name: 'mhurt', gap: 0.2, max: 1, len: 0.3 });
+      if (!v) return;
+      tone(v, { f0: 200, f1: 80, dur: 0.15, vol: 0.7 });
+      hiss(v, { dur: 0.12, vol: 0.3, f0: 2400, f1: 900, q: 0.8 });
+    },
+    heartbeat(k) {
+      const v = voice(null, { vol: 0.35 + 0.4 * k, len: 0.5, rev: 0 });
+      if (!v) return;
+      tone(v, { f0: 68, f1: 42, dur: 0.13, vol: 1 });
+      tone(v, { f0: 60, f1: 38, at: 0.17, dur: 0.12, vol: 0.65 });
+    },
+    // Wilting death slide; respawn sparkle
+    death() {
+      const v = voice(null, { vol: 0.55, len: 1.6, rev: 0.25 });
+      if (!v) return;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.connect(v.out);
+      tone(v, { type: 'sawtooth', f0: 520, f1: 85, dur: 1.1, vol: 0.25, dest: lp, vib: 0.04 });
+      tone(v, { f0: 300, f1: 55, dur: 1, vol: 0.4 });
+      hiss(v, { dur: 0.5, vol: 0.35, f0: 3000, f1: 700, q: 0.7 });
+      tone(v, { f0: 160, f1: 50, at: 0.9, dur: 0.25, vol: 0.7 });   // flop
+    },
+    respawn(pos) {
+      const v = voice(pos, { vol: 0.4, len: 1, bus: pos ? sfxBus : uiBus, rev: 0.3 });
+      if (!v) return;
+      [72, 76, 79, 84, 88].forEach((n, i) => tone(v, { type: 'triangle', f0: note(n), at: i * 0.055, dur: 0.3, vol: 0.28 }));
+      tone(v, { f0: 260, f1: 620, dur: 0.45, vol: 0.2, attack: 0.05 });
+      hiss(v, { dur: 0.6, vol: 0.12, type: 'highpass', f0: 6000, attack: 0.1 });
+    },
+    mateDown(pos) {
+      const v = voice(null, { vol: 0.4, len: 1, bus: uiBus, rev: 0.25 });
+      if (v) [[67, 0], [63, 0.16], [58, 0.32]].forEach(([n, at]) => tone(v, { type: 'triangle', f0: note(n), at, dur: 0.3, vol: 0.35 }));
+      S.death_3d(pos);
+    },
+    death_3d(pos) {
+      const v = voice(pos, { vol: 0.5, len: 1.2 });
+      if (!v) return;
+      tone(v, { f0: 300, f1: 55, dur: 0.9, vol: 0.4 });
+      hiss(v, { dur: 0.5, vol: 0.35, f0: 3000, f1: 700, q: 0.7 });
+    },
+    // Reload: husk rip → kernels pouring in → clack-clack lock, timed to W.reloadTime
+    reload(pos, ai) {
+      const T = W.reloadTime, v = voice(ai ? pos : null, { vol: ai ? 0.35 : 0.45, name: ai ? 'rlAI' : 'rl', gap: 0.2, max: 1, len: T + 0.3, rev: 0.05 });
+      if (!v) return;
+      hiss(v, { dur: 0.22, vol: 0.4, f0: 1500, f1: 4200, q: 1.5, attack: 0.03 });
+      tone(v, { type: 'triangle', f0: 320, f1: 190, dur: 0.05, vol: 0.3 });
+      for (let i = 0; i < 9; i++) {   // kernels rattling in
+        const at = T * 0.3 + i * 0.045 + Math.random() * 0.02;
+        tone(v, { type: 'triangle', f0: rr(1600, 2600), at, dur: 0.025, vol: 0.12 });
+        hiss(v, { at, dur: 0.015, vol: 0.12, type: 'highpass', f0: 4000 });
+      }
+      hiss(v, { at: T * 0.55, dur: 0.18, vol: 0.25, f0: 2500, f1: 1200, q: 1 });
+      for (const [k, f] of [[0.82, 1300], [0.9, 1700]]) {
+        tone(v, { type: 'square', f0: f, f1: f * 0.6, at: T * k, dur: 0.03, vol: 0.12 });
+        tone(v, { f0: 190, f1: 90, at: T * k, dur: 0.07, vol: 0.45 });
+        hiss(v, { at: T * k, dur: 0.03, vol: 0.25, type: 'highpass', f0: 2500 });
+      }
+    },
+    empty() {
+      const v = voice(null, { vol: 0.3, name: 'empty', gap: 0.25, max: 1, len: 0.2, rev: 0 });
+      if (!v) return;
+      tone(v, { type: 'square', f0: 1900, dur: 0.018, vol: 0.12 });
+      tone(v, { type: 'square', f0: 1250, at: 0.05, dur: 0.018, vol: 0.1 });
+    },
+    denied() {
+      const v = voice(null, { vol: 0.3, name: 'deny', gap: 0.2, max: 1, len: 0.3, bus: uiBus, rev: 0 });
+      if (!v) return;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.connect(v.out);
+      tone(v, { type: 'square', f0: 200, dur: 0.08, vol: 0.35, dest: lp });
+      tone(v, { type: 'square', f0: 160, at: 0.09, dur: 0.1, vol: 0.35, dest: lp });
+    },
+    ready() {
+      const v = voice(null, { vol: 0.28, name: 'ready', gap: 0.15, max: 1, len: 0.5, bus: uiBus, rev: 0.3 });
+      if (!v) return;
+      tone(v, { f0: 1318, dur: 0.18, vol: 0.4 });
+      tone(v, { f0: 1976, at: 0.07, dur: 0.25, vol: 0.3 });
+    },
+    // Shuck Shot launch: fwoomp + rising whoosh + whistle
+    shuck(pos, ai) {
+      const v = voice(ai ? pos : null, { vol: ai ? 0.6 : 0.6, name: ai ? 'shkAI' : 'shk', gap: 0.04, max: 4, len: 0.5 });
+      if (!v) return;
+      tone(v, { f0: 210, f1: 60, dur: 0.25, vol: 0.9 });
+      hiss(v, { dur: 0.35, vol: 0.5, f0: 600, f1: 3200, q: 1, attack: 0.01 });
+      tone(v, { type: 'triangle', f0: rr(850, 1000), f1: 1700, dur: 0.3, vol: 0.07 });
+      hiss(v, { dur: 0.04, vol: 0.45, type: 'highpass', f0: 2200 });
+    },
+    // Explosion: sub punch + rumble + crack + crackle; `popcorn` adds corny kernel pops in the debris
+    boom(pos, size = 1, popcorn = false) {
+      const v = voice(pos, { vol: 0.9 * Math.min(1.6, size), name: 'boom', gap: 0.035, max: 5, len: 2.2, rev: 0.25, range: AU.maxDistance * 1.6 });
+      if (!v) return;
+      const d = drive(v, 2.5);
+      tone(v, { f0: 120, f1: 32, dur: 0.8 * size, vol: 1, sweep: 0.45, dest: d });
+      tone(v, { f0: 62, f1: 28, dur: 1.2 * size, vol: 0.8, dest: d });
+      hiss(v, { dur: 1.3 * size, vol: 0.95, type: 'lowpass', f0: 2600, f1: 140, q: 0.7, brown: true, dest: d });
+      hiss(v, { dur: 0.35, vol: 0.6, f0: 1300, f1: 300, q: 0.9 });
+      hiss(v, { dur: 0.05, vol: 0.55, type: 'highpass', f0: 3200 });
+      crackle(v, 14, 0.7, 0.28);
+      if (popcorn) for (let i = 0; i < 6; i++) tone(v, { f0: rr(1100, 1600), f1: 320, at: rr(0.08, 0.6), dur: 0.04, vol: rr(0.08, 0.18) });
+    },
+    // Butter Barrage: signal flare whistle up; each falling pat whistles down; buttery splat on landing
+    butterCall(pos, ai) {
+      const v = voice(ai ? pos : null, { vol: 0.45, len: 1, rev: 0.2 });
+      if (!v) return;
+      tone(v, { f0: 600, f1: 2600, dur: 0.6, vol: 0.25, attack: 0.03, vib: 0.02, vibRate: 18 });
+      hiss(v, { dur: 0.55, vol: 0.18, type: 'highpass', f0: 3000, f1: 7000, attack: 0.05 });
+      tone(v, { f0: 900, f1: 300, at: 0.58, dur: 0.08, vol: 0.4 });
+    },
+    butterFall(pos, dur) {
+      const v = voice(pos, { vol: 0.25, name: 'bfall', gap: 0.18, max: 3, len: dur + 0.1, range: 120 });
+      if (!v) return;
+      tone(v, { f0: 2200, f1: 650, dur, vol: 0.25, attack: 0.1, sweep: dur });
+    },
+    splat(pos) {
+      const v = voice(pos, { vol: 0.7, name: 'splat', gap: 0.04, max: 4, len: 0.5, rev: 0.18 });
+      if (!v) return;
+      hiss(v, { dur: 0.26, vol: 0.9, type: 'lowpass', f0: 2200, f1: 220, q: 2.5, brown: true });
+      tone(v, { f0: 270, f1: 55, dur: 0.2, vol: 0.9 });
+      tone(v, { f0: 950, f1: 260, dur: 0.06, vol: 0.3 });   // "plap"
+      hiss(v, { dur: 0.03, vol: 0.35, type: 'highpass', f0: 1800 });
+      for (let i = 0; i < 3; i++) tone(v, { f0: rr(500, 1100), f1: 300, at: rr(0.05, 0.25), dur: 0.035, vol: 0.1 });   // squelchy bubbles
+    },
+    // Husk Hop: leafy whoosh + springy boing; slam = heavy thud and crunch
+    hop(pos, ai) {
+      const v = voice(ai ? pos : null, { vol: 0.5, len: 0.6 });
+      if (!v) return;
+      tone(v, { f0: 170, f1: 540, dur: 0.32, vol: 0.3, vib: 0.08, vibRate: 22 });
+      tone(v, { f0: 340, f1: 1080, dur: 0.25, vol: 0.12, vib: 0.08, vibRate: 22 });
+      hiss(v, { dur: 0.4, vol: 0.5, f0: 700, f1: 2600, q: 1, attack: 0.02 });
+      hiss(v, { dur: 0.3, vol: 0.18, type: 'highpass', f0: 4500 });
+    },
+    slam(pos, size = 1) {
+      const v = voice(pos, { vol: 0.85 * size, name: 'slam', gap: 0.08, max: 2, len: 1.2, rev: 0.2 });
+      if (!v) return;
+      const d = drive(v, 2);
+      tone(v, { f0: 95, f1: 30, dur: 0.6, vol: 1, dest: d });
+      hiss(v, { dur: 0.7, vol: 0.9, type: 'lowpass', f0: 900, f1: 90, brown: true, dest: d });
+      hiss(v, { dur: 0.12, vol: 0.5, f0: 2500, q: 1 });
+      hiss(v, { dur: 0.45, vol: 0.22, type: 'highpass', f0: 3200, attack: 0.02 });
+      crackle(v, 8, 0.4, 0.2, 900, 3000);
+    },
+    jump(pos, ai) {
+      const v = voice(ai ? pos : null, { vol: 0.25, name: ai ? 'jAI' : 'j', gap: 0.1, max: 1, len: 0.2, rev: 0.03 });
+      if (!v) return;
+      tone(v, { f0: 290, f1: 520, dur: 0.09, vol: 0.4 });
+      hiss(v, { dur: 0.12, vol: 0.35, f0: 1400, f1: 3200, q: 1 });
+    },
+    land(pos, ai, k) {
+      const v = voice(ai ? pos : null, { vol: 0.25 + 0.4 * k, name: ai ? 'lAI' : 'l', gap: 0.1, max: 1, len: 0.25, rev: 0.03 });
+      if (!v) return;
+      tone(v, { f0: 125, f1: 55, dur: 0.1, vol: 0.8 });
+      hiss(v, { dur: 0.09, vol: 0.4, type: 'lowpass', f0: 900, f1: 300 });
+      hiss(v, { dur: 0.08, vol: 0.12, type: 'highpass', f0: 4000 });
+    },
+    // Leafy footstep, alternating feet (slightly different pitch)
+    step(pos, ai, k, foot) {
+      const v = voice(ai ? pos : null, { vol: (ai ? 0.2 : 0.17) * k, name: ai ? 'stAI' : 'st', gap: 0.08, max: 2, len: 0.15, rev: 0.02 });
+      if (!v) return;
+      const p = foot ? 1.08 : 0.94;
+      hiss(v, { dur: 0.06, vol: 0.7, f0: rr(650, 1050) * p, f1: 400, q: 1.2 });
+      tone(v, { f0: 95 * p, f1: 60, dur: 0.05, vol: 0.6 });
+      hiss(v, { dur: 0.04, vol: 0.15, type: 'highpass', f0: 5000 });
+    },
+    // Spitter: wet "ptoo"; the glob splashes where it lands
+    spit(pos) {
+      const v = voice(pos, { vol: 0.45, name: 'spit', gap: 0.08, max: 3, len: 0.3 });
+      if (!v) return;
+      tone(v, { f0: 380, f1: 950, dur: 0.05, vol: 0.35 });
+      hiss(v, { dur: 0.15, vol: 0.55, f0: 1300, f1: 550, q: 2 });
+      tone(v, { f0: 320, f1: 140, at: 0.03, dur: 0.1, vol: 0.3 });
+    },
+    spitSplat(pos) {
+      const v = voice(pos, { vol: 0.4, name: 'spsp', gap: 0.06, max: 3, len: 0.35 });
+      if (!v) return;
+      hiss(v, { dur: 0.2, vol: 0.7, type: 'lowpass', f0: 2600, f1: 380, q: 2 });
+      for (let i = 0; i < 3; i++) tone(v, { f0: rr(600, 1300), f1: 350, at: rr(0, 0.15), dur: 0.035, vol: 0.12 });
+    },
+    // Bomber: two-tone electronic beep (pitch rises with urgency)
+    beep(pos, f, range) {
+      const v = voice(pos, { vol: 0.32, name: 'beep', gap: 0.06, max: 3, len: 0.15, range, rev: 0.1 });
+      if (!v) return;
+      tone(v, { type: 'square', f0: f, dur: 0.07, vol: 0.18 });
+      tone(v, { f0: f * 2, dur: 0.05, vol: 0.12 });
+    },
+    // Howler: sucking inhale during the wind-up, then a distorted screech
+    inhale(pos, dur) {
+      const v = voice(pos, { vol: 0.5, name: 'inh', gap: 0.3, max: 2, len: dur + 0.1, range: 70 });
+      if (!v) return;
+      hiss(v, { dur, vol: 0.5, f0: 350, f1: 1900, q: 2.5, attack: dur * 0.85 });
+    },
+    howl(pos) {
+      const v = voice(pos, { vol: 1, name: 'howl', gap: 0.4, max: 2, len: 1.8, range: 110, minGain: 0.08, rev: 0.35 });
+      if (!v) return;
+      vocal(v, { f: 230, dur: 1.4, vol: 0.6, rise: 2, fall: 0.55, formants: [[900, 700], [1900, 1300], [3100, 2700]], driveK: 6, breath: 0.4, vibAmt: 0.06 });
+      vocal(v, { f: 460, dur: 1.2, vol: 0.25, rise: 1.8, fall: 0.6, formants: [[1100, 800], [2300, 1500], [3400, 3000]], driveK: 4, breath: 0 });
+    },
+    // Burrower: gravelly rumble under the ground; dirt eruption when it surfaces
+    dig(pos) {
+      const v = voice(pos, { vol: 0.45, name: 'dig', gap: 0.25, max: 2, len: 0.5, range: 40 });
+      if (!v) return;
+      hiss(v, { dur: 0.45, vol: 0.8, type: 'lowpass', f0: 320, q: 1, brown: true, attack: 0.08 });
+      crackle(v, 4, 0.35, 0.15, 900, 2600);
+    },
+    emerge(pos) {
+      const v = voice(pos, { vol: 0.8, name: 'emerge', gap: 0.1, max: 3, len: 1.2, range: 80 });
+      if (!v) return;
+      hiss(v, { dur: 0.6, vol: 0.9, type: 'lowpass', f0: 1600, f1: 180, brown: true });
+      tone(v, { f0: 130, f1: 40, dur: 0.4, vol: 0.8 });
+      crackle(v, 12, 0.5, 0.25, 700, 3000);
+      vocal(v, { f: 150, at: 0.12, dur: 0.7, vol: 0.3, rise: 1.4, fall: 0.8 });
+    },
+    // Brute: bellowing roar on the charge wind-up, ground-shaking stomps, cartoon "bonk + tweety birds" when dazed
+    roar(pos, dur = 1.3, f = 58) {
+      const v = voice(pos, { vol: 1.1, name: 'roar', gap: 0.5, max: 2, len: dur + 0.3, range: 130, minGain: 0.1, rev: 0.3 });
+      if (!v) return;
+      vocal(v, { f, dur, vol: 0.7, rise: 1.5, fall: 0.7, formants: [[600, 450], [1000, 800], [2300, 2000]], driveK: 7, breath: 0.45, vibAmt: 0.05 });
+      vocal(v, { f: f * 0.5, dur, vol: 0.4, rise: 1.4, fall: 0.7, driveK: 4, breath: 0 });
+      tone(v, { f0: 55, f1: 35, dur, vol: 0.5, attack: 0.15 });
+    },
+    stomp(pos) {
+      const v = voice(pos, { vol: 0.75, name: 'stomp', gap: 0.12, max: 2, len: 0.5, range: 110 });
+      if (!v) return;
+      tone(v, { f0: 85, f1: 32, dur: 0.35, vol: 1 });
+      hiss(v, { dur: 0.3, vol: 0.6, type: 'lowpass', f0: 600, f1: 90, brown: true });
+    },
+    dazed(pos) {
+      const v = voice(pos, { vol: 0.6, len: 1.4, range: 120, rev: 0.25 });
+      if (!v) return;
+      tone(v, { f0: 760, f1: 240, dur: 0.22, vol: 0.5 });   // bonk
+      tone(v, { type: 'triangle', f0: 1500, f1: 480, dur: 0.18, vol: 0.2 });
+      for (let i = 0; i < 4; i++) {   // tweety birds circling
+        const at = 0.3 + i * 0.22;
+        tone(v, { f0: 2700, f1: 3600, at, dur: 0.07, vol: 0.18 });
+        tone(v, { f0: 3500, f1: 2800, at: at + 0.08, dur: 0.07, vol: 0.14 });
+      }
+    },
+    // Metal: Plated loses a plate; the Zombie King's armor shatters
+    plate(pos) {
+      const v = voice(pos, { vol: 0.55, name: 'plate', gap: 0.05, max: 3, len: 0.6 });
+      if (!v) return;
+      for (const f of [1150, 1810, 2690]) tone(v, { type: 'triangle', f0: f * rr(0.97, 1.03), dur: rr(0.25, 0.45), vol: 0.13 });
+      tone(v, { f0: 320, f1: 110, dur: 0.1, vol: 0.6 });
+      hiss(v, { dur: 0.05, vol: 0.4, type: 'highpass', f0: 3000 });
+    },
+    armorClank(pos) {
+      const v = voice(pos, { vol: 0.5, name: 'aclank', gap: 0.07, max: 2, len: 0.5 });
+      if (!v) return;
+      tone(v, { type: 'triangle', f0: rr(600, 700), dur: 0.35, vol: 0.2 });
+      tone(v, { type: 'triangle', f0: rr(1500, 1700), dur: 0.2, vol: 0.12 });
+      tone(v, { f0: 200, f1: 90, dur: 0.1, vol: 0.5 });
+    },
+    shatter(pos) {
+      const v = voice(pos, { vol: 0.9, len: 1.4, range: 140, minGain: 0.15, rev: 0.35 });
+      if (!v) return;
+      for (let i = 0; i < 16; i++) tone(v, { type: 'triangle', f0: rr(1800, 6500), at: rr(0, 0.35), dur: rr(0.08, 0.4), vol: rr(0.05, 0.14) });
+      hiss(v, { dur: 0.6, vol: 0.5, type: 'highpass', f0: 3500 });
+      for (const f of [523, 784]) tone(v, { type: 'square', f0: f, dur: 0.7, vol: 0.06 });
+      tone(v, { f0: 150, f1: 45, dur: 0.5, vol: 0.9 });
+    },
+    // Boss moments: gong + roar (Zombie King phase), ominous arrival sting
+    gong(pos) {
+      const v = voice(pos, { vol: 0.8, len: 3.5, range: Infinity, minGain: 0.35, rev: 0.5 });
+      if (!v) return;
+      const f = 82;
+      for (const [m, a, d] of [[1, 0.6, 3.2], [2.76, 0.3, 2.2], [5.4, 0.15, 1.4], [8.9, 0.08, 0.9]])
+        tone(v, { f0: f * m, f1: f * m * 0.985, dur: d, vol: a, attack: 0.008, vib: 0.004, vibRate: 3 });
+      hiss(v, { dur: 0.1, vol: 0.4, type: 'lowpass', f0: 1200 });
+    },
+    bossArrive() {
+      const v = voice(null, { vol: 0.6, len: 3.2, bus: uiBus, rev: 0.5 });
+      if (!v) return;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(300, v.t); lp.frequency.exponentialRampToValueAtTime(1600, v.t + 1.2); lp.connect(v.out);
+      for (const [n, det] of [[33, -7], [33, 7], [40, 0], [45, 4]]) tone(v, { type: 'sawtooth', f0: note(n), dur: 2.8, vol: 0.18, attack: 0.5, detune: det, dest: lp });
+      tone(v, { f0: 90, f1: 40, dur: 1.4, vol: 0.9 });
+      hiss(v, { dur: 1.2, vol: 0.6, type: 'lowpass', f0: 500, f1: 80, brown: true });
+    },
+    // Ghost skull at a spawn: eerie beating whoosh, panned toward the lane and audible from anywhere
+    skull(pos) {
+      const v = voice(pos, { vol: 0.5, len: 1.6, range: Infinity, minGain: 0.4, rev: 0.45 });
+      if (!v) return;
+      tone(v, { f0: 440, f1: 160, dur: 1.4, vol: 0.18, attack: 0.15, vib: 0.03, vibRate: 5 });
+      tone(v, { f0: 466, f1: 168, dur: 1.4, vol: 0.14, attack: 0.15 });
+      hiss(v, { dur: 1.2, vol: 0.25, f0: 2400, f1: 500, q: 3, attack: 0.2 });
+      vocal(v, { f: 130, at: 0.2, dur: 1.1, vol: 0.2, rise: 1.3, fall: 0.7, driveK: 3 });
+    },
+    // Wave flow: brass horn when a wave starts, countdown ticks, cleared jingle, victory / defeat stings
+    waveHorn() {
+      const v = voice(null, { vol: 0.65, len: 2.8, bus: uiBus, rev: 0.45 });
+      if (!v) return;
+      tone(v, { f0: 95, f1: 55, dur: 0.9, vol: 0.9 });   // timpani
+      hiss(v, { dur: 0.5, vol: 0.5, type: 'lowpass', f0: 500, f1: 120, brown: true });
+      for (const [n, at, dur] of [[45, 0.05, 0.5], [45, 0.6, 0.2], [52, 0.85, 1.6]]) brass(v, note(n), at, dur, 0.22);
+      for (const [n, at, dur] of [[57, 0.85, 1.6]]) brass(v, note(n), at, dur, 0.12);
+    },
+    tick(final) {
+      const v = voice(null, { vol: 0.35, len: 0.4, bus: uiBus, rev: 0.15 });
+      if (!v) return;
+      tone(v, { f0: final ? 1320 : 880, dur: final ? 0.3 : 0.1, vol: 0.4 });
+      tone(v, { type: 'triangle', f0: final ? 2640 : 1760, dur: 0.06, vol: 0.12 });
+    },
+    waveClear() {
+      const v = voice(null, { vol: 0.5, len: 2.2, bus: uiBus, rev: 0.4 });
+      if (!v) return;
+      [[72, 0], [76, 0.1], [79, 0.2], [84, 0.3]].forEach(([n, at]) => {
+        tone(v, { type: 'triangle', f0: note(n), at, dur: 0.35, vol: 0.3 });
+        tone(v, { f0: note(n + 12), at, dur: 0.2, vol: 0.08 });
+      });
+      for (const n of [72, 76, 79, 84]) tone(v, { type: 'triangle', f0: note(n), at: 0.45, dur: 1.4, vol: 0.14, attack: 0.02 });
+      for (let i = 0; i < 5; i++) tone(v, { f0: rr(2500, 4200), at: 0.45 + i * 0.08, dur: 0.12, vol: 0.05 });   // sparkles
+    },
+    victory() {
+      const v = voice(null, { vol: 0.6, len: 3.6, bus: uiBus, rev: 0.45 });
+      if (!v) return;
+      [[60, 0, 0.18], [64, 0.18, 0.18], [67, 0.36, 0.18], [72, 0.54, 0.5], [67, 1.06, 0.18], [72, 1.24, 1.8]]
+        .forEach(([n, at, d]) => { brass(v, note(n), at, d, 0.2); brass(v, note(n - 12), at, d, 0.1); });
+      tone(v, { f0: 95, f1: 55, at: 1.24, dur: 1, vol: 0.8 });
+    },
+    defeat() {
+      const v = voice(null, { vol: 0.6, len: 3.6, bus: uiBus, rev: 0.4 });
+      if (!v) return;
+      [[58, 0, 0.45], [57, 0.5, 0.45], [56, 1.0, 0.45], [55, 1.5, 1.7]].forEach(([n, at, d], i) => brass(v, note(n - 12), at, d, 0.24, i === 3 ? 0.04 : 0));
+      tone(v, { f0: 70, f1: 35, dur: 1.5, vol: 0.7, at: 1.5 });
+    },
+    // Ambient songbird (calm moments)
+    bird(pos) {
+      const v = voice(pos, { vol: 0.22, name: 'bird', gap: 0.5, max: 2, len: 1.2, range: 70, rev: 0.35 });
+      if (!v) return;
+      const base = rr(2400, 3600), n = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < n; i++) {
+        const at = i * rr(0.09, 0.16);
+        tone(v, { f0: base, f1: base * rr(1.2, 1.5), at, dur: 0.07, vol: 0.3, sweep: 0.04, vib: 0.05, vibRate: 40 });
+      }
+    },
+  };
+  // Synth brass note: three detuned saws through a low-pass that swells open (horns, fanfares, sad trombone)
+  function brass(v, f, at, dur, vol, wobble = 0) {
+    const t = v.t + at, lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 2;
+    lp.frequency.setValueAtTime(f * 1.5, t);
+    lp.frequency.exponentialRampToValueAtTime(f * 7, t + 0.08);
+    lp.frequency.exponentialRampToValueAtTime(f * 3.5, t + dur);
+    lp.connect(v.out);
+    for (const det of [-7, 0, 7]) tone(v, { type: 'sawtooth', f0: f, at, dur, vol, attack: 0.04, detune: det, dest: lp, vib: wobble || 0.006, vibRate: wobble ? 7 : 5 });
+  }
+  function pitchOf(type) { return AU.voicePitch[type] ?? 100; }
+
+  // ---- loops: wind (glide / sprint whoosh) + ambience bed ----
+  function startLoops() {
+    const mk = (bus, type, f, q) => {
+      const s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+      s.buffer = noiseBuf; s.loop = true;
+      fl.type = type; fl.frequency.value = f; fl.Q.value = q; g.gain.value = 0;
+      s.connect(fl).connect(g).connect(bus); s.start();
+      return [g, fl];
+    };
+    [windGain, windFilter] = mk(sfxBus, 'bandpass', 700, 0.7);
+    [ambWind, ambFilter] = mk(ambBus, 'lowpass', 420, 0.5);
+  }
+
+  // ---- per-frame upkeep ----
+  const tr = { step: 0, foot: 0, mateStep: 0, mateFoot: 0, moanT: 1, birdT: 3, beatT: 0, digT: 0, gust: 0, gustT: 0, cds: {}, tick: 99 };
+  const lastPos = new THREE.Vector3(), mateLast = new THREE.Vector3();
+  function update(dt) {
+    if (!ctx || ctx.state !== 'running') return;
+    camera.updateMatrixWorld();
+    camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    camFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    lis.copy(player.dead ? camera.position : playerMesh.position);
+    const now = ctx.currentTime;
+    // Footsteps: by distance walked on the ground (sprint = longer strides, louder)
+    for (const [h, lp, key, fk] of [[player, lastPos, 'step', 'foot'], [mate, mateLast, 'mateStep', 'mateFoot']]) {
+      const p = h.mesh.position, moved = Math.hypot(p.x - lp.x, p.z - lp.z);
+      lp.copy(p);
+      if (!h.active || h.dead || !h.onGround || moved > 3) { tr[key] = 0; continue; }
+      tr[key] += moved;
+      const stride = AU.stepDistance * (1 + 0.35 * h.sprint);
+      if (tr[key] > stride) { tr[key] = 0; tr[fk] ^= 1; S.step(p, h.isAI, 0.8 + 0.5 * h.sprint, tr[fk]); }
+    }
+    // Wind rush: gliding / falling fast / sprinting
+    const sp = player.vel.length(), glide = player.hopping && !player.onGround;
+    const w = player.dead ? 0 : Math.min(0.5, (glide ? 0.28 : 0) + Math.max(0, sp - 8) * 0.025 + player.sprint * 0.05);
+    windGain.gain.setTargetAtTime(w, now, 0.15);
+    windFilter.frequency.setTargetAtTime(500 + sp * 60, now, 0.2);
+    // Ambience bed: soft gusty breeze (gust target changes every few seconds)
+    if ((tr.gustT -= dt) <= 0) { tr.gustT = rr(2, 5); tr.gust = rr(0.15, 0.45); }
+    ambWind.gain.setTargetAtTime(tr.gust, now, 1.2);
+    ambFilter.frequency.setTargetAtTime(300 + tr.gust * 600, now, 1.5);
+    if (state.over) return;
+    // Low-hp heartbeat
+    const hpK = player.hp / P.hp;
+    if (!player.dead && hpK < CONFIG.camera.lowHp) {
+      if ((tr.beatT -= dt) <= 0) { const k = 1 - hpK / CONFIG.camera.lowHp; tr.beatT = 0.95 - 0.3 * k; S.heartbeat(k); }
+    } else tr.beatT = 0;
+    // Zombie moans: a random nearby zombie every so often (the closer the horde, the more often)
+    if ((tr.moanT -= dt) <= 0) {
+      const near = zombies.filter(z => !z.dead && !z.buried && z.mesh.position.distanceTo(lis) < AU.moanRange);
+      tr.moanT = rr(...AU.moanInterval) / Math.max(1, Math.sqrt(near.length) * 0.7);
+      if (near.length) { const z = pick(near); S.moan(z.mesh.position, z.type); }
+    }
+    // Burrowers rumble under the nearest one
+    if ((tr.digT -= dt) <= 0) {
+      tr.digT = 0.3;
+      let best = null, bd = 40;
+      for (const z of zombies) if (z.buried && !z.dead) { const d = z.mesh.position.distanceTo(lis); if (d < bd) { bd = d; best = z; } }
+      if (best) S.dig(best.mesh.position);
+    }
+    // Birdsong when it's calm (no zombie close)
+    if ((tr.birdT -= dt) <= 0) {
+      tr.birdT = rr(2.5, 7);
+      const calm = !zombies.some(z => !z.dead && z.mesh.position.distanceTo(lis) < 35);
+      if (calm) S.bird(lis.clone().add(new THREE.Vector3(rr(-35, 35), rr(5, 12), rr(-35, 35))));
+    }
+    // Ability ready pings (the player's)
+    for (const k in player.cd) {
+      if ((tr.cds[k] ?? 0) > 0 && player.cd[k] <= 0 && !player.dead) S.ready();
+      tr.cds[k] = player.cd[k];
+    }
+    // Countdown ticks for the last 3 seconds
+    if (state.phase === 'countdown') {
+      const s = Math.ceil(state.waveTimer);
+      if (s !== tr.tick && s <= 3 && s >= 1) S.tick(false);
+      tr.tick = s;
+    } else tr.tick = 99;
+  }
+
+  return {
+    init, update,
+    play(name, ...args) { if (ctx && S[name]) S[name](...args); },
+    toggleMute() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : AU.master, ctx.currentTime, 0.05); return muted; },
+    get ctx() { return ctx; },
+  };
+})();
+
 // Sprint the statue field, glowing and beeping faster as it closes in; blow up on contact (Bomber).
 // Killing it first means no explosion.
-let audioCtx = null, lastBeep = 0;
-function beepNear(pos, range, freq) {
-  if (!audioCtx || player.dead || performance.now() - lastBeep < 60) return;
-  const d = pos.distanceTo(playerMesh.position);
-  if (d > range) return;
-  lastBeep = performance.now();
-  const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = audioCtx.currentTime;
-  o.type = 'square'; o.frequency.value = freq;
-  g.gain.setValueAtTime(0.06 * (1 - d / range), t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08);
-  o.connect(g).connect(audioCtx.destination);
-  o.start(t0); o.stop(t0 + 0.09);
-}
 function bomberBehavior(z, t, dt) {
   const def = z.def, pos = z.mesh.position, a = z.ai;
   const rate = THREE.MathUtils.clamp(1 + (60 - Math.max(0, statueFaceDist(pos))) / 12, 1, 6);   // beeps per second
   a.beepT = (a.beepT || 0) - dt * rate;
-  if (a.beepT <= 0) { a.beepT += 1; z.glow = 1; beepNear(pos, def.beepRange, 700 + rate * 80); }
+  if (a.beepT <= 0) { a.beepT += 1; z.glow = 1; SFX.play('beep', pos, 700 + rate * 80, def.beepRange); }
   if (t.dist > (t.isPoint ? 0 : def.radius + 0.2)) { moveZombie(z, t.dir, dt); return; }
   if (!t.isPoint) state.statueHp -= def.explosionDamage * z.buff.damage;
   for (const h of heroes) if (targetable(h) && h.mesh.position.distanceTo(pos) < def.explosionRadius) damageHero(h, def.playerExplosionDamage);
   spawnExplosion(pos, def.explosionRadius);
+  SFX.play('boom', pos, 1.2);
   addShake(0.3, pos);
   z.dead = true;
 }
@@ -3079,7 +3816,7 @@ function howlerBehavior(z, t, dt) {
     return;
   }
   z.parts.mouth.scale.set(1, 0.6, 0.4);
-  if (t.isHero && t.dist < Sc.range && a.screamCd <= 0) { a.windup = Sc.windup; return; }
+  if (t.isHero && t.dist < Sc.range && a.screamCd <= 0) { a.windup = Sc.windup; SFX.play('inhale', z.mesh.position, Sc.windup); return; }
   meleeBehavior(z, t, dt);
 }
 function scream(z) {
@@ -3089,6 +3826,7 @@ function scream(z) {
   spawnRing(ground, Sc.radius, 0xffa040, 0.9);
   spawnRing(ground, Sc.radius * 0.5, 0xffd080, 0.6);
   spawnPopup(pos.clone().setY(pos.y + z.def.height), 'HOWL!', '#ffa040');
+  SFX.play('howl', pos);
   addShake(0.15, pos);
   const h = z.heroTgt;
   if (!h) return;
@@ -3138,6 +3876,7 @@ function emerge(z) {
   for (let i = 0; i < 14; i++) spawnParticle('chip', 0x6a4a2a, ground, rand3(7, 6), { life: 0.8, size: 1.3 });
   for (let i = 0; i < 4; i++) spawnParticle('puff', 0x9a7a5a, ground.clone().add(rand3(0.8)), rand3(2, 1), { life: 0.8, gravity: -1, grow: 2, drag: 3 });
   spawnRing(ground, 2.2, 0x8a6a3a, 0.4);
+  SFX.play('emerge', ground);
   addShake(0.12, pos);
 }
 
@@ -3164,6 +3903,7 @@ function bruteBehavior(z, t, dt) {
     pos.addScaledVector(a.dir, step);
     a.travel += step;
     z.mesh.rotation.x = 0.2;
+    if ((a.stepT = (a.stepT || 0) - dt) <= 0) { a.stepT = 0.26; SFX.play('stomp', pos); }
     if (Math.random() < 0.6) spawnParticle('puff', 0xb7a27a, pos.clone().setY(f0 + 0.3), rand3(2, 1), { life: 0.6, gravity: -1, grow: 2, drag: 3 });
     // bowl packmates aside
     forNeighbors(pos.x, pos.z, def.radius + 1.5, o => {
@@ -3176,10 +3916,12 @@ function bruteBehavior(z, t, dt) {
       damageHero(hit, C.playerDamage);
       hit.vel.addScaledVector(a.dir, C.knock).setY(8);
       hit.onGround = false;
+      SFX.play('slam', pos, 1.3);
       addShake(0.5, hit.isAI ? pos : null);
       endCharge(z, false);
     } else if (statueFaceDist(pos) < def.radius + 0.3) {
       state.statueHp -= C.statueDamage;
+      SFX.play('slam', pos, 1.3);
       addShake(0.4, pos);
       endCharge(z, false);
     } else if (OBSTACLES.some(o => o.top > feetY(z) + MAP.stepUp && inFootprint(o, pos.x, pos.z, def.radius * 0.8)) ||
@@ -3193,6 +3935,7 @@ function bruteBehavior(z, t, dt) {
     a.charge = 'windup'; a.t = C.windup;
     a.dir = steerDirect(t.pos, pos, new THREE.Vector3());
     z.parts.lane.visible = true;
+    SFX.play('roar', pos, C.windup + 0.4, z.type === 'finalBoss' ? 46 : 58);
     spawnPopup(pos.clone().setY(pos.y + def.height), '!', '#ff3020');
     return;
   }
@@ -3207,6 +3950,8 @@ function endCharge(z, dazed) {
   if (!dazed) return;
   z.stun = C.daze; z.ai.dazed = true;
   spawnPopup(pos.clone().setY(pos.y + z.def.height), 'DAZED', '#ffe14a');
+  SFX.play('slam', pos, 1.1);
+  SFX.play('dazed', pos);
   addShake(0.35, pos);
   for (let i = 0; i < 10; i++) spawnParticle('puff', 0xb7a27a, pos.clone().setY(feetY(z) + 0.5).add(rand3(1.5)), rand3(3, 1), { life: 0.9, gravity: -1, grow: 2.5, drag: 3 });
 }
@@ -3230,6 +3975,8 @@ function enterPhase(z, idx) {
   for (const [type, n] of Object.entries(def.reinforcements[idx - 1] || {}))
     for (let k = 0; k < n; k++, i++) state.spawnQueue.push({ t: 0.4 + i * 0.25, type, spawn: lanes[i % lanes.length] });
   spawnRing(pos.clone().setY(feetY(z) + 0.1), 14, 0xff3040, 0.8);
+  SFX.play('gong', pos);
+  SFX.play('roar', pos, 2, 44);
   addShake(0.5, pos);
   if (idx === 1) {
     z.ai.armor = def.armorHp;
@@ -3380,15 +4127,17 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
     // Armored boss: hp is locked; only heavy hits chip the shell
     if (heavy) {
       z.ai.armor -= amount;
+      SFX.play('armorClank', at);
       spawnPopup(at, Math.round(amount), '#8ab4d8');
       if (z.ai.armor <= 0) {
         z.parts.shell.visible = false;
+        SFX.play('shatter', z.mesh.position);
         z.stun = 2;
         spawnPopup(z.mesh.position.clone().setY(z.mesh.position.y + def.height), 'ARMOR BROKEN', '#ffe14a');
         for (let i = 0; i < 20; i++) spawnParticle('chip', 0x8aa0b8, z.mesh.position.clone().add(rand3(def.radius)), rand3(10, 6), { life: 1, size: 1.6 });
         addShake(0.4, z.mesh.position);
       }
-    } else spawnPopup(at, 0, '#8a96a0');
+    } else { spawnPopup(at, 0, '#8a96a0'); SFX.play('hit', at, true); }
     z.flash = 0.05;
     if (mine) state.hitmarker = 0.08;
     return;
@@ -3398,12 +4147,14 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   z.flash = 0.08;
   spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a');
   if (mine) state.hitmarker = z.hp <= 0 ? -0.25 : 0.12;   // negative = kill marker (red)
+  if (mine) SFX.play(z.hp <= 0 ? 'vanquish' : 'hitmarker');
   // Plated: plate pieces fall off at hp thresholds; the last one exposes the weak-point core
   if (def.plateBreaks) {
     while ((z.ai.plates || 0) < def.plateBreaks.length && z.hp / def.hp <= def.plateBreaks[z.ai.plates || 0]) {
       const plate = z.parts.plates[z.ai.plates || 0];
       z.ai.plates = (z.ai.plates || 0) + 1;
       plate.visible = false;
+      SFX.play('plate', at);
       const wp = plate.getWorldPosition(new THREE.Vector3());
       for (let i = 0; i < 8; i++) spawnParticle('chip', 0xbfc8d0, wp, rand3(6, 4), { life: 0.9, size: 1.4 });
       if (z.ai.plates === def.plateBreaks.length) z.parts.core.visible = true;
@@ -3411,6 +4162,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   }
   if (z.hp <= 0) {
     z.dead = true;
+    SFX.play('zombieDeath', z.mesh.position, z.type);
     const c = new THREE.Color(def.color);
     for (let i = 0; i < 12; i++) spawnParticle('chip', c, z.mesh.position.clone().add(rand3(def.radius)), rand3(8, 5), { life: 0.9, size: 1.5 });
     for (let i = 0; i < 4; i++) spawnParticle('puff', 0x9ab07a, z.mesh.position.clone().add(rand3(def.radius)), rand3(2, 1), { life: 0.7, gravity: -1, grow: 2, drag: 3 });
@@ -3460,7 +4212,7 @@ function updateEnemyProjectiles(dt) {
     if (!dead && hitsStatue(pp, r)) {
       state.statueHp -= p.damage; dead = true;
     }
-    if (dead) { scene.remove(p.mesh); enemyProjectiles.splice(i, 1); }
+    if (dead) { if (p.life > 0) SFX.play('spitSplat', pp); scene.remove(p.mesh); enemyProjectiles.splice(i, 1); }
   }
 }
 
@@ -3475,6 +4227,7 @@ function updateProjectiles(dt) {
       pos.addScaledVector(p.vel, dt / STEPS);
       if (solidAt(pos)) {
         dead = true;
+        SFX.play('ricochet', pos);
         for (let k = 0; k < 3; k++) spawnParticle('chip', 0xffd23a, pos.clone().addScaledVector(p.vel, -0.01), rand3(4, 3), { life: 0.4, size: 0.6 });
         break;
       }
@@ -3482,6 +4235,7 @@ function updateProjectiles(dt) {
         if (z.dead || !hitsZombie(z, pos, W.kernelRadius)) continue;
         const mult = damageMultiplierFor(z, p.vel);
         damageZombie(z, W.damage * mult, pos, mult < 1, false, p.owner);
+        SFX.play('hit', pos, mult < 1);
         for (let k = 0; k < 3; k++) spawnParticle('chip', mult < 1 ? 0xdddddd : 0xffd23a, pos, rand3(5, 2).addScaledVector(p.vel, -0.03), { life: 0.35, size: 0.7 });
         dead = true;
         break;
@@ -3610,14 +4364,15 @@ function smoothPath(pts, from) {
 
 // ---- Perception helpers ----
 const tmEye = new THREE.Vector3(), tmAim = new THREE.Vector3(), tmP = new THREE.Vector3();
-const eyeOf = (h, out = tmEye) => out.copy(h.mesh.position).setY(h.mesh.position.y + 0.4);
+// Muzzle height (the cobs fire ~0.55 m below capsule center): sight checks must use where kernels really start
+const eyeOf = (h, out = tmEye) => out.copy(h.mesh.position).setY(h.mesh.position.y - 0.55);
 const zombieCenter = (z, out) => out.copy(z.mesh.position);
 // Would a kernel fly from a to b? (terrain, every prop incl. low cover, and the statue stop shots)
 function shotClear(a, b) {
-  const d = a.distanceTo(b), n = Math.ceil(d / 0.7);
+  const d = a.distanceTo(b), n = Math.ceil(d / 0.35);
   for (let i = 1; i < n; i++) {
     tmP.lerpVectors(a, b, i / n);
-    if (solidAt(tmP)) return false;
+    if (solidAt(tmP, W.kernelRadius)) return false;   // padded by the kernel's size: grazing the ground counts
   }
   return true;
 }
@@ -3634,6 +4389,7 @@ function resetBrain(h) {
   b.path = []; b.pathT = 0; b.goalKind = ''; b.vantageT = 0;
   b.pendingHop = null; b.stuckT = 0; b.lastPos.copy(h.mesh.position);
   b.aimYaw = h.yaw; b.aimPitch = 0;
+  b.strafeDir = Math.random() < 0.5 ? 1 : -1; b.strafeT = 0; b.patrolT = 0; b.baseT = TM.patrol.baseCheckEvery; b.muzzleClear = false;
   h.downT = 0; h.reviveT = 0; h.reviveNear = false;
 }
 mate.brain = { goal: new THREE.Vector3(), lastPos: new THREE.Vector3(), tgtLast: new THREE.Vector3(), tgtVel: new THREE.Vector3(), tgtSeen: null, err: new THREE.Vector2(), errTo: new THREE.Vector2(), errT: 0, thinkT: 0 };
@@ -3683,7 +4439,7 @@ function findVantage(h, z) {
   const pos = h.mesh.position, zp = z.mesh.position;
   const base = Math.atan2(zp.z, zp.x);
   let best = null, bestScore = Infinity;
-  for (const r of [8, 13, 18, 24, 30, 36]) for (const off of [0, 0.3, -0.3, 0.65, -0.65, 1.0, -1.0]) {
+  for (const r of [8, 13, 18, 24, 30, 36, 44, 52, 60]) for (const off of [0, 0.3, -0.3, 0.65, -0.65, 1.0, -1.0]) {
     const a = base + off, x = Math.cos(a) * r, zz = Math.sin(a) * r;
     if (Math.hypot(x, zz) > TM.guardRadius) continue;
     const k = NAV.cellOf(x, zz);
@@ -3779,8 +4535,24 @@ function thinkTeammate(h, dtThink) {
     const a = threatAngle() + Math.PI;
     openSpot(Math.cos(a) * (S / 2 + 3), Math.sin(a) * (S / 2 + 3), goal); b.goalKind = 'retreat';
   } else if (b.state === 'station') {
-    const a = threatAngle(), r = (TM.stationRadius[0] + TM.stationRadius[1]) / 2;
-    openSpot(Math.cos(a) * r, Math.sin(a) * r, goal); b.goalKind = 'station';
+    // Patrol: on arrival (or every so often) pick the next point — a random spot around the statue leaning
+    // toward the threat, or a quick base check right by the statue
+    const Pt = TM.patrol;
+    b.baseT -= dtThink;
+    if (b.goalKind !== 'patrol' && b.goalKind !== 'base' || flatDist(pos, goal) < 2.5 || (b.patrolT -= dtThink) <= 0 ||
+        (b.baseT <= 0 && b.goalKind !== 'base')) {
+      b.patrolT = 8 + Math.random() * 5;
+      if (b.goalKind !== 'base' && (b.baseT <= 0 || Math.random() < Pt.baseCheckChance)) {
+        b.baseT = Pt.baseCheckEvery;
+        const a = Math.random() * Math.PI * 2;
+        openSpot(Math.cos(a) * (S / 2 + 3), Math.sin(a) * (S / 2 + 3), goal); b.goalKind = 'base';
+      } else {
+        const a = threatAngle() + (Math.random() * 2 - 1) * Pt.threatBias * Math.PI / 2;
+        const r = randRange(Pt.radius);
+        openSpot(Math.cos(a) * r, Math.sin(a) * r, goal); b.goalKind = 'patrol';
+      }
+      b.pathT = 0;
+    }
   } else if (b.state === 'reposition') {
     if (fromStatue > TM.guardRadius || !b.threat) {
       const a = Math.atan2(pos.z, pos.x), r = TM.stationRadius[1];
@@ -3792,7 +4564,10 @@ function thinkTeammate(h, dtThink) {
       else { const a = Math.atan2(b.threat.mesh.position.z, b.threat.mesh.position.x); openSpot(Math.cos(a) * 10, Math.sin(a) * 10, goal); b.goalKind = 'vantage'; }
     }
   } else if (b.state === 'engage') {
-    b.goalKind = 'hold';   // fight from here (backs off from close zombies every frame)
+    b.goalKind = 'strafe';   // circle-strafe + dodge, steered every frame (combatSteer)
+    const Cb = TM.combat;
+    if ((b.strafeT -= dtThink) <= 0) { b.strafeT = randRange(Cb.strafeSwitch); if (Math.random() < 0.6) b.strafeDir *= -1; }
+    if (h.onGround && !h.hopping && Math.random() < Cb.jumpChance * dtThink) h.input.jump = true;   // flair
   }
   if (b.state !== 'engage') {
     b.pathT -= dtThink;
@@ -3816,6 +4591,12 @@ function thinkTeammate(h, dtThink) {
       const d = new THREE.Vector3(b.path[0].x - pos.x, 0, b.path[0].z - pos.z);
       if (d.lengthSq() > 4) { startHop(h, d.normalize()); return; }
     }
+  }
+  // Flair: a Husk Hop sideways mid-fight now and then
+  if (h.cd.huskHop <= 0 && b.state === 'engage' && t && Math.random() < TM.combat.flairHopChance * dtThink) {
+    const d = new THREE.Vector3(t.mesh.position.x - pos.x, 0, t.mesh.position.z - pos.z).normalize();
+    const side = new THREE.Vector3(-d.z * b.strafeDir, 0, d.x * b.strafeDir);
+    if (Math.hypot(pos.x + side.x * 12, pos.z + side.z * 12) < TM.guardRadius) { startHop(h, side); return; }
   }
   // Butter Barrage: a big pack near the statue, and the teammate isn't being mauled
   const Bc = TM.butter, BB = AB.butterBarrage;
@@ -3843,6 +4624,49 @@ function thinkTeammate(h, dtThink) {
   }
 }
 
+// ---- Movement styles (never static) ----
+// Push `out` away from every zombie inside dodgeRadius (closer = stronger)
+function dodge(pos, out, weight) {
+  const Cb = TM.combat;
+  for (const z of zombies) {
+    if (!validTarget(z)) continue;
+    const dx = pos.x - z.mesh.position.x, dz = pos.z - z.mesh.position.z, d = Math.hypot(dx, dz);
+    if (d > Cb.dodgeRadius || d < 1e-3) continue;
+    const w = (1 - d / Cb.dodgeRadius) ** 2 * Cb.dodgeWeight * weight / d;
+    out.x += dx * w; out.z += dz * w;
+  }
+}
+// Circle around `center` (strafing; flips with b.strafeDir) while holding a distance band, dodging zombies and
+// leaning back toward the statue near the edge of the guard radius
+function orbitSteer(h, center, [near, far], out) {
+  const b = h.brain, pos = h.mesh.position;
+  const to = new THREE.Vector3(center.x - pos.x, 0, center.z - pos.z), d = to.length() || 1;
+  to.divideScalar(d);
+  out.set(-to.z * b.strafeDir, 0, to.x * b.strafeDir);                 // tangent
+  if (d < near) out.addScaledVector(to, -1.2 * (1 - d / near) - 0.3);  // too close: back off
+  else if (d > far) out.addScaledVector(to, 0.8);                      // too far: close in
+  dodge(pos, out, 1);
+  const r = Math.hypot(pos.x, pos.z);
+  if (r > TM.guardRadius - 6) out.add(new THREE.Vector3(-pos.x, 0, -pos.z).multiplyScalar((r - TM.guardRadius + 6) * 0.15 / r));
+  if (out.lengthSq() < 1e-4) out.set(-to.z, 0, to.x);
+  out.normalize();
+}
+// Keep a wished direction on walkable ground: try it, then rotated alternatives; when strafing into a wall, flip
+const ROT_TRIES = [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4, Math.PI];
+function steerWalkable(h, move) {
+  if (move.lengthSq() === 0) return;
+  const pos = h.mesh.position, base = Math.atan2(move.z, move.x);
+  for (const r of ROT_TRIES) {
+    const a = base + r, x = pos.x + Math.cos(a) * 2, z = pos.z + Math.sin(a) * 2;
+    if (Math.hypot(x, z) > TM.guardRadius + 4 && Math.hypot(x, z) > Math.hypot(pos.x, pos.z)) continue;
+    if (walkable(pos, tmP.set(x, 0, z))) {
+      if (Math.abs(r) > 1.5) h.brain.strafeDir *= -1;
+      move.set(Math.cos(a), 0, Math.sin(a));
+      return;
+    }
+  }
+}
+
 // Every frame: turn the brain's plan into input (move, aim, fire, jump)
 function driveTeammate(h, dt) {
   const inp = h.input, b = h.brain, pos = h.mesh.position;
@@ -3866,19 +4690,11 @@ function driveTeammate(h, dt) {
     while (wp && flatDist(wp, pos) < TM.waypointReach && b.path.length > 1) { b.path.shift(); wp = b.path[0]; }
     if (wp && flatDist(wp, pos) > (b.path.length === 1 ? 0.8 : 0.1)) move.set(wp.x - pos.x, 0, wp.z - pos.z).normalize();
   }
-  if (b.state === 'engage' || b.state === 'retreat' || b.state === 'station') {
-    // Personal space: back away from zombies that get close (if the ground behind is walkable)
-    const c = new THREE.Vector3(), n = crowd(pos, TM.personalSpace, c);
-    if (n > 0 && !h.hopping && !b.pendingHop) {
-      const away = new THREE.Vector3(pos.x - c.x, 0, pos.z - c.z);
-      if (away.lengthSq() < 1e-4) away.set(-pos.x, 0, -pos.z);
-      away.normalize();
-      const side = new THREE.Vector3(-away.z, 0, away.x);
-      for (const d of [away, away.clone().add(side).normalize(), away.clone().sub(side).normalize(), side, side.clone().negate()]) {
-        if (Math.hypot(pos.x + d.x * 2.5, pos.z + d.z * 2.5) > TM.guardRadius) continue;
-        if (walkable(pos, tmP.set(pos.x + d.x * 2.5, 0, pos.z + d.z * 2.5))) { move.copy(d); break; }
-      }
-    }
+  if (!h.hopping && !b.pendingHop) {
+    if (b.state === 'engage' && validTarget(b.target)) orbitSteer(h, b.target.mesh.position, TM.combat.preferRange, move);
+    else if (move.lengthSq() === 0) orbitSteer(h, b.goal, [2, 5], move);   // arrived / no path yet: keep circling the spot
+    else { dodge(pos, move, 1); move.normalize(); }                         // walking a path: still sidestep zombies
+    steerWalkable(h, move);
   }
   // Same jump rule as the player: if pushing into something and not moving, jump
   const moved = Math.hypot(pos.x - b.lastPos.x, pos.z - b.lastPos.z);
@@ -3909,6 +4725,9 @@ function driveTeammate(h, dt) {
     dist = Math.hypot(dx, dz);
     dYaw = Math.atan2(-dx, -dz) + b.err.x * mag;
     dPitch = Math.atan2(dy, dist) + b.err.y * mag * 0.6;
+    // Real line of fire: from the muzzle that shoots next to the point it aims at (cover, ground crests, statue)
+    h.mesh.updateMatrixWorld(true);
+    b.muzzleClear = shotClear(h.corn.arms[h.nextArm].muzzle.getWorldPosition(new THREE.Vector3()), c.clone());
   } else {
     // nothing to shoot: look where we're going, else toward the threat
     if (move.lengthSq() > 0) dYaw = Math.atan2(-move.x, -move.z);
@@ -3925,7 +4744,7 @@ function driveTeammate(h, dt) {
 
   // ---- Trigger: reaction delay passed, aim close enough, clear shot ----
   b.aimOk = !!t && Math.abs(dy2) < TM.fireCone && Math.abs(dPitch - b.aimPitch) < TM.fireCone;
-  inp.fire = !!t && b.clearShot && b.reactT <= 0 && b.aimOk;
+  inp.fire = !!t && b.clearShot && b.muzzleClear && b.reactT <= 0 && b.aimOk;
   inp.zoom = !!t && b.clearShot && dist > TM.zoomRange && b.state === 'engage' && move.lengthSq() === 0;
   if (!t && !h.reloading && h.ammo < W.clip * 0.5) inp.reload = true;   // top up between fights
 }
@@ -3940,6 +4759,7 @@ function downHero(h) {
   burstLeaves(h.mesh.position, 18);
   for (let i = 0; i < 14; i++) spawnParticle('chip', 0xffd23a, h.mesh.position, rand3(8, 4), { life: 1 });
   setMessage(`${h.name} is down! Hold X near them to revive`, 3);
+  SFX.play('mateDown', h.mesh.position);
 }
 function updateDowned(h, dt) {
   const b = h.brain, R = TM.revive;
@@ -3959,6 +4779,7 @@ function updateDowned(h, dt) {
       burstLeaves(h.mesh.position, 12);
       spawnRing(h.mesh.position.clone().setY(h.mesh.position.y - PLAYER_CENTER_Y + 0.05), 2, 0x9be05a, 0.5);
       setMessage(`${h.name} is back up!`, 1.5);
+      SFX.play('respawn', h.mesh.position);
       return;
     }
   } else h.reviveT = 0;
@@ -4052,14 +4873,19 @@ function updateWaves(dt) {
     s.t -= dt;
     if (s.t <= 0) {
       spawnZombie(s.type, s.spawn, s.route);
-      if (s.skull) spawnSkull(CONFIG.SPAWN_POINTS[s.spawn]);
+      if (s.skull) {
+        const sp = CONFIG.SPAWN_POINTS[s.spawn];
+        spawnSkull(sp);
+        SFX.play('skull', new THREE.Vector3(sp.x, heightAt(sp.x, sp.z) + 3, sp.z));
+      }
+      if (ZT[s.type].boss) SFX.play('bossArrive');
     }
   }
   state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {
     if (state.waveIndex === WAVES.length - 1) endGame(true);
-    else beginCountdown(state.waveIndex + 1);
+    else { SFX.play('waveClear'); beginCountdown(state.waveIndex + 1); }
   }
 }
 
@@ -4266,6 +5092,7 @@ function loop() {
     if (state.statueHp <= 0) endGame(false);
   }
   updateCamera(dt);
+  SFX.update(dt);
   updatePopups(playing ? dt : 0);
   updateHud(playing ? dt : 0);
   updateRevivePrompt();
@@ -4279,7 +5106,7 @@ resetGame();
 for (const h of heroes) animateCorn(h, 0);
 // Debug handle for the browser console (inspect / pose the hero)
 window.__game = { CONFIG, get state() { return state; }, corn, camera, scene, spawnZombie, explodeAt, get zombies() { return zombies; },
-  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, distractAt, heroes, player, mate, findPath, setTeammate, damageHero, get fps() { return fpsAvg; } };
+  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, distractAt, heroes, player, mate, findPath, setTeammate, damageHero, SFX, get fps() { return fpsAvg; } };
 loop();
 </script>
 </body>

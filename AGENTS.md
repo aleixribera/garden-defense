@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.9.0)
+## Current state (v1.10.0)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -84,6 +84,12 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   player HP (+ AI teammate bar above it); bottom-center abilities; bottom-right ammo. All HP bars use `setHudBar()`:
   white lag chip that drains after a hit, shake + flash on damage, red pulse < 30%, glow while regenerating.
 - Passive regen: heroes (player + AI teammate) heal `regenRate` hp/s after `regenDelay` s without damage (`h.lastHurt`).
+- Audio (section "Audio", tuning `CONFIG.audio`): `SFX` = procedural WebAudio, no sample files. `SFX.init()` on the
+  overlay click; `SFX.play(name, pos?, ...)` (pos = 3D: distance roll-off, air low-pass, camera pan, more reverb far;
+  null = 2D) with per-name throttling; buses sfx/ui/ambience → compressor → limiter, convolver reverb. Helpers
+  `tone`/`hiss`/`crackle`/`vocal` (formant-synth moans/roars)/`brass`. `SFX.update(dt)`: footsteps, wind rush, breeze
+  bed, low-hp heartbeat, random zombie moans, burrow rumble, birdsong when calm, ability-ready pings, countdown ticks.
+  New sound = entry in the `S` library + a `SFX.play` at the event.
 - HUD corners: FPS counter top-right, `VERSION` bottom-right.
 - Nav fields are Float64 (`buildFlowField`): Float32 rounding made Dijkstra re-push cells forever (freeze).
 - Debug: T spawn/remove teammate; F1 teammate overlay (state, target, threat, path line, cooldowns); keys 1–9 spawn `debugPackSize` of a type at a random lane; N next wave; B Brute; V Zombie King; G test distraction at aim point; M top-down map
@@ -99,7 +105,7 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 ## Direction
 - New zombie types: add an entry to `ZOMBIE_TYPES`; new special abilities get their own behavior function.
 - Likely next: special waves (via `modifiers`), a Chili Bean Bomb (`distractAt`), boss models, more plant heroes / AI roles
-  (new hero = `makeHero` + something that fills its `input`), audio.
+  (new hero = `makeHero` + something that fills its `input`), music.
 - "Primitive shapes only" now means procedural geometry built in code (no external models/textures).
 
 ## Maintaining this file
