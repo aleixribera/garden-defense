@@ -5,6 +5,7 @@ The sculpted model is entirely procedural: 39 closed petal volumes with longitud
 grooves, a vertex-colored face with glossy amber-rimmed eyes, smile and freckles,
 a ribbed stem, six-point leaf hands, four veined feet, overlapping calyx sepals,
 and spiral florets on the back of the head. Each rig owns its materials and expression.
+The shoulder camera is offset for her broad crown so it stays clear of the reticle.
 
 ## Controls and kit
 
@@ -65,4 +66,5 @@ deploy delay, beam damage/ammo/HUD, cancellation cooldown, sundrop healing and f
 expiry, medic persistence under pressure, changing patients after full healing,
 supporting other Sunflowers, healthy escort, following beyond the garden, faster
 revival, death cleanup, respawning and control handoff. It also renders optional
-front/back portraits with `SUNFLOWER_SCREENSHOTS=docs`.
+front/back portraits and a gameplay frame with `SUNFLOWER_SCREENSHOTS=docs`, checking
+that the gameplay camera remains finite and the crown stays outside the reticle.

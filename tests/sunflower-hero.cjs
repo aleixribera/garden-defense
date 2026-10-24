@@ -18,7 +18,7 @@ const expose = `window.__sunTest = { THREE, renderer, sun, rimLight, updateHero,
   step(dt, draw = false) { state.time += dt; for (const h of heroes) if (h.isAI) h.plant.drive(h, dt);
     for (const h of heroes) updateHero(h, dt); updateZombies(dt); updateProjectiles(dt); updateSunflowerWorld(dt);
     updateEffects(dt); updateParticles(dt); for (const h of heroes) h.plant.animate(h, dt);
-    updateCamera(dt); updateHud(dt); updateSunflowerHud(); if (draw) renderer.render(scene, camera); },
+    updateCamera(dt); updateHud(dt); updateSunflowerHud(); updatePopups(dt); if (draw) renderer.render(scene, camera); },
   get pulses() { return sunPulses; }, get flowers() { return healFlowers; }, get drops() { return sunDrops; } };`;
 const html = source.replace(/loop\(\);\s*<\/script>\s*<\/body>/, expose + '</script></body>')
   .replace('new THREE.WebGLRenderer({', 'new THREE.WebGLRenderer({ preserveDrawingBuffer: true,');
@@ -170,6 +170,9 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
         for (let i = 0; i < 15; i++) t.step(1 / 60);
         t.step(1 / 60, true);
         if (!g.camera.matrixWorld.elements.every(Number.isFinite) || !g.camera.projectionMatrix.elements.every(Number.isFinite)) throw Error('Gameplay camera became non-finite');
+        const box = new t.THREE.Box3().setFromObject(h.corn.head);
+        const right = new t.THREE.Vector3(box.max.x, box.getCenter(new t.THREE.Vector3()).y, box.max.z).project(g.camera);
+        if (right.x >= 0) throw Error('Sunflower crown blocks the center reticle');
       });
       await page.screenshot({ path: path.join(dir, 'sunflower-gameplay.png') });
       await page.setViewportSize({ width: 1100, height: 1100 });

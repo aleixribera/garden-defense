@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 960 }, ignoreHTTPSErrors: true });
     const errors = []; page.on('pageerror', error => errors.push(error.stack));
-    page.on('console', msg => { if (msg.type() === 'error') console.log('Browser:', msg.text()); });
+    page.on('console', msg => { if (msg.type() === 'error') { errors.push(msg.text()); console.log('Browser:', msg.text()); } });
     await page.goto(`http://127.0.0.1:${server.address().port}/deterministic`);
     await page.waitForFunction(() => window.__cactusTest, { timeout: 60000 });
     const report = await page.evaluate(() => {
