@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.12.4)
+## Current state (v1.12.5)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -53,7 +53,9 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   Researched role and explicit fidelity limits: `docs/sunflower-ai.md`; scenarios: `tests/sunflower-hero.cjs`.
 - Cactus (125 HP): `buildCactus` / `animateCactus` create a continuous fluted trunk and unequal bent arms,
   inset sleepy eyes, hollow muzzle, instanced areoles/spines, burgundy crown and cream/rose flower buds.
-  Spike Shot: 12 rounds, precise scope, 25 body / 30 critical damage. Q Potato Mines: arming, proximity blasts,
+  Spike Shot: 12 rounds, precise scope, instant hits (nearest capsule/cover), 25 body / 30 critical damage;
+  complete smoke trail appears on firing, then drifts/fades (`cactusTrails`, `CONFIG.cactus.smokeTrail`). AI aims
+  without travel-time leading; Garlic Drone needles remain projectiles. Q Potato Mines: arming, proximity blasts,
   three replenishing charges; F Tallnut Battlements: four charges, 200 HP, block bodies/projectiles and take
   zombie melee damage. Placement checks slopes/props/allies; static nav fields remain unchanged.
   E Garlic Drone roots the owner: WASD flight, Space/Ctrl altitude, LMB overheating needles, Q Corn Strike,

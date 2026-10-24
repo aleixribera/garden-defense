@@ -218,7 +218,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.12.4';
+const VERSION = 'v1.12.5';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -252,7 +252,7 @@ const CONFIG = {
       stats: { hp: 125, speed: 7.2, accel: 10, aimSpeedMult: 0.42, jumpSpeed: 8.4 },
       weapon: { fireRate: 0.4, damage: 25, criticalMult: 1.2, clip: 12, reloadTime: 2,
         spread: 0.027, aimSpread: 0.00065, bloomPerShot: 0.004, bloomMax: 0.018, bloomRecovery: 0.055,
-        kernelSpeed: 170, kernelLife: 2, kernelRadius: 0.065, recoilKick: 0.012 },
+        hitscan: true, range: 340, kernelRadius: 0.065, recoilKick: 0.012 },
       // Q / E / F are the shared ability slots; actions and HUD labels belong to each class.
       abilities: {
         shuckShot: { cooldown: 30, maxCharges: 3, maxActive: 4, hp: 10, armTime: 1.25, triggerRadius: 1.6,
@@ -288,12 +288,14 @@ const CONFIG = {
     camera: { aimFov: 27, aimDistance: 2.8, sensitivity: 0.37, droneFov: 76, droneDistance: 3.6,
       droneShoulder: 0.7, dronePivotHeight: 0.4 },
     deploymentLock: 0.4, placementSlope: 0.65, headshotHeight: 0.24, projectileStep: 0.22,
+    smokeTrail: { life: 0.42, spacing: 0.09, maxPoints: 3800, width: 0.17, opacity: 0.42,
+      color: 0xe5dfd5, expansion: 1.8, drift: 0.16, rise: 0.22, ripple: 0.018 },
     // Friendly Solo Ops sniper role. Numeric thresholds are adaptations; see docs/cactus-ai.md.
     ai: { thinkRate: 8, guardRadius: 28, postRadii: [7, 12, 18, 24], postSamples: 12,
       patrolRadius: [8, 18], patrolTime: [5, 9], arrival: 1.2, repath: 0.8,
       awarenessRange: 70, hearingRange: 8, memory: 2.5, retarget: 0.65, switchMargin: 3,
       reaction: 0.22, turnSpeed: 4.2, aimResponse: 10, settleTime: 0.7, aimError: [0.024, 0.003],
-      fireCone: 0.055, leadSkill: 0.9, headAim: 0.3, comfortableRange: [20, 38], retreatRange: 12,
+      fireCone: 0.055, headAim: 0.3, comfortableRange: [20, 38], retreatRange: 12,
       mineRange: 9, mineSpacing: 3.5, mineEvery: 2.5, stuckJump: 0.65,
       gardenWeight: 1, distanceWeight: 0.2, postHeightWeight: 0.8, postMoveWeight: 0.15,
       retreatSamples: 12, retreatStep: 4, guardMargin: 1 },
@@ -712,7 +714,7 @@ const CONFIG = {
     cannon: { cooldown: 20, range: [12, 34], deploy: 0.6, shots: 4, interval: 1.05, pack: 0.45, flightTime: [0.8, 1.6],
               radius: 4, damage: 45, minDamage: 10, gravity: 18 },
     // Parrot Pal: send the parrot after a hidden or distant plant; Deadbeard stays rooted while it flies
-    parrot: { cooldown: 24, minRange: 18, duration: 9, hp: 40, speed: 14, orbit: 5, height: 5.5, fireRate: 0.3,
+    parrot: { cooldown: 24, minRange: 18, duration: 9, hp: 40, hitRadius: 0.55, speed: 14, orbit: 5, height: 5.5, fireRate: 0.3,
               damage: 5, spread: 0.06, recallDamage: 35 },
     perch: { samples: 10, heightWeight: 1.4, losBonus: 12, travelWeight: 0.12 },   // sniper vantage scoring
   },
@@ -1797,7 +1799,7 @@ function buildSunflower() {
 // clusters keep the silhouette smooth without hundreds of individual draw calls.
 // Model space follows the other plants: feet at zero, face toward +Z.
 // =====================================================================
-const cactusMines = [], cactusWalls = [], cactusDrones = [], cactusShots = [], cactusStrikes = [];
+const cactusMines = [], cactusWalls = [], cactusDrones = [], cactusShots = [], cactusStrikes = [], cactusTrails = [];
 function buildCactus() {
   const M = CONFIG.cactus.model, root = new THREE.Group(), body = new THREE.Group();
   const pbr = (color, roughness = 0.48, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, envMapIntensity: 0.48, ...extra });
@@ -1984,7 +1986,7 @@ function disposeCactusMesh(mesh) {
   geometry.forEach(g => g.dispose()); materials.forEach(m => m.dispose());
 }
 function clearCactusWorld() {
-  for (const list of [cactusMines, cactusWalls, cactusDrones, cactusShots, cactusStrikes]) {
+  for (const list of [cactusMines, cactusWalls, cactusDrones, cactusShots, cactusStrikes, cactusTrails]) {
     list.forEach(o => disposeCactusMesh(o.mesh)); list.length = 0;
   }
   for (const h of heroes) if (h.cactus) h.cactus.drone = null;
@@ -2120,10 +2122,103 @@ function spawnCactusNeedle(h, start, dir, weapon, drone = false) {
 function fireCactusSpike(h) {
   if (h.cactus.drone) return;
   const W = h.weapon, { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
-  spawnCactusNeedle(h, start, dir, W); h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
+  traceCactusSpike(h, start, dir); h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   arm.recoil = 1; arm.flashT = 0.055;
   if (!h.isAI) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.3)); addShake(0.055); }
   SFX.play('cactusSpike', start, h.isAI);
+}
+
+// The hit and the entire smoke wake exist on the firing frame. Only the smoke ages;
+// Garlic Drone needles retain their separate travelling-projectile simulation.
+function traceCactusSpike(h, start, dir) {
+  const W = h.weapon, ray = new THREE.Ray(start, dir), point = new THREE.Vector3();
+  let distance = raycastWorld(start, dir, W.range), victim = null, parrot = null;
+  for (const z of zombies) {
+    if (!validTarget(z)) continue;
+    const c = z.mesh.position, radius = z.def.radius + W.kernelRadius;
+    const lo = c.y - z.def.height / 2, hi = c.y + z.def.height / 2;
+    if (hitsZombie(z, start, W.kernelRadius)) { distance = 0; victim = z; break; }
+    // Exact ray / vertical capsule: finite cylinder plus its two spherical caps.
+    const x = start.x - c.x, zz = start.z - c.z;
+    const a = dir.x * dir.x + dir.z * dir.z, b = x * dir.x + zz * dir.z;
+    const discriminant = b * b - a * (x * x + zz * zz - radius * radius);
+    let hit = Infinity;
+    if (a > Number.EPSILON && discriminant >= 0) {
+      const t = (-b - Math.sqrt(discriminant)) / a, y = start.y + dir.y * t;
+      if (t >= 0 && y >= lo && y <= hi) hit = t;
+    }
+    for (const y of [lo, hi]) {
+      if (ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(c.x, y, c.z), radius), point)) hit = Math.min(hit, start.distanceTo(point));
+    }
+    if (hit < distance) { distance = hit; victim = z; }
+  }
+  // Remote parrots are world objects rather than zombies, but remain shootable.
+  for (const bird of pirateProps) {
+    if (bird.kind !== 'parrot' || bird.hp <= 0 || bird.t <= 0) continue;
+    if (ray.intersectSphere(new THREE.Sphere(bird.mesh.position, CONFIG.PIRATE.parrot.hitRadius + W.kernelRadius), point)) {
+      const hit = start.distanceTo(point);
+      if (hit < distance) { distance = hit; victim = null; parrot = bird; }
+    }
+  }
+  const end = start.clone().addScaledVector(dir, distance);
+  spawnCactusTrail(start, end);
+  if (victim) {
+    const mult = damageMultiplierFor(victim, dir), crit = end.y > victim.mesh.position.y + victim.def.height * CONFIG.cactus.headshotHeight;
+    damageZombie(victim, W.damage * mult * (crit ? W.criticalMult : 1), end, mult < 1, false, h);
+    if (crit && mult >= 1) { spawnParticle('chip', 0xfff0cc, end, new THREE.Vector3(0, 2, 0), { life: 0.25 }); if (h === player) SFX.play('cactusCritical'); }
+    SFX.play('hit', end, mult < 1);
+  } else if (parrot) {
+    damagePirateParrot(parrot, W.damage);
+    if (h === player) state.hitmarker = 0.1;
+    SFX.play('hit', end, false);
+  } else if (distance < W.range) SFX.play('ricochet', end);
+}
+
+function spawnCactusTrail(start, end) {
+  const F = CONFIG.cactus.smokeTrail, distance = start.distanceTo(end);
+  if (distance <= Number.EPSILON) return;
+  const count = Math.min(F.maxPoints, Math.max(2, Math.ceil(distance / F.spacing) + 1));
+  const positions = new Float32Array(count * 3), seeds = new Float32Array(count);
+  const p = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    p.lerpVectors(start, end, i / (count - 1)); p.toArray(positions, i * 3); seeds[i] = Math.random();
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
+  const material = new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
+    uniforms: { age: { value: 0 }, life: { value: F.life }, width: { value: F.width },
+      opacity: { value: F.opacity }, color: { value: new THREE.Color(F.color) },
+      expansion: { value: F.expansion }, drift: { value: F.drift }, rise: { value: F.rise },
+      ripple: { value: F.ripple }, viewport: { value: renderer.getDrawingBufferSize(new THREE.Vector2()).y } },
+    vertexShader: `
+      attribute float seed;
+      uniform float age, life, width, expansion, drift, rise, ripple, viewport;
+      varying float vSeed;
+      void main() {
+        vSeed = seed;
+        float k = age / life;
+        vec3 p = position;
+        p.x += sin(position.z * 2.7 + seed * 6.28) * (ripple + drift * k);
+        p.y += cos(position.x * 3.1 + seed * 6.28) * ripple + rise * age;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = width * (1.0 + expansion * k) * viewport * projectionMatrix[1][1] / (2.0 * max(0.1, -mv.z));
+      }`,
+    fragmentShader: `
+      uniform float age, life, opacity;
+      uniform vec3 color;
+      varying float vSeed;
+      void main() {
+        vec2 p = gl_PointCoord * 2.0 - 1.0;
+        float soft = 1.0 - smoothstep(0.1, 1.0, length(p));
+        float wisp = 0.7 + 0.3 * sin(p.x * 7.0 + vSeed * 19.0) * cos(p.y * 6.0 + age * 3.0);
+        gl_FragColor = vec4(color, soft * soft * wisp * opacity * pow(max(0.0, 1.0 - age / life), 1.5));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }` });
+  const mesh = new THREE.Points(geometry, material); mesh.frustumCulled = false; scene.add(mesh);
+  cactusTrails.push({ mesh, age: 0, life: F.life, start: start.clone(), end: end.clone() });
 }
 function makeGarlicDrone() {
   const mesh = new THREE.Group(), ivory = new THREE.MeshStandardMaterial({ color: 0xe8dfc4, roughness: 0.52 });
@@ -2292,7 +2387,7 @@ function driveCactus(h, dt) {
   if (t && seen) {
     b.combatT = C.memory; b.trackT += dt;
     if (b.tgtSeen !== t) { b.tgtSeen = t; b.tgtVel.set(0, 0, 0); } else if (dt > 0) b.tgtVel.lerp(t.mesh.position.clone().sub(b.tgtLast).divideScalar(dt), Math.min(1, dt * C.aimResponse));
-    b.tgtLast.copy(t.mesh.position); aim.copy(t.mesh.position).addScaledVector(b.tgtVel, distance / h.weapon.kernelSpeed * C.leadSkill); aim.y += t.def.height * C.headAim;
+    b.tgtLast.copy(t.mesh.position); aim.copy(t.mesh.position); aim.y += t.def.height * C.headAim;
     const d = aim.clone().sub(eye), error = THREE.MathUtils.lerp(...C.aimError, Math.min(1, b.trackT / C.settleTime));
     yaw = Math.atan2(-d.x, -d.z) + Math.sin(state.time * 2.7 + h.squadIndex) * error;
     pitch = Math.atan2(d.y, Math.hypot(d.x, d.z)) + Math.sin(state.time * 3.1) * error * 0.5;
@@ -2317,6 +2412,12 @@ function driveCactus(h, dt) {
 }
 
 function updateCactusWorld(dt) {
+  for (let i = cactusTrails.length - 1; i >= 0; i--) {
+    const trail = cactusTrails[i]; trail.age += dt;
+    if (trail.age >= trail.life) { disposeCactusMesh(trail.mesh); cactusTrails.splice(i, 1); continue; }
+    trail.mesh.material.uniforms.age.value = trail.age;
+    trail.mesh.material.uniforms.viewport.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+  }
   for (let i = cactusMines.length - 1; i >= 0; i--) {
     const m = cactusMines[i], A = m.ability; m.age += dt; m.life -= dt;
     if (!m.armed && m.age >= A.armTime) { m.armed = true; SFX.play('cactusArmed', m.mesh.position); }
@@ -13469,25 +13570,30 @@ function updatePirateWorld(dt) {
   }
 }
 
+// Shared damage feedback for travelling shots and Cactus's instant ray.
+function damagePirateParrot(o, dmg) {
+  const p = o.mesh.position;
+  o.hp -= dmg;
+  spawnPopup(p.clone(), Math.round(dmg), '#ffe14a');
+  state.hitmarker = 0.1;
+  for (let i = 0; i < 4; i++) spawnParticle('chip', [0xd8261e, 0xf4c21c, 0x1f6fd0][i % 3], p.clone(), rand3(3, 2), { life: 0.8, gravity: 4, size: 0.5 });
+  if (o.hp <= 0) {
+    for (let i = 0; i < 18; i++) spawnParticle('chip', [0xd8261e, 0xf4c21c, 0x1f6fd0][i % 3], p.clone(), rand3(5, 4), { life: 1.4, gravity: 3, size: 0.7 });
+    SFX.play('parrotSquawk', p, true);
+    return true;
+  }
+  return false;
+}
+
 function updatePirateParrot(o, dt, Pp) {
   const m = o.mesh, p = m.position, owner = o.owner;
+  if (o.hp <= 0) return true;   // an instant Spike Shot can destroy it between updates
   // wings flap (faster climbing), head bobs
   const flap = Math.sin(state.time * 26) * 0.9;
   o.J.wings[0].rotation.z = flap; o.J.wings[1].rotation.z = -flap;
   o.J.head.rotation.x = Math.sin(state.time * 5) * 0.15;
-  // getting shot
   const dmg = parrotShotBy(o);
-  if (dmg) {
-    o.hp -= dmg;
-    spawnPopup(p.clone(), Math.round(dmg), '#ffe14a');
-    if (o.target === player || true) state.hitmarker = 0.1;
-    for (let i = 0; i < 4; i++) spawnParticle('chip', [0xd8261e, 0xf4c21c, 0x1f6fd0][i % 3], p.clone(), rand3(3, 2), { life: 0.8, gravity: 4, size: 0.5 });
-    if (o.hp <= 0) {
-      for (let i = 0; i < 18; i++) spawnParticle('chip', [0xd8261e, 0xf4c21c, 0x1f6fd0][i % 3], p.clone(), rand3(5, 4), { life: 1.4, gravity: 3, size: 0.7 });
-      SFX.play('parrotSquawk', p, true);
-      return true;
-    }
-  }
+  if (dmg && damagePirateParrot(o, dmg)) return true;
   if (owner.dead && o.phase !== 'flee') { o.phase = 'flee'; o.t = 2; }
   if (o.t <= 0 && o.phase !== 'back' && o.phase !== 'flee') o.phase = 'back';
   const goal = prV1;
