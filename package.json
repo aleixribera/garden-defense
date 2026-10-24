@@ -1,6 +1,6 @@
 {
   "name": "garden-defense",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "private": true,
   "description": "Third-person wave defense in a single index.html (three.js, no build step).",
   "scripts": {

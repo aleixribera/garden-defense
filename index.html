@@ -49,6 +49,17 @@
   #waveLine b { color: var(--text); font-weight: 700; }
   #coinLine { margin-top: 4px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #coinLine b { color: #ffd84a; font-weight: 800; }
+  #opsHud { position: fixed; top: 22px; left: 20px; width: min(265px, 25vw); pointer-events: none; font-size: 12px; line-height: 1.55; }
+  #opsHud b { color: var(--accent); } #opsHud .muted { color: var(--dim); }
+  #opsHud .goal { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+  #masteryHud { margin-top: 7px; font-size: 11px; color: var(--accent); }
+  #masteryHud progress { display: block; width: 100%; height: 5px; margin-top: 4px; accent-color: var(--accent); }
+  #rewardFeed { position: fixed; right: 22px; top: 240px; max-width: 290px; pointer-events: none; text-align: right; font-size: 12px; line-height: 1.8; text-shadow: 0 2px 4px #000; color: #ffe897; }
+  #bonusTarget { position: fixed; transform: translate(-50%, -100%); pointer-events: none; color: #ffe897; background: rgba(30,23,4,.8); padding: 4px 9px; border-radius: 10px; font-size: 11px; display: none; }
+  .plantCard .mastery { display: block; margin: 7px 0; color: #ffe897; font-size: 11px; }
+  .loadoutPick { margin-top: 8px; } .loadoutPick select { font-size: 12px !important; }
+  body.preMatch #opsHud, body.preMatch #rewardFeed { visibility: hidden; }
+  @media (max-width: 900px) { #opsHud { top: 225px; left: 12px; width: 200px; font-size: 10px; } #rewardFeed { top: 225px; font-size: 10px; max-width: 190px; } }
   #shopPrompt { position: fixed; bottom: 30%; width: 100%; text-align: center; pointer-events: none; font-size: 16px;
     text-shadow: 0 2px 8px rgba(0,0,0,0.8); color: #fff3c4; }
   #shopPrompt kbd { display: inline-block; min-width: 18px; padding: 1px 6px; margin: 0 3px; border-radius: 4px;
@@ -126,7 +137,7 @@
   #squadPicker h2 { margin: 0 0 8px; font-size: 22px; }
   #squadPicker p { color: var(--dim); font-size: 14px; margin: 0 0 22px; line-height: 1.6; }
   #squadSlots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  #squadSlots label { display: grid; gap: 8px; text-align: left; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  #squadSlots label { display: grid; grid-template-rows: 14px auto 1fr auto; align-items: start; gap: 8px; text-align: left; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
   #squadSlots select { width: 100%; font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 12px 7px; font-size: 13px; }
   #squadSummary { margin-top: 20px; font-size: 13px; color: var(--accent); }
   .plantCard { text-transform: none; letter-spacing: 0; font-size: 12px; line-height: 1.45; color: var(--dim); min-height: 92px; }
@@ -160,6 +171,7 @@
     border-radius: 14px; background: rgba(12,25,16,.92); }
   #matchStats .line { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
   #matchStats table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  #matchStats { overflow-x: auto; } #matchStats td:first-child { min-width: 120px; }
   #matchStats th { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); padding: 4px 6px; text-align: right; }
   #matchStats td { padding: 7px 6px; text-align: right; border-top: 1px solid rgba(255,255,255,0.08); font-variant-numeric: tabular-nums; }
   #matchStats th:first-child, #matchStats td:first-child { text-align: left; }
@@ -333,6 +345,7 @@
     <div class="hbox panel" id="playerBox">
       <div class="row"><span class="label" id="playerLabel">Kernel Corn</span><span id="playerHpNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
+      <div id="masteryHud"></div>
     </div>
     <div id="squadHint">Tab · next plant &nbsp; [ / ] · previous / next</div>
   </div>
@@ -356,6 +369,7 @@
 <div id="message"></div>
 <div id="callout"></div>
 <div id="shopPrompt"></div>
+<div id="opsHud" class="panel"></div><div id="rewardFeed" role="status" aria-live="polite"></div><div id="bonusTarget"></div>
 <div id="sunflowerStatus" role="status"></div>
 <div id="cactusScope"></div><div id="droneHud"></div>
 <canvas id="radar"></canvas>
@@ -397,7 +411,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.24.0';
+const VERSION = 'v1.25.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -1268,6 +1282,44 @@ const CONFIG = {
   hurry: { mult: 1.75, statueDist: 45, heroDist: 40, stragglers: 6, gardenSafe: 25 },   // gardenSafe: stragglers never rush the last metres
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
 
+  // Engagement: short goals, readable surprises, class expression and saved recognition. No power grind.
+  engagement: {
+    storageKey: 'garden-defense-mastery-v1', saveInterval: 4,
+    levelXp: 400, levelGrowth: 125, maxLevel: 10, maxXp: 100000000,
+    titles: ['Sprout', 'Defender', 'Specialist', 'Garden Hero', 'Master'], titleEvery: 2,
+    xp: { kill: 35, agent: 65, boss: 220, assist: 20, heal: 0.35, revive: 90, wave: 60, objective: 90, victory: 300 },
+    assistWindow: 10, assistFraction: 0.12,
+    chain: { window: 5, milestones: [3, 5, 8], names: ['TRIPLE VANQUISH', 'ON A ROLL', 'GARDEN LEGEND'], xp: [30, 55, 90] },
+    feed: { life: 3.5, max: 3 },
+    mvp: { kills: 100, damage: 0.1, assists: 20, healing: 0.15, revives: 60 },
+    // Multipliers are lateral primary-weapon choices. Abilities and health keep their class identity.
+    loadouts: {
+      corn: { name: 'Heavy Kernels', description: 'Harder hits, slower fire and a smaller clip.',
+        mult: { damage: 1.45, minDamage: 1.45, fireRate: 1.45, clip: 0.7, reloadTime: 1.15 } },
+      peashooter: { name: 'Rapid Peas', description: 'More peas and a larger clip; each pea hits less hard.',
+        mult: { damage: 0.7, minDamage: 0.7, splashDamage: 0.7, fireRate: 0.72, clip: 1.4, spread: 1.5 } },
+      sunflower: { name: 'Focus Pulse', description: 'Accurate, heavier pulses with slower fire and a smaller clip.',
+        mult: { damage: 1.35, minDamage: 1.35, fireRate: 1.4, clip: 0.75, spread: 0.5, aimSpread: 0.5 } },
+      cactus: { name: 'Repeater Spikes', description: 'Faster follow-up shots and more ammo; less damage and precision.',
+        mult: { damage: 0.62, minDamage: 0.62, fireRate: 0.65, clip: 1.6, criticalMult: 0.75, spread: 1.6, aimSpread: 1.6 } },
+    },
+    // Zero-based waves. Never replace boss packs or introduce a type before its normal debut.
+    specialWaves: [2, 5, 7],
+    themes: [
+      { key: 'rush', name: 'Sprint Convention', minWave: 2, type: 'sprinter', fraction: 0.65, delay: 0.85, hint: 'Keep moving · splash attacks stop the rush' },
+      { key: 'armor', name: 'Bucket Brigade', minWave: 2, type: 'plated', fraction: 0.3, delay: 1.15, hint: 'Flank the armor · aim for exposed cores' },
+      { key: 'ranged', name: 'Spit Take', minWave: 5, type: 'spitter', fraction: 0.4, delay: 1, hint: 'Break line of sight · close the distance' },
+    ],
+    pacing: { lowAlive: 2, quietTime: 3, nextPack: 2.5, hurtGrace: 5, gardenSafe: 0.4 },
+    objectives: {
+      schedule: ['protect', 'blitz', 'rally', 'bounty', 'protect', 'rally', 'bounty', 'blitz', 'rally', 'protect'],
+      coins: 65, coinsPerWave: 5, protectLoss: 60, blitzBase: 100, blitzPerPack: 13,
+      rallyDistance: [22, 36], rallyRadius: 6, rallyHold: 9, rallyTime: 65, rallyExtra: 0.25,
+      bountyTime: 45, bountyHp: 1.35, markerWidth: 0.35, markerLift: 0.15, markerSegments: 48,
+      aiRepath: 1.5, aiWaypoint: 1.5, aiHealth: 0.45, heightTolerance: 3, positionTries: 40, holdRadius: 0.6,
+    },
+  },
+
   // Garden Ops economy (section "Garden Ops economy"): zombies drop coins, the squad shares one wallet,
   // and between waves the human spends it on potted plants (POTS) and statue repair.
   economy: {
@@ -1303,7 +1355,7 @@ const CONFIG = {
   // Waves as data. Each wave: { lanes?, packs: [{ spawn?, delay, zombies: { type: count } }], modifiers: [] }
   //   lanes     — optional: spawns this wave may use; packs without `spawn` take them in turn
   //   packs     — spawn in order; `delay` = hidden seconds after the previous pack (shrunk by packDelayTighten)
-  //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
+  //   special waves — CONFIG.engagement themes remix shambler counts without mutating these base packs
   // Lanes rotate between waves so no single spot covers everything.
   // Boss slot machine: on these waves the pack marked `bossSlot: true` gets a rolled boss encounter.
   // The reel spins during the countdown and lands `spin` s in. weight = [first slot wave, second slot wave].
@@ -1506,6 +1558,28 @@ function shuffledDefaultSquad(random = Math.random) {
   }
   return order;
 }
+// Load recognition before the menu gate: no three.js or world construction is needed to show mastery.
+const EG = CONFIG.engagement;
+const mastery = { plants: {}, victories: 0, objectives: 0 };
+try {
+  const saved = JSON.parse(localStorage.getItem(EG.storageKey));
+  const safe = n => Number.isFinite(n) ? Math.max(0, Math.min(EG.maxXp, Math.floor(n))) : 0;
+  for (const type of Object.keys(CONFIG.PLANTS)) mastery.plants[type] = safe(saved?.plants?.[type]);
+  mastery.victories = safe(saved?.victories); mastery.objectives = safe(saved?.objectives);
+} catch { /* Unavailable or damaged storage: play normally with session-only recognition. */ }
+for (const type of Object.keys(CONFIG.PLANTS)) mastery.plants[type] ||= 0;
+let masteryDirty = false, masterySaveT = 0;
+function saveMastery() {
+  if (!masteryDirty) return;
+  try { localStorage.setItem(EG.storageKey, JSON.stringify(mastery)); masteryDirty = false; } catch { /* session-only */ }
+}
+addEventListener('pagehide', saveMastery);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveMastery(); });
+function masteryLevel(type) {
+  let xp = mastery.plants[type] || 0, level = 1, need = EG.levelXp;
+  while (xp >= need && level < EG.maxLevel) { xp -= need; level++; need += EG.levelGrowth; }
+  return { level, xp, need, title: EG.titles[Math.min(EG.titles.length - 1, Math.floor((level - 1) / EG.titleEvery))] };
+}
 let defaultSquad = shuffledDefaultSquad();
 const squadSlots = document.getElementById('squadSlots');
 let squadSelectionCustomized = false;
@@ -1518,26 +1592,40 @@ for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
   select.value = defaultSquad[i] || '';
   // Plant card: role, one-line pitch and the Q / E / F kit of whatever is picked in this slot
   const card = document.createElement('div'); card.className = 'plantCard';
+  const loadout = document.createElement('select'); loadout.id = `loadout-${i}`; loadout.className = 'loadoutPick';
+  loadout.setAttribute('aria-label', `Weapon loadout for ${i === 0 ? 'your plant' : `companion ${i}`}`);
+  let cardType = null;
   select.showCard = () => {
     const d = CONFIG.PLANTS[select.value];
+    const m = masteryLevel(select.value), variant = EG.loadouts[select.value];
+    if (cardType !== select.value) {
+      loadout.replaceChildren(new Option('Classic weapon', 'classic'));
+      if (variant) loadout.add(new Option(variant.name, 'variant'));
+      cardType = select.value;
+    }
+    loadout.disabled = !d;
     card.innerHTML = !d ? '<i>No companion</i>' : `<b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
-      ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span><kbd>${'QEF'[n]}</kbd>${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>';
+      ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span><kbd>${'QEF'[n]}</kbd>${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>' +
+      `<span class="mastery">${m.title} · Level ${m.level}${m.level < EG.maxLevel ? ` · ${Math.floor(m.xp)} / ${m.need} XP` : ' · ★'}</span>` +
+      `<div>${loadout.value === 'variant' ? variant.description : d.info.primary}</div>`;
   };
   select.showCard();
   select.addEventListener('change', () => { squadSelectionCustomized = true; select.showCard(); updateSquadSummary(); });
-  label.append(select, card); squadSlots.append(label);
+  loadout.addEventListener('change', () => { squadSelectionCustomized = true; select.showCard(); });
+  label.append(select, card, loadout); squadSlots.append(label);
 }
 function refreshDefaultSquadSelection() {
   defaultSquad = shuffledDefaultSquad();
-  [...squadSlots.querySelectorAll('select')].forEach((select, i) => { select.value = defaultSquad[i] || ''; select.showCard(); });
+  [...squadSlots.querySelectorAll('select[id^="pick-"]')].forEach((select, i) => { select.value = defaultSquad[i] || ''; select.showCard(); });
   updateSquadSummary();
 }
 function readSquadSelection() {
-  return [...squadSlots.querySelectorAll('select')].map(select => select.value).filter(Boolean);
+  return [...squadSlots.querySelectorAll('select[id^="pick-"]')].map(select => select.value).filter(Boolean);
 }
 function updateSquadSummary() {
   const count = readSquadSelection().length, companions = count - 1;
-  document.getElementById('squadSummary').textContent = companions ? `${count} plants · you + ${companions} AI companion${companions === 1 ? '' : 's'} · switch freely in combat` : '1 plant · solo defense';
+  const roster = companions ? `${count} plants · you + ${companions} AI companion${companions === 1 ? '' : 's'} · switch freely in combat` : '1 plant · solo defense';
+  document.getElementById('squadSummary').textContent = `${roster} · ${mastery.victories} victories · ${mastery.objectives} bonus medals`;
 }
 updateSquadSummary();
 
@@ -5215,6 +5303,11 @@ const extractZone = {
 };
 extractZone.ring.visible = extractZone.beacon.visible = false;
 scene.add(extractZone.ring, extractZone.beacon);
+// One reusable gold outline, precompiled during loading. Never add a light or allocate a mesh for a bonus.
+const bonusMarker = new THREE.Mesh(
+  new THREE.RingGeometry(1 - EG.objectives.markerWidth / EG.objectives.rallyRadius, 1, EG.objectives.markerSegments).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffd84a, transparent: true, opacity: 0.8, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+bonusMarker.visible = false; bonusMarker.renderOrder = 9; scene.add(bonusMarker);
 function showExtractZone(pos) {
   const Z = extractZone;
   Z.ring.visible = Z.beacon.visible = !!pos;
@@ -5849,7 +5942,7 @@ const DIFF = () => CONFIG.DIFFICULTY[state?.difficulty] || CONFIG.DIFFICULTY.nor
 // Match stats: one line per squad slot for the whole match and for the current wave.
 // Credit goes to the hero that owns the hit (owner); anything else (turrets, hazards) is ignored.
 // ---------------------------------------------------------------------
-const newStatLine = () => ({ kills: 0, damage: 0, taken: 0, downs: 0, revives: 0 });
+const newStatLine = () => ({ kills: 0, damage: 0, taken: 0, downs: 0, revives: 0, assists: 0, healing: 0, xp: 0 });
 function newMatchStats() {
   return { match: heroes.map(newStatLine), wave: heroes.map(newStatLine), waveStartHp: CONFIG.statue.hp, waveStartT: 0, waveKills: 0 };
 }
@@ -5857,14 +5950,233 @@ function recordStat(h, key, n) {
   const i = h ? heroes.indexOf(h) : -1, S = state?.stats;
   if (i < 0 || !S || !n) return;
   S.match[i][key] += n; S.wave[i][key] += n;
+  if (key === 'revives') awardXp(h, EG.xp.revive * n, 'Revive');
+}
+
+// =====================================================================
+// Garden Ops engagement (research / rationale: docs/gw2-engagement.md)
+// Each hero owns its chain and rewards; switching control cannot transfer or erase them.
+// =====================================================================
+function rewardNotice(text) {
+  if (!state?.engagement || state.over) return;
+  const feed = state.engagement.feed;
+  const last = feed[feed.length - 1];
+  if (last?.text === text) { last.count++; last.until = state.time + EG.feed.life; return; }
+  feed.push({ text, count: 1, until: state.time + EG.feed.life });
+  if (feed.length > EG.feed.max) feed.shift();
+}
+function awardXp(h, amount, reason = '') {
+  if (!matchStarted || !state || state.over || !h?.active || !heroes.includes(h) || amount <= 0) return;
+  const before = masteryLevel(h.type).level;
+  mastery.plants[h.type] = Math.min(EG.maxXp, mastery.plants[h.type] + amount);
+  masteryDirty = true; recordStat(h, 'xp', amount);
+  const after = masteryLevel(h.type);
+  if (h === player && reason) rewardNotice(`+${Math.round(amount)} XP · ${reason}`);
+  if (after.level > before) {
+    rewardNotice(`${h.name} · LEVEL ${after.level} · ${after.title}`);
+    if (h === player) SFX.play('respawn', h.mesh.position);
+    saveMastery();
+  }
+}
+function applyLoadout(h, variant = false) {
+  h.weapon = { ...W, ...h.def.weapon };
+  const L = variant && EG.loadouts[h.type];
+  h.loadout = L ? L.name : 'Classic';
+  if (L) for (const [key, mult] of Object.entries(L.mult)) if (Number.isFinite(h.weapon[key])) h.weapon[key] *= mult;
+  h.weapon.clip = Math.max(1, Math.round(h.weapon.clip));
+}
+function noteContribution(z, owner, amount) {
+  if (!owner?.active || !heroes.includes(owner) || !matchStarted || state.over || amount <= 0) return;
+  z.contributors ||= new Map();
+  const prev = z.contributors.get(owner);
+  z.contributors.set(owner, { amount: (prev?.amount || 0) + amount, t: state.time });
+}
+function rewardVanquish(z, owner) {
+  if (!matchStarted || state.over) return;
+  const owned = heroes.includes(owner) && owner.active;
+  if (owned) {
+    awardXp(owner, z.def.boss ? EG.xp.boss : z.def.agent ? EG.xp.agent : EG.xp.kill, z.def.boss ? 'Boss vanquished' : 'Vanquish');
+    const chain = owner.vanquishChain ||= { count: 0, t: -Infinity };
+    chain.count = state.time - chain.t <= EG.chain.window ? chain.count + 1 : 1; chain.t = state.time;
+    const milestone = EG.chain.milestones.indexOf(chain.count);
+    if (milestone >= 0) {
+      awardXp(owner, EG.chain.xp[milestone]);
+      if (owner === player) { rewardNotice(`${EG.chain.names[milestone]} · +${EG.chain.xp[milestone]} XP`); SFX.play('sunPickup', null); }
+    }
+  }
+  for (const [h, c] of z.contributors || []) if (h !== owner && state.time - c.t <= EG.assistWindow && c.amount >= z.def.hp * EG.assistFraction) {
+    recordStat(h, 'assists', 1); awardXp(h, EG.xp.assist, 'Vanquish assist');
+  }
+  const o = state.engagement.objective;
+  if (o?.kind === 'bounty' && o.target === z && o.status === 'active') finishBonus(true);
+}
+function selectTheme(index, random = Math.random) {
+  if (!EG.specialWaves.includes(index)) return null;
+  const options = EG.themes.filter(t => index >= t.minWave && t.key !== state.engagement.lastTheme);
+  return options[Math.floor(random() * options.length)] || null;
+}
+function remixPacks(packs, theme) {
+  return packs.map(p => {
+    const zombies = { ...p.zombies };
+    if (theme && !p.bossSlot && zombies.shambler) {
+      const n = Math.round(zombies.shambler * theme.fraction);
+      zombies.shambler -= n; zombies[theme.type] = (zombies[theme.type] || 0) + n;
+    }
+    return { ...p, zombies, delay: (p.delay || 0) * (theme?.delay || 1) };
+  });
+}
+function rallyPosition() {
+  const O = EG.objectives, candidates = [];
+  // Connected nav cells only, with an actual plant route from home. No world geometry is built here.
+  for (let k = 0; k < NAV.open.length; k++) if (NAV.open[k] && Number.isFinite(STATUE_FIELD[k])) {
+    const x = NAV.cx(k % NAV.N), z = NAV.cx(Math.floor(k / NAV.N)), d = Math.hypot(x, z);
+    if (d >= O.rallyDistance[0] && d <= O.rallyDistance[1]) candidates.push(k);
+  }
+  for (let tries = 0; candidates.length && tries < O.positionTries; tries++) {
+    const i = Math.floor(Math.random() * candidates.length), k = candidates[i];
+    candidates[i] = candidates[candidates.length - 1]; candidates.pop();
+    const pos = new THREE.Vector3(NAV.cx(k % NAV.N), NAV.h[k], NAV.cx(Math.floor(k / NAV.N)));
+    if (findPath(player.mesh.position, pos)?.length) return pos;
+  }
+  return null;
+}
+function prepareBonus(index) {
+  const E = state.engagement, O = EG.objectives;
+  E.objective = { kind: O.schedule[index % O.schedule.length], status: 'pending', progress: 0, target: null, pos: null };
+  if (E.objective.kind === 'rally') {
+    E.objective.pos = rallyPosition();
+    if (!E.objective.pos) E.objective.kind = 'protect';
+  }
+  bonusMarker.visible = false;
+}
+function startBonus() {
+  const o = state.engagement.objective, O = EG.objectives;
+  o.status = 'active'; o.start = state.time; o.startHp = state.statueHp;
+  o.remaining = o.kind === 'blitz' ? O.blitzBase + state.packs.length * O.blitzPerPack : o.kind === 'rally' ? O.rallyTime : O.bountyTime;
+  // Bounty's clock starts when its target actually arrives; protect lasts the whole wave.
+}
+function finishBonus(success) {
+  const E = state.engagement, o = E.objective;
+  if (!o || o.status !== 'active') return;
+  o.status = success ? 'complete' : 'missed'; bonusMarker.visible = false;
+  if (!success) return;
+  const coins = EG.objectives.coins + state.waveIndex * EG.objectives.coinsPerWave;
+  state.coins += coins; E.completed++; mastery.objectives++; masteryDirty = true;
+  for (const h of heroes) if (h.active) awardXp(h, EG.xp.objective);
+  rewardNotice(`BONUS COMPLETE · +${coins} coins · +${EG.xp.objective} XP per plant`);
+  SFX.play('sunPickup', null); saveMastery();
+}
+function clearWaveRewards() {
+  const E = state.engagement;
+  if (E.rewardedWave === state.waveIndex) return;
+  E.rewardedWave = state.waveIndex;
+  const o = E.objective;
+  if (o?.status === 'active') finishBonus(o.kind === 'protect' || (o.kind === 'blitz' && o.remaining > 0));
+  for (const h of heroes) if (h.active) awardXp(h, EG.xp.wave);
+  saveMastery();
+}
+function bonusLabel(o) {
+  if (!o) return '';
+  const O = EG.objectives;
+  return o.kind === 'protect' ? `Garden guard · lose at most ${O.protectLoss} garden HP`
+    : o.kind === 'blitz' ? 'Quick compost · clear before the clock expires'
+    : o.kind === 'rally' ? `Supply circle · hold the gold zone for ${O.rallyHold}s`
+    : 'Wanted! · vanquish the gold-marked zombie';
+}
+function updateEngagement(dt) {
+  const E = state.engagement, o = E.objective, O = EG.objectives;
+  if ((masterySaveT -= dt) <= 0) { masterySaveT = EG.saveInterval; saveMastery(); }
+  E.feed = E.feed.filter(n => n.until > state.time);
+  bonusMarker.visible = false;
+  if (state.phase !== 'active' || !o || o.status !== 'active') return;
+  if (o.kind === 'protect') {
+    // Track damage cumulatively: a repair cannot undo a failed guard challenge.
+    o.loss = (o.loss || 0) + Math.max(0, (o.lastHp ?? o.startHp) - state.statueHp); o.lastHp = state.statueHp;
+    if (o.loss > O.protectLoss) finishBonus(false);
+    return;
+  }
+  if (o.kind === 'bounty' && !o.target) {
+    const z = zombies.find(z => !z.dead && !z.def.boss && !z.def.mechanical && !z.buried);
+    if (!z) return;
+    o.target = z; z.hp *= O.bountyHp; z.def = { ...z.def, hp: z.def.hp * O.bountyHp };
+    rewardNotice('WANTED! Gold-marked zombie · bonus coins');
+  }
+  o.remaining = Math.max(0, o.remaining - dt);
+  if (o.remaining <= 0) { finishBonus(false); return; }
+  if (o.kind === 'rally') {
+    const inside = heroes.filter(h => targetable(h) && flatDist(h.mesh.position, o.pos) <= O.rallyRadius && Math.abs(h.feet - o.pos.y) < O.heightTolerance).length;
+    const contested = zombies.some(z => !z.dead && !z.buried && flatDist(z.mesh.position, o.pos) < O.rallyRadius && Math.abs(feetY(z) - o.pos.y) < O.heightTolerance);
+    o.contested = contested; o.inside = inside;
+    if (inside && !contested) o.progress = Math.min(1, o.progress + dt / O.rallyHold * (1 + (inside - 1) * O.rallyExtra));
+    if (o.progress >= 1) { finishBonus(true); return; }
+  }
+  const pos = o.kind === 'rally' ? o.pos : o.target?.mesh.position;
+  if (pos) {
+    bonusMarker.position.set(pos.x, (o.kind === 'rally' ? pos.y : feetY(o.target)) + O.markerLift, pos.z);
+    bonusMarker.scale.setScalar(o.kind === 'rally' ? O.rallyRadius : o.target.def.radius + O.markerWidth);
+    bonusMarker.material.opacity = o.contested ? 0.4 : 0.8;
+    bonusMarker.visible = true;
+  }
+}
+function bonusSteer(h, dt) {
+  const o = state.engagement.objective, O = EG.objectives;
+  if (state.phase !== 'active' || o?.kind !== 'rally' || o.status !== 'active' || !targetable(h) ||
+      state.gardenAlert || state.statueHp < CONFIG.statue.hp * EG.pacing.gardenSafe || h.hp < h.stats.hp * O.aiHealth || h.sun?.reviveTarget) return;
+  // Only one companion volunteers; the rest keep defending. A solo player chooses whether to leave home.
+  const volunteer = heroes.find(a => a.isAI && targetable(a) && a.type !== 'sunflower' && a.hp >= a.stats.hp * O.aiHealth);
+  if (h !== volunteer) return;
+  if (flatDist(h.mesh.position, o.pos) < O.rallyRadius * O.holdRadius) { h.input.move.set(0, 0, 0); h.input.sprint = false; return; }
+  if (h.opsGoal !== o || (h.opsPathT -= dt) <= 0) { h.opsGoal = o; h.opsPath = findPath(h.mesh.position, o.pos) || []; h.opsPathT = O.aiRepath; }
+  while (h.opsPath.length && flatDist(h.mesh.position, h.opsPath[0]) < O.aiWaypoint) h.opsPath.shift();
+  h.input.move.copy(h.opsPath[0] || o.pos).sub(h.mesh.position).setY(0).normalize(); h.input.sprint = true;
+}
+function advanceQuietPack(dt) {
+  const E = state.engagement, P = EG.pacing;
+  const alive = zombies.filter(z => !z.dead);
+  const safe = !alive.some(z => z.def.boss || z.def.agent || z.attackingStatue) && !state.gardenAlert &&
+    state.statueHp >= CONFIG.statue.hp * P.gardenSafe && heroes.every(h => !h.active || (!h.dead && state.time - h.lastHurt > P.hurtGrace));
+  E.quiet = alive.length <= P.lowAlive && safe ? E.quiet + dt : 0;
+  if (E.quiet < P.quietTime || !state.spawnQueue.length) return;
+  const next = Math.min(...state.spawnQueue.map(s => s.t));
+  if (next > P.nextPack) { const shift = next - P.nextPack; for (const s of state.spawnQueue) s.t -= shift; }
+  E.quiet = 0;
+}
+function drawEngagement() {
+  const E = state.engagement, o = E.objective, m = masteryLevel(player.type), chain = player.vanquishChain;
+  setHtml(hud('masteryHud'), `${m.title} · LV ${m.level} · +${Math.floor(state.stats.match[player.squadIndex]?.xp || 0)} XP this match` +
+    `<progress max="${m.need}" value="${m.level >= EG.maxLevel ? m.need : m.xp}" aria-label="Plant mastery progress"></progress>`);
+  const status = o?.status === 'complete' ? '✓ Complete' : o?.status === 'missed' ? 'Bonus missed · garden defense continues' :
+    state.phase === 'countdown' ? `+${EG.objectives.coins + state.waveIndex * EG.objectives.coinsPerWave} coins · +${EG.xp.objective} XP per plant` :
+    o?.kind === 'protect' ? `${Math.ceil(o.loss || 0)} / ${EG.objectives.protectLoss} garden HP lost` :
+    o?.kind === 'bounty' && !o.target ? 'Waiting for the wanted zombie' :
+    `${Math.ceil(o?.remaining || 0)}s left${o?.kind === 'rally' ? ` · ${Math.floor(o.progress * 100)}%${o.contested ? ' · CONTESTED' : ''}` : ''}`;
+  const pos = o?.status === 'active' ? (o.pos || o.target?.mesh.position) : null;
+  const bearing = pos ? ` · ${Math.round(flatDist(player.mesh.position, pos))}m ${relativeDirection(pos)}` : '';
+  setHtml(hud('opsHud'), state.phase === 'extract' ? '<b>Last stand</b><div>Hold the landing zone together!</div>' :
+    `<b>${E.theme ? E.theme.name : 'Garden Ops'}</b><div class="muted">${E.theme?.hint || 'Defend · support · switch plants'}</div>` +
+    `<div class="goal"><b>Optional bonus</b><div>${bonusLabel(o)}</div><div class="muted">${status}${bearing}</div></div>`);
+  const notices = E.feed.map(n => `<div>${n.text}${n.count > 1 ? ` ×${n.count}` : ''}</div>`).join('');
+  setHtml(hud('rewardFeed'), notices + (chain && state.time - chain.t <= EG.chain.window && chain.count > 1 ? `<b>${chain.count} vanquish chain</b>` : ''));
+  const tag = hud('bonusTarget'), wp = pos && pos.clone().setY(pos.y + (o.target ? o.target.def.height : EG.objectives.markerLift));
+  const q = wp?.project(camera);
+  tag.style.display = q && q.z < 1 && Math.abs(q.x) < 1 && Math.abs(q.y) < 1 ? 'block' : 'none';
+  if (tag.style.display === 'block') {
+    tag.style.left = `${(q.x * 0.5 + 0.5) * innerWidth}px`; tag.style.top = `${(-q.y * 0.5 + 0.5) * innerHeight}px`;
+    setText(tag, `${o.kind === 'rally' ? 'SUPPLIES' : 'WANTED'} · ${Math.round(flatDist(playerMesh.position, pos))}m`);
+  }
+}
+function relativeDirection(pos) {
+  const fw = yawForward(), dx = pos.x - playerMesh.position.x, dz = pos.z - playerMesh.position.z;
+  const angle = Math.atan2(dx * -fw.z + dz * fw.x, dx * fw.x + dz * fw.z);
+  return Math.abs(angle) < Math.PI / 4 ? '↑' : Math.abs(angle) > Math.PI * 3 / 4 ? '↓' : angle > 0 ? '→' : '←';
 }
 const fmtNum = n => n >= 10000 ? `${(n / 1000).toFixed(0)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
 const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-// Index of the line with the most kills (damage breaks ties), or -1 when nobody scored
+// Combat and support both count toward MVP; -1 when nobody contributed.
 function mvpIndex(lines) {
   let best = -1;
-  lines.forEach((l, i) => { if ((l.kills || l.damage) && (best < 0 || l.kills > lines[best].kills ||
-    (l.kills === lines[best].kills && l.damage > lines[best].damage))) best = i; });
+  const score = l => Object.entries(EG.mvp).reduce((sum, [key, weight]) => sum + (l[key] || 0) * weight, 0);
+  lines.forEach((l, i) => { if (score(l) > 0 && (best < 0 || score(l) > score(lines[best]))) best = i; });
   return best;
 }
 // Between-waves summary under the next wave's countdown banner, then start a fresh wave line
@@ -5876,7 +6188,9 @@ function showWaveSummary(index) {
     `<div>${kills} zombies vanquished · garden ${lost > 0 ? `−${Math.round(lost)}` : 'untouched'} (${Math.max(0, Math.ceil(state.statueHp))} / ${CONFIG.statue.hp})</div>` +
     heroes.map((h, i) => { const l = S.wave[i];
       return `<div${i === mvp ? ' class="mvp"' : ''}>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1} · ${l.kills} kills · ${fmtNum(l.damage)} dmg` +
-        `${l.downs ? ` · ${l.downs} down${l.downs > 1 ? 's' : ''}` : ''}${l.revives ? ` · ${l.revives} revive${l.revives > 1 ? 's' : ''}` : ''}${i === mvp ? ' ★' : ''}</div>`; }).join('');
+        `${l.assists ? ` · ${l.assists} assists` : ''}${l.healing ? ` · ${fmtNum(l.healing)} healed` : ''}` +
+        `${l.downs ? ` · ${l.downs} down${l.downs > 1 ? 's' : ''}` : ''}${l.revives ? ` · ${l.revives} revive${l.revives > 1 ? 's' : ''}` : ''} · +${Math.floor(l.xp)} XP${i === mvp ? ' ★' : ''}</div>`; }).join('') +
+    `<div>Optional bonus: ${state.engagement.objective?.status === 'complete' ? 'COMPLETE' : 'missed'} · ${state.engagement.theme?.name || 'Garden Ops'}</div>`;
   S.wave = heroes.map(newStatLine); S.waveStartHp = state.statueHp; S.waveStartT = state.time;
 }
 // End-of-match table on the overlay
@@ -5884,10 +6198,11 @@ function showMatchStats(won) {
   const S = state.stats, mvp = mvpIndex(S.match), el = document.getElementById('matchStats');
   const waves = won ? WAVES.length : state.waveIndex;
   el.innerHTML = `<div class="line">${DIFF().name} · ${waves} / ${WAVES.length} waves cleared · ${fmtTime(state.time)} · garden ${Math.max(0, Math.ceil(state.statueHp))} / ${CONFIG.statue.hp}</div>` +
-    '<table><tr><th>Plant</th><th>Kills</th><th>Damage</th><th>Taken</th><th>Downs</th><th>Revives</th></tr>' +
+    `<div class="line">${state.engagement.completed} bonuses completed · mastery saved on this device</div>` +
+    '<table><tr><th>Plant</th><th>Kills</th><th>Assists</th><th>Damage</th><th>Healed</th><th>Taken</th><th>Downs</th><th>Revives</th><th>XP</th></tr>' +
     heroes.map((h, i) => { const l = S.match[i];
       return `<tr${i === mvp ? ' class="mvp"' : ''}><td>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1}${h.isAI ? '' : ' · YOU'}</td>` +
-        `<td>${l.kills}</td><td>${fmtNum(l.damage)}</td><td>${fmtNum(l.taken)}</td><td>${l.downs}</td><td>${l.revives}</td></tr>`; }).join('') +
+        `<td>${l.kills}</td><td>${l.assists}</td><td>${fmtNum(l.damage)}</td><td>${fmtNum(l.healing)}</td><td>${fmtNum(l.taken)}</td><td>${l.downs}</td><td>${l.revives}</td><td>${Math.floor(l.xp)}</td></tr>`; }).join('') +
     '</table>';
   el.style.display = 'block';
 }
@@ -5936,6 +6251,7 @@ function resetGame() {
     difficulty: SETTINGS.difficulty,   // preset key, locked for the match
     statueSeen: CONFIG.statue.hp,      // statue hp after last frame's difficulty scaling
     stats: newMatchStats(),
+    engagement: { feed: [], theme: null, lastTheme: null, objective: null, completed: 0, rewardedWave: -1, quiet: 0 },
     coins: CONFIG.economy.startCoins,   // shared squad wallet (section "Garden Ops economy")
     shopChoice: 0,                      // POTS type offered on an empty pot spot (Z cycles)
   };
@@ -5957,6 +6273,7 @@ function resetGame() {
 function respawnHero(h) {
   const P = h.stats, W = h.weapon, PLAYER_CENTER_Y = h.centerY;
   h.hp = P.hp;
+  h.vanquishChain = null; h.opsGoal = null; h.opsPath = null;
   h.lastHurt = -Infinity;
   h.dead = false; h.downed = false; h.floatT = 0;
   h.anim.spawnPop = true;
@@ -6180,12 +6497,16 @@ function beginCountdown(index) {
   state.waveIndex = index;
   state.phase = 'countdown';
   state.waveTimer = index > 0 ? CONFIG.economy.shopTime : CONFIG.waveCountdown;   // shop between waves
-  state.packs = resolvePacks(index);
+  const E = state.engagement;
+  E.theme = selectTheme(index); if (E.theme) E.lastTheme = E.theme.key;
+  E.quiet = 0;
+  state.packs = remixPacks(resolvePacks(index), E.theme);
+  prepareBonus(index);
   showSpawnMarkers(state.packs);
   const title = document.getElementById('bannerTitle');
   title.textContent = index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1}`;
   title.classList.remove('pop'); void title.offsetWidth; title.classList.add('pop');
-  document.getElementById('bannerSub').textContent = `Incoming: ${incomingPreview(WAVES[index])}`;
+  document.getElementById('bannerSub').textContent = `${E.theme ? E.theme.name + ' · ' : ''}Incoming: ${incomingPreview({ packs: state.packs })}`;
   rollBossSlot(index);
 }
 
@@ -6235,11 +6556,14 @@ function bossSlotAgents(R, index) {
 
 // Queue every pack of the wave; each pack's zombies are spread (shuffled) over CONFIG.spawnBurst seconds
 function startWave(index) {
+  state.waveIndex = index;
   state.phase = 'active';
+  state.stats.waveStartT = state.time; state.stats.waveStartHp = state.statueHp;
+  startBonus();
   setBanner(false);
   SFX.play('tick', true);
   SFX.play('waveHorn');
-  callout('Here they come!', index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1} of ${WAVES.length}`);
+  callout(state.engagement.theme?.name || 'Here they come!', state.engagement.theme?.hint || (index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1} of ${WAVES.length}`));
   showSpawnMarkers([]);
   // Each pack starts `delay` seconds after the previous one (hidden from the player), scaled down on later waves
   const tighten = Math.max(CONFIG.packDelayMin, 1 - CONFIG.packDelayTighten * index);
@@ -6265,7 +6589,6 @@ function startWave(index) {
     queueEscorts(index, pack, packStart + CONFIG.spawnBurst, packId++, escorts);
   }
   if (state.bossRoll) { landBossSlot(); document.getElementById('bossSlot').style.display = 'none'; }
-  // (Future: apply WAVES[index].modifiers here for special waves.)
 }
 
 // Big center call-out that pops in and fades by itself (CSS animation): wave start / clear, boss arrival
@@ -6433,8 +6756,16 @@ function setMessage(text, duration = 0) {
   messageTimer = duration;
 }
 function endGame(won) {
+  if (state.over) return;
+  if (won) {
+    for (const h of heroes) if (h.active) awardXp(h, EG.xp.victory);
+    mastery.victories++; masteryDirty = true;
+  }
+  saveMastery(); bonusMarker.visible = false;
   state.over = true;
   if (!squadSelectionCustomized) refreshDefaultSquadSelection();
+  for (const select of squadSlots.querySelectorAll('select[id^="pick-"]')) select.showCard();
+  updateSquadSummary();
   SFX.play(won ? 'victory' : 'defeat');
   document.exitPointerLock();
   document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
@@ -7188,6 +7519,7 @@ function healHero(h, amount, owner) {
   // Actual healing drives the HUD glow, without delaying passive recovery after damage.
   h.healedUntil = state.time + 0.25;
   if (owner?.sun) owner.sun.healing = true;
+  if (owner && owner !== h) { recordStat(owner, 'healing', healed); awardXp(owner, healed * EG.xp.heal); }
   return healed;
 }
 function healBeamCandidate(h) {
@@ -17936,7 +18268,12 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   amount /= DIFF().zombieHp;   // difficulty: tougher zombies soak more of every hit
   if (owner) { z.lastHitBy = owner; z.lastHitT = state.time; }
   const mine = owner === player;   // hit / kill markers are for the human's hits only
-  if (z.imp?.mech) { damageZMech(z, amount, at, mine); return; }   // the Z-Mech soaks everything until it ejects
+  if (z.imp?.mech) {
+    const mech = z.imp.mech, before = mech.hp;
+    damageZMech(z, amount, at, mine);
+    const dealt = Math.max(0, Math.min(before, before - mech.hp));
+    recordStat(owner, 'damage', dealt); noteContribution(z, owner, dealt); return;
+  }   // the Z-Mech soaks everything until it ejects
   if (def.behavior === 'mecha') {
     // The cockpit / upper head bypasses body armor. Existing weapons retain their own critical multiplier.
     const headHit = !heavy && at.y >= feetY(z) + CONFIG.MECHA.headHeight * z.def.sizeMult;
@@ -17965,6 +18302,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   const hpBefore = z.hp;
   z.hp -= amount;
   recordStat(owner, 'damage', Math.max(0, Math.min(amount, hpBefore)));
+  noteContribution(z, owner, Math.max(0, Math.min(amount, hpBefore)));
   if (hpBefore > 0 && z.hp <= 0) recordStat(owner, 'kills', 1);
   z.flash = 0.08;
   agentFlinch(z, at, amount);
@@ -17985,6 +18323,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   }
   if (z.hp <= 0) {
     z.dead = true;
+    rewardVanquish(z, owner);
     SFX.play(def.mechanical ? 'turretDown' : 'zombieDeath', z.mesh.position, z.type);
     z.parts.onDeath?.(z);
     const c = new THREE.Color(def.color);
@@ -18736,6 +19075,7 @@ function drivePeashooter(h, dt) {
 // ---- Downed / revive ----
 function downHero(h) {
   recordStat(h, 'downs', 1);
+  h.vanquishChain = null;
   h.downed = true;
   h.downT = h.respawnTimer = CONFIG.squad.respawnDelay;
   h.reviveT = 0;
@@ -19257,6 +19597,7 @@ function updateWaves(dt) {
     return;
   }
   if (state.phase === 'extract') { updateFinale(dt); return; }
+  advanceQuietPack(dt);
   // Active: release queued spawns whose time has come
   for (const s of state.spawnQueue) {
     s.t -= dt;
@@ -19274,6 +19615,7 @@ function updateWaves(dt) {
   state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {
+    clearWaveRewards();
     const glow = 'rgba(120,230,90,0.85)';
     if (state.waveIndex === WAVES.length - 1) { SFX.play('waveClear'); sweepCoins(); callout('Garden held!', 'Get to the landing zone', glow); startFinale(); }
     else {
@@ -19441,6 +19783,7 @@ function setHudBar(id, ratio, dt, regen) {
 let fpsShownAt = 0;
 function updateHud(dt) {
   const P = player.stats, W = player.weapon, AB = player.abilities;
+  drawEngagement();
   // FPS readout, refreshed a few times a second so it's readable
   const now = performance.now();
   if (now - fpsShownAt > 250) { fpsShownAt = now; setText(hud('fps'), `${Math.round(fpsAvg)} FPS`); }
@@ -19467,7 +19810,7 @@ function updateHud(dt) {
   setHudBar('playerBox', player.hp / P.hp, dt, (player.regen || player.healedUntil > state.time) && !player.dead);
   setHtml(hud('playerHpNum'), `${Math.ceil(player.hp)}<small> / ${P.hp}</small>`);
   setText(hud('playerLabel'), `${player.name} #${player.squadIndex + 1}`);
-  setText(hud('weaponLabel'), player.def.weaponName);
+  setText(hud('weaponLabel'), player.loadout && player.loadout !== 'Classic' ? player.loadout : player.def.weaponName);
   for (const h of heroes) {
     const id = `squad-${h.squadIndex}`, box = hud(id), fallen = h.dead || h.downed, left = respawnLeft(h);
     // Fallen: the bar becomes the respawn clock (drains to empty as the plant comes back)
@@ -19666,7 +20009,7 @@ function showHelp() {
   const d = player.def, I = d.info, el = hud('helpPanel');
   helpFor = player;
   el.innerHTML = `<div class="role">${I.role}</div><h3>${PLANT_ICONS[player.type] || ''} ${d.name}</h3><div>${I.blurb}</div>` +
-    `<div class="grid"><kbd>LMB</kbd><span>${I.primary}</span>` +
+    `<div class="grid"><kbd>LMB</kbd><span>${player.loadout && player.loadout !== 'Classic' ? `${player.loadout}: ${EG.loadouts[player.type].description}` : I.primary}</span>` +
     ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<kbd>${'QEF'[n]}</kbd><span><b>${d.abilityIcons[k]} ${d.abilityNames[k]}</b> · ${I[k]}</span>`).join('') +
     `</div><div class="keys"><kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump · <kbd>RMB</kbd> zoom · <kbd>R</kbd> reload · ` +
     `<kbd>1</kbd>–<kbd>4</kbd> / <kbd>Tab</kbd> switch plant · <kbd>X</kbd> revive · between waves <kbd>C</kbd> buy, <kbd>Z</kbd> pot type, <kbd>Enter</kbd> ready · <kbd>Esc</kbd> pause · <kbd>H</kbd> close</div>`;
@@ -19850,6 +20193,8 @@ function configureSquad(selection) {
   selection.forEach((type, i) => {
     const h = previous[i]?.type === type ? previous[i] : makeHero(type, i > 0, CONFIG.squad.spawnPoints[i], i);
     h.isAI = i !== 0; h.active = true; heroes.push(h);
+    const picked = [...squadSlots.querySelectorAll('select[id^="pick-"]')].filter(s => s.value)[i];
+    applyLoadout(h, picked?.value === type && document.getElementById(picked.id.replace('pick-', 'loadout-'))?.value === 'variant');
   });
   for (const h of previous) if (!heroes.includes(h)) disposeHero(h);
   player = heroes[0]; playerMesh = player.mesh; corn = player.corn; mate = heroes[1] || null;
@@ -19871,7 +20216,7 @@ function loop() {
     state.time += dt;
     readPlayerInput(player);
     updateGardenAlert(dt);
-    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
+    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); bonusSteer(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
     for (const h of heroes) updateHero(h, dt);
     updateZombies(dt);
     updateProjectiles(dt);
@@ -19895,7 +20240,6 @@ function loop() {
     animateMarkers(state.time);
     updateParticles(dt);
     updateEconomy(dt);
-    updateWaves(dt);
     for (const h of heroes) if (h.active) { h.plant.animate(h, dt); heroJuice(h, dt); }
     muzzleLight.intensity *= Math.exp(-dt * 30);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
@@ -19905,7 +20249,9 @@ function loop() {
       state.gardenHurtT = state.time; statueHit();
     }
     state.statueSeen = state.statueHp;
+    updateEngagement(dt);
     if (state.statueHp <= 0 && !state.over) endGame(false);
+    else updateWaves(dt);
   }
   updateCamera(dt);
   // Silence everything while paused / tabbed out (game-over stings still play)
@@ -19949,6 +20295,8 @@ Object.assign(window.__game, { gargantuarState, gargantuarStartSlam, launchGarga
 Object.assign(window.__game, { damageZombie, endGame, SETTINGS, changeSetting, DIFF, sun });
 // Boss slot + extraction finale hooks (tests/boss-finale.cjs)
 Object.assign(window.__game, { beginCountdown, startWave, startFinale, extractZone });
+Object.assign(window.__game, { mastery, masteryLevel, saveMastery, applyLoadout, healHero, bonusMarker,
+  selectTheme, remixPacks, prepareBonus, startBonus, finishBonus, updateEngagement, clearWaveRewards, advanceQuietPack, bonusSteer, recordStat });
 Object.defineProperty(window.__game, 'particleCap', { get: () => particleCap });
 // Experience hooks (tests/experience.cjs): debug gating, awareness HUD, pacing, onboarding, statue states
 Object.assign(window.__game, { DEBUG, hurryMult, noteHitFrom, hitDirs, gardenStatue, takeControlOf, toggleHelp, TIPS, tipsSeen, drawRadar, artSpin });
@@ -20044,11 +20392,12 @@ function prewarmAssets() {
   const potWarm = Object.values(POT_TEMPLATES);   // potted plants + coins compile now, never mid-match
   potWarm.forEach((t, i) => { t.position.set(potSpots[i].pos.x, potSpots[i].pos.y, potSpots[i].pos.z); scene.add(t); });
   coinMesh.count = 1;
+  bonusMarker.visible = true;
   scene.traverse(singlePass);
   renderer.compile(scene, camera);
   fillRigPools();
   warmUpload();
-  potWarm.forEach(t => scene.remove(t)); coinMesh.count = 0;
+  potWarm.forEach(t => scene.remove(t)); coinMesh.count = 0; bonusMarker.visible = false;
   pinPrograms();   // keep every program alive past the reset below
   prewarmShadowVariants();
   resetGame();

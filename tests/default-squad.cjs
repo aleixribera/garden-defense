@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await page.waitForFunction(() => window.__defaultSquadTest, null, { timeout: 60000 });
     assert.deepEqual(errors, [], 'all four default hero models must initialize');
     const initial = await page.evaluate(() => {
-      const g = __game, picks = [...document.querySelectorAll('#squadSlots select')].map(el => el.value);
+      const g = __game, picks = [...document.querySelectorAll('#squadSlots select[id^="pick-"]')].map(el => el.value);
       return { types: g.heroes.map(h => h.type), picks, human: g.player.type, ai: g.heroes.filter(h => h.isAI).length };
     });
     assert.deepEqual([...initial.types].sort(), [...defaults].sort());
@@ -60,7 +60,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const random = Math.random;
       Math.random = () => order === g.CONFIG.squad.defaults.join(',') ? 0 : 0.999;
       try { t.endGame(false); } finally { Math.random = random; }
-      const next = [...document.querySelectorAll('#squadSlots select')].map(el => el.value);
+      const next = [...document.querySelectorAll('#squadSlots select[id^="pick-"]')].map(el => el.value);
       return { respawnKept, switchKept, next, order };
     });
     assert.equal(lifecycle.respawnKept, true); assert.equal(lifecycle.switchKept, true);
@@ -76,7 +76,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     for (let i = 1; i <= 3; i++) await page.selectOption(`#pick-${i}`, '');
     await page.click('#matchButton');
     await page.evaluate(() => __defaultSquadTest.endGame(false));
-    assert.deepEqual(await page.locator('#squadSlots select').evaluateAll(els => els.map(el => el.value)), ['corn', '', '', '']);
+    assert.deepEqual(await page.locator('#squadSlots select[id^="pick-"]').evaluateAll(els => els.map(el => el.value)), ['corn', '', '', '']);
     console.log('PASS: manual squad choices remain selected across matches');
     assert.deepEqual(errors, [], 'no runtime exceptions during lineup lifecycle');
   } finally { await browser?.close(); server.close(); }
