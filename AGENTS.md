@@ -4,21 +4,65 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.10.7)
+## Current state (v1.11.0)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
-- Heroes: `heroes = [player, mate]`, both Kernel Corn made by `makeHero()` (mesh group at capsule center, corn model,
+- Squad: pre-match picker selects a plant plus 0–3 autonomous AI companions; duplicates allowed.
+  Default lineup is one each of Corn, Peashooter, Sunflower and Cactus, shuffled uniformly before the picker and
+  initial spawn (25% chance to start as each). Untouched defaults reshuffle between matches; manual picker choices
+  are retained. Respawns and control switches never reshuffle the squad.
+  `CONFIG.PLANTS` holds roster/loadout data, `PLANT_TYPES` supplies model, animation, AI, weapon and ability hooks. `makeHero(type, ...)`
+  gives every character its own stats, weapon, ability tuning, input, brain, health, ammo, cooldowns and animation.
+  `heroes` holds 1–4 persistent characters; `player` / `playerMesh` / `corn` follow current human control; `mate` is
+  a legacy alias for the first AI companion (null in solo play). Tab / ] cycles living members; [ goes backward.
+  Handoff changes input ownership, camera, audio listener and HUD without copying or resetting combat state.
+- Heroes: made by `makeHero()` (mesh group at capsule center, procedural model,
   hp/vel/ammo/cooldowns/anim, per-hero zombie info + flow fields + surround `slots`). **Every hero is driven by
   `h.input`** (`newInput()`: move, yaw, aimPoint, zoom, fire, jump/jumpHeld, reload, shuck, hop, butter point, interact);
   `readPlayerInput` fills the human's from keys/mouse (`pressed` queues edge presses), `driveTeammate` fills the AI's;
   `updateHero(h)` runs movement/weapon/abilities identically for both. Hero functions take `h` (`fireKernel(h)`,
   `useHuskHop(h)`, `callButterBarrage(h, point)`, `damageHero(h, n)`, `animateCorn(h)`); camera/recoil/shake/hitmarkers
   are the human's only. `targetable(h)` = active and not dead/downed. `state` keeps only global game state.
-- Player (125 HP) respawns at the statue after 3 s. `playerMesh`/`corn` alias the player's hero. `buildKernelCorn()` builds the model procedurally: `makeLeaf` (bent/folded
+- Death is controller-independent: every plant goes down and respawns after `CONFIG.squad.respawnDelay` (8 s).
+  Hold X near a fallen ally for 5 s to revive at half health. Timers stay on the character across switches;
+  a full squad wipe waits for respawns while the garden stays vulnerable. Only garden destruction loses.
+- Kernel Corn (125 HP): `buildKernelCorn()` builds the model procedurally: `makeLeaf` (bent/folded
   vertex-colored planes), `makeCob` (lathe core + instanced kernels, `skip` carves the face), `placeLeaf` pivots
   keep their rest rotation in `userData.base`. `animateCorn()` is the procedural rig (waddle, lean, squash/stretch,
   leaf feet, collar flutter, aiming arms, recoil, spinning cob barrels, blink).
+- Peashooter (125 HP): `buildPeashooter` / `animatePeashooter` create a hollow sculpted muzzle, waxy rind with
+  procedural pore relief, jade eyes, folded crown, raised leaf veins/rims, pea pods, spiral tendrils and leaf feet.
+  Pea Cannon: 10-round clip, direct impact + separate 3D splash (cover checked). Q Chili Bean Bomb: arcing,
+  bouncing, ticking lure → delayed blast; E Pea Gatling: rooted deployment, helmet/rotor, 100 separate rounds,
+  E again uproots; F Hyper: timed speed + jump boost. No Husk Hop slam/glide. Mode timers, ammo and cooldowns
+  belong to the character across switches; death clears active modes. Settings: `CONFIG.PLANTS.peashooter` and
+  `CONFIG.PEASHOOTER`; `drivePeashooter` patrols the middle ring, favors groups, checks bean arcs, uses Hyper
+  for travel/escape and commits Gatling against durable targets until danger/lost sight requires uprooting.
+  Browser checks: `tests/peashooter.cjs`; mechanics and source notes: `docs/peashooter.md`.
+- Sunflower (110 HP, `CONFIG.SUNFLOWER`): `buildSunflower` sculpts 39 closed grooved petals, a warm face,
+  glossy eyes/freckles/smile, ribbed stem, leaf hands, veined feet and layered calyx/spiral florets. Per-rig materials;
+  `animateSunflower` handles gait, sway, aim/recoil, reload, blink, petal follow-through and rooting.
+  Sun Pulse (50 shots, 2 s reload, falloff/crit); Q Heal Beam toggles an ally tether while moving/firing;
+  E Sunbeam roots with a separate 100-charge magazine (E/Space exits, cooldown starts on exit);
+  F destructible Heal Flower releases 3 collectible healing suns every 2.5 s for 30 s. `updateSunflowerWorld`
+  handles solar shots/flowers/sundrops; per-hero `h.sun` holds tether/stance state across control switches.
+  `driveSunflower` follows teammates even at full health, commits to a patient until healed, heals under pressure,
+  supports other Sunflowers, rescues fallen allies and supplies cover fire without leaving its escort.
+  No garden leash or low-HP healing veto. Faster 3 s revive uses the shared half-health policy.
+  Researched role and explicit fidelity limits: `docs/sunflower-ai.md`; scenarios: `tests/sunflower-hero.cjs`.
+- Cactus (125 HP): `buildCactus` / `animateCactus` create a continuous fluted trunk and unequal bent arms,
+  inset sleepy eyes, hollow muzzle, instanced areoles/spines, burgundy crown and cream/rose flower buds.
+  Spike Shot: 12 rounds, precise scope, 25 body / 30 critical damage. Q Potato Mines: arming, proximity blasts,
+  three replenishing charges; F Tallnut Battlements: four charges, 200 HP, block bodies/projectiles and take
+  zombie melee damage. Placement checks slopes/props/allies; static nav fields remain unchanged.
+  E Garlic Drone roots the owner: WASD flight, Space/Ctrl altitude, LMB overheating needles, Q Corn Strike,
+  E return. Drone has 5 HP; owner death / handoff ends remote control. Reset disposes all Cactus objects.
+  `driveCactus` is an independent Solo Ops home-defender brain: patrol/hold posts near the garden, scope
+  visible incoming threats, return if displaced, backpedal + mine at close range. No Corn assault/boss bias,
+  autonomous drones or battlements. Public sources do not establish exact original thresholds or all friendly
+  ability decisions; adaptations and source distinctions: `docs/cactus-ai.md`; tests: `tests/cactus.cjs`.
+  Per-instance tuning/resources: `CONFIG.PLANTS.cactus`, `CONFIG.cactus`, `h.cactus`.
 - Controls: WASD (accelerated), Shift sprint (`sprintMult`, forward only; fire/zoom/reload cancel), Space jump,
   over-the-shoulder camera, RMB zoom, R reload.
 - Camera feel (`updateCamera`, tuning in `CONFIG.camera`, state in `state.cam`): smoothed pivot, speed/sprint FOV +
@@ -27,18 +71,18 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   Weapon `CONFIG.weapon`: Cob Busters — alternating-arm kernel shots, clip/reload, spread + bloom.
   Abilities `CONFIG.abilities`: Q Shuck Shot (cob missile volley, AoE), E Husk Hop (leap, hold Space to glide,
   ground slam), F Butter Barrage (target area → falling butter, damage + stun; stunned zombies show butter).
-- AI teammate (`CONFIG.TEAMMATE_AI`, section "Teammate AI"): statue guard within `guardRadius`. `thinkTeammate` at
-  `thinkRate`: `pickTarget` (needs `shotClear`; priority Bomber near statue → Spitter → Banner → nearest to statue;
-  retarget cooldown + aim-weighted selection within a threat tier) → state station / engage / reposition (`findVantage`) / retreat (low hp) / downed / reviveWait →
-  A* `findPath` on the nav grid + `smoothPath` string pulling, repath every `repathInterval` → abilities (Husk Hop to
-  escape or travel via `pendingHop`, Butter on a big pack near the statue when safe, Shuck on clusters/tough targets).
-  Never static: station = patrol random points out to `patrol.radius` + base check every `baseCheckEvery` s; engage =
-  `orbitSteer` circle-strafe (flips direction, `dodge` repels zombies, `steerWalkable` keeps it on ground) + jump/hop flair.
-  Fires only when `shotClear` from the next muzzle to the aim point is clear (`eyeOf` = muzzle height).
-  Per frame: path following, stuck → jump, immediate replacement of dead/buried targets, eased aim with a turn-speed
-  limit, target lead, and `difficulty` multiplier. Reaction delay applies at fight start; `combatMemory` carries readiness
-  through short gaps, nearby targets inherit settled aim, and idle reload waits for a real lull. Downed: hold X near it 5 s → revive at half hp, else
-  respawn after 20 s (`#revive` prompt + ring). `ZOMBIE_SCALE_PER_HERO` scales non-boss wave counts (`scaledCount`).
+- Corn companion AI (`CONFIG.TEAMMATE_AI`, section "Teammate AI"): Solo Ops soldier role: roam outward,
+  prioritize nearby bosses, switch to local regular zombies when overwhelmed, and keep fighting at low HP.
+  `pickTarget` uses local sight/hearing, timed last-position memory, priority changes that override retarget cooldown,
+  and aim-weighted selection within a priority. `thinkTeammate` chooses station / engage / reposition / downed / reviveWait;
+  A* + string pulling pursue enemies and `findVantage` samples around the enemy. No statue guard leash / base-check loop.
+  Combat abilities: offensive Husk Hop with checked landing, Shuck against bosses/armor/clusters, Butter against visible
+  bosses/packs anywhere in range. No random travel hops. The firing frame rechecks Shuck intent, aim and next-muzzle clearance.
+  Smooth firing keeps fight readiness and some settled aim between kills (`combatMemory`); eased turning remains bounded,
+  dead/buried targets are replaced immediately, and idle reload waits for a lull. Every AI hero has its own brain.
+  Sources, fidelity limits and adapted tuning: `docs/kernel-corn-ai.md`; browser scenarios: `tests/corn-ops.cjs`.
+  All new thresholds are adaptations to this game, not claimed original GW2 constants.
+  `ZOMBIE_SCALE_PER_HERO` scales non-boss wave counts (`scaledCount`).
 - Feedback: hitmarkers, damage numbers, particles (`spawnParticle`), rings/decals, camera shake, hurt vignette.
   Zombie damage goes through `damageZombie()`; area damage through `explodeAt()`.
 - Zombies: roster in `CONFIG.ZOMBIE_TYPES` (shambler, sprinter, plated, spitter, bomber, banner, climber, howler,
@@ -55,6 +99,15 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   Banner hangs 8 m behind the pack, flees the hero; Climber uses the climb nav layer and scales cliffs/props to a
   high hero; Howler senses the hero, screams to pull nearby zombies; Burrower tunnels (untargetable mound) and
   pops up near the statue. Explosions are heavy hits and knock back.
+- Tactical zombie agents (section "Tactical zombie agents", shared tuning `CONFIG.AGENTS`): Imp, Foot Soldier, All-Star,
+  Captain Deadbeard (pirate), Super Brainz, Engineer (mechanic), Scientist = `ZOMBIE_TYPES` entries with `behavior: 'agent'`,
+  `targetPreference: 'agent'` and an `agent` role block (range band, placeholder weapon, `unlockWave`). Placeholder bean
+  capsules + generic shot/swing; real models, weapons and abilities not built yet. `thinkAgent` picks a plant (distance −
+  `h.opening` − squad focus, crowd penalty), human and AI alike; `updateHeroTactics` sets `h.opening` (reloading, low ammo,
+  spent abilities, low HP, isolated, busy with horde, airborne) and `h.hordeAng`. States hunt / stalk (screened behind the
+  horde side, slow pokes) / commit (opening or `groupPush` agents: flank angles off the horde side, full fire). No healing,
+  retreat or leash. `updateAgentDirector` drops 1–2 at the spawn nearest the squad while packs remain, up to `WAVES[i].agentCap`;
+  quiet stretches speed drops up. Debug key 0 spawns one of each.
 - Bosses: `miniBoss` Brute (`brute`: closest target, never gives up, telegraphed charge → dazed if dodged);
   `finalBoss` Zombie King (`overlord`: phases at 66/33% change targeting + call reinforcements; phase 2 armor
   only heavy hits break, hp locked; phase 3 enraged + charges). HUD boss bar shows armor.
@@ -86,9 +139,10 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 - Telegraphs: countdown shows spawn beacons + pulsing ground chevrons along each active route + HUD `#laneArrow`
   to the first pack's spawn; each pack drops a primitive ghost skull (`spawnSkull`, `skullTime` 20 s) at its spawn.
 - HUD (minimal, CSS tokens on `:root`): top-center Garden (statue) bar + wave/zombie line + boss bar; bottom-left
-  player HP (+ AI teammate bar above it); bottom-center abilities; bottom-right ammo. All HP bars use `setHudBar()`:
+  current plant HP + full squad list (YOU / AI, health, respawn timers); bottom-center current plant abilities;
+  bottom-right current weapon/ammo. AI characters have individual world health bars. All HP bars use `setHudBar()`:
   white lag chip that drains after a hit, shake + flash on damage, red pulse < 30%, glow while regenerating.
-- Passive regen: heroes (player + AI teammate) heal `regenRate` hp/s after `regenDelay` s without damage (`h.lastHurt`).
+- Passive regen: every squad member heals its own `stats.regenRate` hp/s after `stats.regenDelay` s without damage (`h.lastHurt`).
 - Audio (section "Audio", tuning `CONFIG.audio`): `SFX` = procedural WebAudio, no sample files. `SFX.init()` on the
   overlay click; `SFX.setActive` suspends all audio while paused / unfocused; `SFX.play(name, pos?, ...)` (pos = 3D: distance roll-off, air low-pass, camera pan, more reverb far;
   null = 2D) with per-name throttling; buses sfx/ui/ambience → compressor → limiter, convolver reverb. Helpers
@@ -97,10 +151,11 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   New sound = entry in the `S` library + a `SFX.play` at the event.
 - HUD corners: FPS counter top-right, `VERSION` bottom-right.
 - Nav fields are Float64 (`buildFlowField`): Float32 rounding made Dijkstra re-push cells forever (freeze).
-- Debug: T spawn/remove teammate; F1 teammate overlay (state, target, threat, path line, cooldowns); keys 1–9 spawn `debugPackSize` of a type at a random lane; N next wave; B Brute; V Zombie King; G test distraction at aim point; M top-down map
+- Debug: F1 first AI companion overlay (state, target, threat, path line, cooldowns; safe in solo); keys 1–9 spawn `debugPackSize` of a type at a random lane; N next wave; B Brute; V Zombie King; G test distraction at aim point; M top-down map
   (tiers, both routes per spawn + walk times, statue flow-field arrows, landmarks, live zombies; times also console.table); K spawns a 120-zombie stress horde. `?autoplay` runs
   without pointer lock (headless playtests).
-  `window.__game` exposes state/heroes/player/mate/camera/CONFIG/explodeAt/findPath/damageHero for console inspection.
+  `window.__game` exposes state/heroes/player/mate/corn/camera/CONFIG/PLANT_TYPES, `configureSquad` (pre-match / game-over
+  only), `switchSquadMember`, explodeAt/findPath/damageHero for console inspection. Dynamic getters track handoff.
 
 ## Code rules
 - All tuning numbers live in the `CONFIG` object at the top of the file.
@@ -109,8 +164,8 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 
 ## Direction
 - New zombie types: add an entry to `ZOMBIE_TYPES`; new special abilities get their own behavior function.
-- Likely next: special waves (via `modifiers`), a Chili Bean Bomb (`distractAt`), boss models, more plant heroes / AI roles
-  (new hero = `makeHero` + something that fills its `input`), music.
+- Likely next: special waves (via `modifiers`), boss models, more plant heroes / AI roles
+  (new hero = `CONFIG.PLANTS` data + `PLANT_TYPES` hooks; `makeHero` creates independent instances), music.
 - "Primitive shapes only" now means procedural geometry built in code (no external models/textures).
 
 ## Maintaining this file
