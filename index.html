@@ -264,7 +264,9 @@
   #reloadBar { width: 120px; height: 3px; background: rgba(255,255,255,0.12); margin: 7px 0 6px auto; border-radius: 2px; overflow: hidden; }
   #reloadFill { height: 100%; width: 0; background: var(--accent); }
   #fps { position: fixed; top: 8px; right: 10px; font: 11px monospace; color: var(--dim); pointer-events: none; }
-  #version { position: fixed; bottom: 4px; right: 8px; font: 10px monospace; color: var(--dim); opacity: 0.6; pointer-events: none; }
+  /* Stay above menu, loading and pause overlays as well as the in-game HUD. */
+  #version { position: fixed; bottom: 4px; right: 8px; z-index: 20; padding: 3px 6px; border-radius: 4px;
+    font: 11px monospace; color: var(--text); background: rgba(0,0,0,0.65); pointer-events: none; }
   #revive { position: fixed; transform: translate(-50%, -50%); text-align: center; pointer-events: none; display: none;
             text-shadow: 0 1px 4px rgba(0,0,0,0.8); font-size: 12px; font-weight: 700; letter-spacing: 1px; }
   #revive svg { display: block; margin: 0 auto 2px; transform: rotate(-90deg); }
@@ -410,8 +412,9 @@
 <script type="module">
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
-// Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.25.0';
+// Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
+const VERSION = 'v1.25.1';
+document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -1105,7 +1108,7 @@ const CONFIG = {
   // Player settings (menu / Esc pause screen), saved in localStorage. Quality: shadows, pixel ratio cap, particle cap
   settings: {
     storageKey: 'gardenDefense.settings',
-    defaults: { sensitivity: 1, volume: 0.8, music: 0.6, motion: 1, fov: 70, quality: 'high', difficulty: 'normal' },
+    defaults: { sensitivity: 1, volume: 0.4, music: 0.6, motion: 1, fov: 70, quality: 'high', difficulty: 'normal' },
     sensitivity: [0.3, 3], fov: [55, 95],
     QUALITY: {
       low:  { name: 'Low',  shadows: false, shadowMap: 1024, pixelRatio: 0.75, particles: 150 },
@@ -19758,7 +19761,6 @@ const setText = (el, v) => { v = String(v); if (el.textContent !== v) el.textCon
 const setHtml = (el, v) => { if (el._html !== v) { el._html = v; el.innerHTML = v; } };
 const crossTicks = { t: document.querySelector('#crosshair .t'), b: document.querySelector('#crosshair .b'),
                      l: document.querySelector('#crosshair .l'), r: document.querySelector('#crosshair .r') };
-hud('version').textContent = VERSION;
 // Animated HUD health bar: the fill snaps, a white "lag" chip shows recent damage and drains after a beat,
 // the box shakes + flashes on a hit, pulses red when low and glows while regenerating.
 const hudBars = {};
