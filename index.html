@@ -218,7 +218,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.11.4';
+const VERSION = 'v1.12.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -7420,7 +7420,7 @@ function animateAllStar(z, dt) {
   const R = z.parts.rig, n = R.n, a = z.ai, p = z.mesh.position, t = state.time, B = k => n[k].userData.base;
   if (z.stun > 0 && a.tackle) endAllStarTackle(z, false);
   // hit flash / tackle wind-up glow on every PBR material
-  const fl = z.flash > 0 ? 0.6 : 0, gl = z.glow;
+  const fl = z.flash > 0.05 ? 0.28 : 0, gl = z.glow;   // short flicker, so sustained fire doesn't wash the model out
   const key = fl + gl * 10;
   if (key !== R.lastFlash) {
     R.lastFlash = key;
@@ -7952,11 +7952,11 @@ function allStarBehavior(z, t, dt) {
   if (a.los || dHero < 4) faceToward(z, hp, dt); else if (recent && a.seen) faceToward(z, a.seen, dt);
   z.mode = anchored ? 'attack' : a.state === 'commit' ? 'attack' : a.state === 'stalk' ? 'chase' : 'advance';
   // Football Cannon: spin up, sustained fire (keeps hosing the last seen spot briefly after losing sight)
-  const want = a.reloadT <= 0 && a.ammo > 0 && (a.los ? dHero < A.range[1] * 1.4 : recent && dHero < A.range[1]);
+  const want = !(a.reloadT > 0) && a.ammo > 0 && (a.los ? dHero < A.range[1] * 1.4 : recent && dHero < A.range[1]);
   if (want && !a.wantFire) SFX.play('asSpin', pos);
   a.wantFire = want;
   a.spin = want ? Math.min(1, (a.spin || 0) + dt / C.spinUp) : Math.max(0, (a.spin || 0) - dt / C.spinDown);
-  if (!a.los && !recent && a.reloadT <= 0 && a.ammo < A.clip * AG.tacticalReloadFrac) { a.reloadT = A.reloadTime; SFX.play('asReload', pos, false); return; }
+  if (!a.los && !recent && !(a.reloadT > 0) && a.ammo < A.clip * AG.tacticalReloadFrac) { a.reloadT = A.reloadTime; SFX.play('asReload', pos, false); return; }
   if (!want || a.spin < 1 || z.attackTimer > 0) return;
   z.attackTimer = A.fireRate * (a.state === 'stalk' && !anchored ? C.stalkMult : 1);
   allStarShoot(z, h, a.los ? hp : a.seen, a.los);
@@ -8062,7 +8062,7 @@ const ENG_MAT = (() => {
     tank: std(0x8d969c, 0.35, { metalness: 0.7 }), concrete: std(0xa9a397, 0.95),
     // Unlit lights (not flashed)
     red: new THREE.MeshBasicMaterial({ color: 0xff3020 }), blue: new THREE.MeshBasicMaterial({ color: 0x39d0ff }),
-    cyan: new THREE.MeshBasicMaterial({ color: 0x7af2ff }), flash: new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.9, depthWrite: false }),
+    cyan: new THREE.MeshBasicMaterial({ color: 0x7af2ff }), flash: new THREE.MeshBasicMaterial({ color: 0xffb85a, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
   };
 })();
 
@@ -8122,7 +8122,7 @@ function buildConcreteLauncher(M) {
     for (const t of [-0.08, 0.08]) part(new THREE.BoxGeometry(0.035, 0.05, 0.05), M.dark, lip, 0, t, 0.035);
   }
   const muzzle = node(gun, 'muzzle', 0, 0.065, 0.95);
-  const flash = part(new THREE.SphereGeometry(0.16, 10, 8), M.flash, muzzle, 0, 0, 0.05, 0, 0, 0, 1, 1, 1.6);
+  const flash = part(new THREE.SphereGeometry(0.12, 10, 8), M.flash, muzzle, 0, 0, 0.06, 0, 0, 0, 1, 1, 1.5);
   flash.name = 'muzzleFlash'; flash.visible = false; flash.castShadow = false;
   // Hose stub from the receiver toward the back tank
   const hose = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.08, 0.04, -0.05), new THREE.Vector3(-0.16, -0.06, -0.12), new THREE.Vector3(-0.16, -0.2, -0.05)]);
@@ -11968,8 +11968,9 @@ function buildSuperBrainzTemplate() {
   }
 
   // ---- Head: square jaw (opens), buggy eyes in a domino mask with trailing tails, giant pompadour ----
-  const neck = pivot(spine, 'sbNeck', [0, 0.9, 0.03]);
-  const head = pivot(neck, 'sbHead', [0, 0.1, 0]);
+  const neck = pivot(spine, 'sbNeck', [0, 0.84, 0.03]);
+  const head = pivot(neck, 'sbHead', [0, 0.05, 0]);
+  head.scale.setScalar(1.32);   // big cartoon head, like the reference
   ell(head, mat.skin, [0, 0.16, -0.03], [0.235, 0.24, 0.245]);                              // cranium
   ell(head, mat.skin, [0, 0.11, 0.08], [0.25, 0.13, 0.215]);                               // face
   for (const s of [1, -1]) {

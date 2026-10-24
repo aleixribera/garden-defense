@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.11.4)
+## Current state (v1.12.0)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -125,6 +125,18 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   (`gooPellets`, distance falloff). `scientistBehave`: Warp behind a plant (commit, plant opening or long stalk) or away
   when low; Sticky Explody Ball (`stickyBalls`, sticks to plants, beeps, AoE); Heal Station = a destructible zombie
   (`healStation` behavior) healing zombies in its aura; holds there until healed. Tests: `tests/scientist.cjs`.
+- Engineer agent (`mechanic`, section "Engineer", tuning `CONFIG.ENGINEER`, kit via `agent.kit: 'engineer'` →
+  `AGENT_KITS.engineer` called by `agentBehavior` after movement; `a.ram` / `a.moveMult` steer it): `engineerTemplate`
+  (built once, cloned per spawn with own materials in `makeEngineerBody`): glossy hard hat with ridges + pencil, one
+  bulging eye + droopy eye with blinking lids, gap-toothed jaw, open orange shirt over undershirt belly, hi-vis vest with
+  reflective bands, belt + tool pouch + wrench, jeans with one boot and one torn hem / bare foot, back tank, hazard-striped
+  Concrete Launcher (canvas textures). `animateEngineer`: waddle/belly jiggle, lob-elevation aim, recoil + flash, reload,
+  overhand throw, jackhammer ride buzz + dust; death pops the hat and launcher off (`engineerDebris`). Kit: Concrete
+  Launcher lobs (`engineerShells`, direct + cover-checked splash); Q Sonic Grenade (`sonicGrenades`, bounces → pulse sets
+  hero `h.jam`: `updateHero` blocks new Q/E/F unless exiting a rooted mode, slows; human gets the `jamFx` overlay);
+  E Jackhammer (fast ram, knockback, no shooting); F Turret = `engineerTurret` stationary zombie (`turretBehavior`,
+  `mechanical`: no moans, expires / dies with its owner). Use: jackhammer for long travel or push gap-close; grenade vs
+  rooted / exposed / clustered plants or when hurt; turret once a fight starts. `__game` exposes engineer hooks.
 - Bosses: `miniBoss` Brute (`brute`: closest target, never gives up, telegraphed charge → dazed if dodged);
   `finalBoss` Zombie King (`overlord`: phases at 66/33% change targeting + call reinforcements; phase 2 armor
   only heavy hits break, hp locked; phase 3 enraged + charges). HUD boss bar shows armor.
@@ -173,6 +185,10 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   without pointer lock (headless playtests).
   `window.__game` exposes state/heroes/player/mate/corn/camera/CONFIG/PLANT_TYPES, `configureSquad` (pre-match / game-over
   only), `switchSquadMember`, explodeAt/findPath/damageHero for console inspection. Dynamic getters track handoff.
+
+- Super Brainz (section "Super Brainz", `CONFIG.SUPER_BRAINZ`): sculpted procedural model + rig (`attachSuperBrainzRig`,
+  `animateSuperBrainz`), kit Heroic Fists combo / Heroic Beam / Super Ultra Ball / Heroic Kick / Turbo Twister, own brain
+  `superBrainzBehavior` on top of thinkAgent. Damage below plants.
 
 ## Code rules
 - All tuning numbers live in the `CONFIG` object at the top of the file.
