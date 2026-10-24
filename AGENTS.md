@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.11.3)
+## Current state (v1.11.4)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -109,6 +109,14 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   retreat or leash. Spawning: `queueEscorts` gives each wave pack a chance (`AGENTS.escort`) to bring 1–2 agents
   `escort.delay` s after its burst, same spawn/route, capped by `WAVES[i].agentCap`; they 'guard' (trail the pack) until a
   plant nears the pack or hits them, or the pack dies. Weapon damage × `AGENTS.damageMult`. Debug key 0 spawns one of each.
+- Imp agent (section "Imp", tuning `CONFIG.IMP`, `behavior: 'imp'`): `buildImp` procedural rig (pear head with bulging
+  eyes/lids, grin, helmet + headphones + spring antenna, orange suit, stripes, canisters, twin yellow blasters) on the
+  invisible zombie capsule (`setupImp`, `z.rig`, `z.imp`); `animateImp` runs from `updateZombieLook` (gait, springs,
+  aim/recoil, reload twirl, blink). `impBehavior`: thinkAgent target/state, circle-strafe band, double-jump hops +
+  evasive dodges (`impVertical` after `constrainZombie`), alternating Imp Blaster bursts, Gravity Grenade (vortex sets
+  hero `floatT` — `updateHero` hovers/slows them), Impkata star barrage. Z-Mech (`buildZMech`): charges over time, drops
+  onto the Imp, swaps `z.def` to `IMP_MECH_DEF`, own hp via `damageZMech`; minigun, Robo-Stomp, jet dash, Eject at low hp
+  (empty mech blows up). World objects in `updateImpWorld` / `clearImpWorld`; enemy projectiles accept `r`, `onEnd`, `spin`, `trail`.
 - Scientist agent (section "Scientist", tuning `ZOMBIE_TYPES.scientist.agent/kit`, `healStation`): procedural rig
   (`buildScientistTemplate` built once, cloned per spawn with own materials via `attachAgentRig` → parts.animate /
   flashMats / dispose): wild white hair locks, riveted goggles with magnified eyes, open toothy mouth, stained lab coat,
