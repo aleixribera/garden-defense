@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.12.3)
+## Current state (v1.12.4)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -66,7 +66,9 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
 - Controls: WASD (accelerated), Shift sprint (`sprintMult`, forward only; fire/zoom/reload cancel), Space jump,
   over-the-shoulder camera, RMB zoom, R reload.
 - Camera feel (`updateCamera`, tuning in `CONFIG.camera`, state in `state.cam`): smoothed pivot, speed/sprint FOV +
-  pull-back, head bob, strafe roll, landing spring dip, hurt flinch + FOV punch, layered-sine trauma shake. Overlays:
+  pull-back, head bob, strafe roll, landing spring dip, hurt flinch + FOV punch, layered-sine trauma shake.
+  Weapon recoil is a bounded temporary pitch offset that recovers without changing mouse aim; resets on handoff/match reset.
+  Regression checks: `tests/recoil.cjs`. Overlays:
   `#hurtTint` red flash on damage, `#vignette` hurt + low-HP heartbeat pulse, `#speedFx` sprint tunnel.
   Weapon `CONFIG.weapon`: Cob Busters — alternating-arm kernel shots, clip/reload, spread + bloom.
   Abilities `CONFIG.abilities`: Q Shuck Shot (cob missile volley, AoE), E Husk Hop (leap, hold Space to glide,

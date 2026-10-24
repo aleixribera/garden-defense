@@ -218,7 +218,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.12.3';
+const VERSION = 'v1.12.4';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -391,6 +391,7 @@ const CONFIG = {
     distance: 5.2, aimDistance: 3.4,  // hip / zoomed
     height: 1.0, shoulder: 1.05,      // pivot above player center, and to the right
     fov: 70, aimFov: 50, sensitivity: 0.0025,
+    recoilRecovery: 8, recoilMax: 0.08, // temporary pitch kick: return rate (1/s) and maximum rise (rad)
     // Dynamic feel (all small on purpose — readable, never dizzy)
     follow: 16, followY: 9,           // pivot catch-up rate (1/s); vertical is softer so steps/jumps glide
     sprintFov: 9, sprintDistance: 0.6, // extra FOV / pull-back at full sprint
@@ -2121,7 +2122,7 @@ function fireCactusSpike(h) {
   const W = h.weapon, { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
   spawnCactusNeedle(h, start, dir, W); h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   arm.recoil = 1; arm.flashT = 0.055;
-  if (!h.isAI) { state.pitch = Math.max(-0.6, state.pitch - W.recoilKick * (1 - h.zoom * 0.3)); addShake(0.055); }
+  if (!h.isAI) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.3)); addShake(0.055); }
   SFX.play('cactusSpike', start, h.isAI);
 }
 function makeGarlicDrone() {
@@ -3095,7 +3096,7 @@ function resetGame() {
     barrages: [],
     shake: 0, fovKick: 0, hurt: 0, hitmarker: 0,
     // camera feel: smoothed pivot, bob phase, roll, landing spring, hurt flinch, last airborne fall speed
-    cam: { pivot: null, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: 0, wasGround: true },
+    cam: { pivot: null, recoilPitch: 0, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: 0, wasGround: true },
   };
   for (const h of heroes) {
     h.cd.shuckShot = h.cd.huskHop = h.cd.butterBarrage = 0;
@@ -3889,7 +3890,7 @@ function fireKernel(h) {
   h.ammo--;
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   if (!h.isAI) {   // camera recoil + shake belong to the human's view
-    state.pitch = Math.max(-0.6, state.pitch - W.recoilKick * (1 - 0.5 * h.zoom));
+    addCameraRecoil(W.recoilKick * (1 - 0.5 * h.zoom));
     addShake(0.035);
   }
   muzzleFx(arm, start, 1);
@@ -4248,7 +4249,7 @@ function fireSunPulse(h) {
   const arm = h.corn.arms[0]; arm.recoil = 1; arm.flashT = 0.045;
   muzzleLight.position.copy(start); muzzleLight.intensity = 2.4;
   SFX.play('sunPulse', start, h.isAI);
-  if (!h.isAI) { state.pitch = Math.max(-0.6, state.pitch - W.recoilKick * (1 - h.zoom * 0.5)); addShake(F.shake); }
+  if (!h.isAI) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.5)); addShake(F.shake); }
 }
 function traceSunbeam(h, applyDamage) {
   const A = h.abilities.huskHop, F = CONFIG.SUNFLOWER.fx, start = sunflowerMuzzle(h);
@@ -4749,7 +4750,7 @@ function firePea(h, gatling = false) {
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   muzzleFx(arm, start, gatling ? 0.35 : 1.25);
   if (!h.isAI) {
-    state.pitch = Math.max(-0.6, state.pitch - W.recoilKick * (gatling ? 0.16 : 1) * (1 - h.zoom * 0.4));
+    addCameraRecoil(W.recoilKick * (gatling ? 0.16 : 1) * (1 - h.zoom * 0.4));
     addShake(gatling ? F.gatlingShake : F.cameraShake);
   }
   SFX.play('peaShot', start, h.isAI, gatling);
@@ -14635,9 +14636,17 @@ function updateWaves(dt) {
 
 // Over-the-shoulder orbit camera. Feel layers (all deliberately small): smoothed pivot, speed/sprint FOV + pull-back,
 // head bob, strafe roll, landing spring dip, hurt flinch, and trauma shake built from layered sines (less periodic).
+function addCameraRecoil(kick) {
+  // Preserve the mouse's aim angle; only this temporary offset returns after firing.
+  // Cap at the upward look limit so clipped kicks never build up a hidden recovery.
+  const cs = state.cam;
+  cs.recoilPitch = Math.min(cs.recoilPitch + kick, CONFIG.camera.recoilMax, Math.max(0, state.pitch + 0.6));
+}
 function updateCamera(dt) {
+  state.cam.recoilPitch *= Math.exp(-dt * CONFIG.camera.recoilRecovery);
   if (player.cactus?.drone) { updateGarlicCamera(dt); return; }
   const c = CONFIG.camera, cs = state.cam, h = player;
+  const pitch = THREE.MathUtils.clamp(state.pitch - cs.recoilPitch, -0.6, 1.2);
   const P = h.stats;
   const z = h.zoom, sp = h.sprint;
   const hSpeed = Math.hypot(h.vel.x, h.vel.z), speedK = Math.min(1, hSpeed / P.speed);
@@ -14674,9 +14683,9 @@ function updateCamera(dt) {
   const target = cs.pivot.clone().addScaledVector(right, shoulder + bobX);
   target.y += bobY + cs.land;
   const offset = new THREE.Vector3(
-    Math.sin(state.yaw) * Math.cos(state.pitch) * dist,
-    Math.sin(state.pitch) * dist,
-    Math.cos(state.yaw) * Math.cos(state.pitch) * dist
+    Math.sin(state.yaw) * Math.cos(pitch) * dist,
+    Math.sin(pitch) * dist,
+    Math.cos(state.yaw) * Math.cos(pitch) * dist
   );
   // Don't let the camera clip into the statue: march out from the pivot and stop just before the box
   const margin = 0.3;
@@ -14888,7 +14897,7 @@ function takeControl(h) {
   if (!previous.dead) resetBrain(previous);
   if (!h.dead) resetBrain(h);
   state.yaw = h.yaw; state.pitch = THREE.MathUtils.clamp(-h.aimElev, -0.6, 1.2);
-  state.cam = { pivot: null, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: h.vel.y, wasGround: h.onGround };
+  state.cam = { pivot: null, recoilPitch: 0, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: h.vel.y, wasGround: h.onGround };
   state.shake = state.hurt = state.hitmarker = state.fovKick = 0;
   delete hudBars.playerBox;
   hud('playerBox').classList.remove('hit');
