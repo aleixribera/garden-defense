@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.14.0';
+const VERSION = 'v1.14.1';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -658,7 +658,7 @@ const CONFIG = {
     // Pack escorts: each pack of a wave may bring agents that spawn escortDelay s after the pack's burst and guard it.
     // chance = per pack (+ chancePerWave each wave); at most WAVES[i].agentCap per wave (more with more plants).
     // A pack that rolls an escort brings minPerPack agents, then keeps adding one more while a moreChance roll passes.
-    escort: { delay: 3, chance: 0.7, chancePerWave: 0.08, minPerPack: 2, moreChance: 0.55, maxPerPack: 8,
+    escort: { delay: 3, chance: 0.35, chancePerWave: 0.04, minPerPack: 2, moreChance: 0.55, maxPerPack: 8,
               capMult: 2, capPerHero: 0.35,
               followDist: 4,       // guards trail the pack's center by this much (behind it, toward its spawn)
               engageRange: 22,     // a plant this close to the pack or the guard breaks guard and starts the hunt
