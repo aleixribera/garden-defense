@@ -218,7 +218,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.12.2';
+const VERSION = 'v1.12.3';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -3075,7 +3075,7 @@ function resetGame() {
   clearEngineerWorld();
   clearSoldierWorld();
   clearPirateWorld();
-  zombies.forEach(z => { z.dead = true; });   // frees their attack slots
+  zombies.forEach(z => { z.dead = true; z.parts.dispose?.(); });   // release each rig's own resources
   [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects, ...particles]
     .forEach(o => scene.remove(o.mesh));
   popups.forEach(p => p.el.remove());
@@ -11391,7 +11391,7 @@ const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffd25a, transparent: tr
 const cloudPuffGeo = new THREE.IcosahedronGeometry(1, 2);
 
 function clearSoldierWorld() {
-  for (const z of zombies) if (z.parts.rig) disposeSoldierRig(z.parts.rig);
+  for (const z of zombies) if (z.def.model === 'soldier' && z.parts.rig) disposeSoldierRig(z.parts.rig);
   for (const r of soldierRockets) scene.remove(r.mesh);
   for (const g of stinkGrenades) scene.remove(g.mesh);
   for (const c of stinkClouds) { scene.remove(c.mesh); c.mat.dispose(); c.ringMat.dispose(); }

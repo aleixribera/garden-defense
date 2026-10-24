@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.12.2)
+## Current state (v1.12.3)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -101,8 +101,8 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   pops up near the statue. Explosions are heavy hits and knock back.
 - Tactical zombie agents (section "Tactical zombie agents", shared tuning `CONFIG.AGENTS`): Imp, Foot Soldier, All-Star,
   Captain Deadbeard (pirate), Super Brainz, Engineer (mechanic), Scientist = `ZOMBIE_TYPES` entries with `behavior: 'agent'`,
-  `targetPreference: 'agent'` and an `agent` role block (range band, placeholder weapon, `unlockWave`). Placeholder bean
-  capsules + generic shot/swing; real models, weapons and abilities not built yet. `thinkAgent` picks a plant (distance −
+  `targetPreference: 'agent'` and an `agent` role block (range band, kit, `unlockWave`). Procedural models and individual
+  weapon/ability kits replace the shared fallback shot/swing. `thinkAgent` picks a plant (distance −
   `h.opening` − squad focus, crowd penalty), human and AI alike; `updateHeroTactics` sets `h.opening` (reloading, low ammo,
   spent abilities, low HP, isolated, busy with horde, airborne) and `h.hordeAng`. States hunt / stalk (screened behind the
   horde side, slow pokes) / commit (opening or `groupPush` agents: flank angles off the horde side, full fire). No healing,
@@ -137,6 +137,10 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   E Jackhammer (fast ram, knockback, no shooting); F Turret = `engineerTurret` stationary zombie (`turretBehavior`,
   `mechanical`: no moans, expires / dies with its owner). Use: jackhammer for long travel or push gap-close; grenade vs
   rooted / exposed / clustered plants or when hurt; turret once a fight starts. `__game` exposes engineer hooks.
+- Captain Deadbeard (`pirate`, `CONFIG.PIRATE`): procedural rig, telegraphed scoped Scallywag Shooter, armored Barrel
+  Blast, rooted Cannon Rodeo with ballistic shots, and Parrot Pal. `piratePerch` favors elevated firing positions;
+  `updatePirateWorld` handles shots, kegs and parrots. Tests and previews: `tests/pirate.cjs`, `docs/pirate-*.png`.
+  Match reset disposes each agent through its own parts contract; Foot Soldier cleanup only accepts soldier rigs.
 - Bosses: `miniBoss` Brute (`brute`: closest target, never gives up, telegraphed charge → dazed if dodged);
   `finalBoss` Zombie King (`overlord`: phases at 66/33% change targeting + call reinforcements; phase 2 armor
   only heavy hits break, hp locked; phase 3 enraged + charges). HUD boss bar shows armor.
