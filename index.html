@@ -38,7 +38,10 @@
   #hud, #ammo, #abilities { pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
   #hud .label, #ammo .label { color: rgba(255,255,255,0.85); }
   /* Top center: garden (statue) health + wave status + boss */
-  #top { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); width: min(420px, 70vw); text-align: center; pointer-events: none; }
+  /* Shared glass panel for the HUD blocks (top status, squad, ammo) */
+  .panel { background: var(--panel); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line), 0 4px 18px rgba(0,0,0,0.25);
+           backdrop-filter: blur(4px); padding: 10px 14px; box-sizing: border-box; }
+  #top { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); width: min(440px, 70vw); text-align: center; pointer-events: none; }
   #top .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
   #top .num { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
   #gardenBox .hbar { height: 12px; --c: var(--garden); }
@@ -49,18 +52,31 @@
   #bossName { color: var(--boss); }
 
   /* Bottom left: player (+ teammate) health */
-  #heroes { position: fixed; left: 24px; bottom: 24px; width: 260px; pointer-events: none; }
+  #heroes { position: fixed; left: 20px; bottom: 20px; width: 270px; pointer-events: none; }
   #heroes .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
   #playerBox .hbar { height: 14px; }
   #playerHpNum { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
   #playerHpNum small { font-size: 13px; color: var(--dim); font-weight: 600; }
-  #squadHud { margin-bottom: 14px; display: grid; gap: 10px; }
-  .squadMember { padding-left: 10px; border-left: 3px solid var(--mate); }
+  /* Squad cards: icon + name + hp; a fallen plant's card dims and shows a draining respawn bar + countdown */
+  #squadHud { margin-bottom: 10px; display: grid; gap: 6px; }
+  .squadMember { display: grid; grid-template-columns: 26px 1fr; column-gap: 8px; align-items: center; padding: 6px 10px;
+                 border-radius: 9px; background: var(--panel); box-shadow: inset 3px 0 0 var(--mate), inset 0 0 0 1px var(--line); }
+  .squadMember .icon { grid-row: span 2; font-size: 18px; text-align: center; }
+  .squadMember .row { margin-bottom: 3px !important; }
   .squadMember .hbar { height: 5px; --c: var(--mate); }
   .squadMember .label { font-size: 10px; letter-spacing: 1px; color: var(--text); }
-  .squadMember .num { font-size: 11px; color: var(--dim); }
-  .squadMember.controlled { border-color: var(--accent); }
-  #squadHint { font-size: 11px; color: var(--dim); margin-top: 9px; }
+  .squadMember .num { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .squadMember.controlled { box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px rgba(255,216,74,0.35); }
+  .squadMember.fallen { opacity: 0.85; }
+  .squadMember.fallen .icon { filter: grayscale(1); opacity: 0.6; }
+  .squadMember.fallen .hbar { --c: var(--danger); }
+  .squadMember.fallen .num { color: var(--danger); font-weight: 800; }
+  #playerBox { padding: 10px 12px; }
+  #squadHint { font-size: 10px; color: var(--dim); margin-top: 7px; letter-spacing: 0.5px; }
+  /* Respawn tags floating over fallen allies */
+  #fallenTags .tag { position: fixed; transform: translate(-50%, -100%); pointer-events: none; padding: 3px 8px; border-radius: 10px;
+    background: rgba(40,8,6,0.7); box-shadow: inset 0 0 0 1px rgba(255,90,74,0.5); font-size: 11px; font-weight: 800;
+    letter-spacing: 1px; color: #ffd0c8; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
 
   #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
              background: radial-gradient(ellipse at center, rgba(10,20,12,0.55), rgba(0,0,0,0.85)); text-align: center; cursor: pointer; z-index: 10; }
@@ -124,7 +140,7 @@
   .ab.ready .key { color: var(--accent); }
   .ab.active { box-shadow: inset 0 0 0 2px #fff, 0 0 16px rgba(255,255,255,0.5); transform: translateY(-3px); }
   /* Ammo (bottom right) */
-  #ammo { position: fixed; right: 24px; bottom: 24px; text-align: right; pointer-events: none; }
+  #ammo { position: fixed; right: 20px; bottom: 20px; text-align: right; pointer-events: none; min-width: 150px; }
   #ammo .n { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
   #ammo .max { font-size: 15px; color: var(--dim); font-weight: 600; }
   #reloadBar { width: 120px; height: 3px; background: rgba(255,255,255,0.12); margin: 7px 0 6px auto; border-radius: 2px; overflow: hidden; }
@@ -156,7 +172,7 @@
 </head>
 <body class="preMatch">
 <div id="hud">
-  <div id="top">
+  <div id="top" class="panel">
     <div class="hbox" id="gardenBox">
       <div class="row"><span class="label">Garden</span><span class="num" id="gardenNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
@@ -169,7 +185,7 @@
   </div>
   <div id="heroes">
     <div id="squadHud"></div>
-    <div class="hbox" id="playerBox">
+    <div class="hbox panel" id="playerBox">
       <div class="row"><span class="label" id="playerLabel">Kernel Corn</span><span id="playerHpNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
     </div>
@@ -181,13 +197,13 @@
 <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
 <div id="hitmarker"></div>
 <div id="vignette"></div><div id="hurtTint"></div><div id="stinkFx"></div><div id="speedFx"></div>
-<div id="popups"></div>
+<div id="popups"></div><div id="fallenTags"></div>
 <div id="abilities">
   <div class="ab" id="ab-shuckShot"><span class="key">Q</span><div class="icon">🌽</div><div class="name">Shuck Shot</div><div class="cd"></div><div class="cdt"></div></div>
   <div class="ab" id="ab-huskHop"><span class="key">E</span><div class="icon">🍃</div><div class="name">Husk Hop</div><div class="cd"></div><div class="cdt"></div></div>
   <div class="ab" id="ab-butterBarrage"><span class="key">F</span><div class="icon">🧈</div><div class="name">Butter Barrage</div><div class="cd"></div><div class="cdt"></div></div>
 </div>
-<div id="ammo"><span class="n" id="ammoN">0</span><span class="max" id="ammoMax"></span>
+<div id="ammo" class="panel"><span class="n" id="ammoN">0</span><span class="max" id="ammoMax"></span>
   <div id="reloadBar"><div id="reloadFill"></div></div><div class="label" id="weaponLabel">COB BUSTERS</div></div>
 <div id="targetHint">BUTTER BARRAGE — Left click to call the strike · Right click to cancel</div>
 <div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div></div>
@@ -215,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.13.0';
+const VERSION = 'v1.14.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -225,7 +241,9 @@ const CONFIG = {
   // Hidden garden alert: a zombie hitting the garden draws nearby AI plants onto it and pulls distant ones closer
   gardenAlert: { duration: 10, respondRadius: 40, pullScale: 0.55 },
   squad: { maxCompanions: 3, defaults: ['corn', 'peashooter', 'sunflower', 'cactus'], respawnDelay: 20,
-    aiRooted: { maxTime: 8, idleTime: 2 },   // AI cancels a rooted ability after this long, or after this long without firing
+    aiRooted: { maxTime: 8, idleTime: 2 },
+    // AI plants that push a direction but barely move escalate: jump + repath → escape walk → snap to an open cell
+    aiStuck: { window: 1, minProgress: 0.9, escapeTime: 1, probe: 4, snapStrikes: 3 },   // AI cancels a rooted ability after this long, or after this long without firing
     spawnPoints: [[0, 6], [6, 0], [0, -6], [-6, 0]] },
   // Roster data only: future entries supply their own stats, weapon, abilities and rig / AI hooks.
   // Empty overrides inherit Kernel Corn's existing tuning below. Every hero gets its own copy.
@@ -298,7 +316,13 @@ const CONFIG = {
       fireCone: 0.055, headAim: 0.3, comfortableRange: [20, 38], retreatRange: 12,
       mineRange: 9, mineSpacing: 3.5, mineEvery: 2.5, stuckJump: 0.65,
       gardenWeight: 1, distanceWeight: 0.2, postHeightWeight: 0.8, postMoveWeight: 0.15,
-      retreatSamples: 12, retreatStep: 4, guardMargin: 1 },
+      retreatSamples: 12, retreatStep: 4, guardMargin: 1,
+      // Fortify: between fights (no target closer than busyRange) the AI walks to a ring around the statue, faces
+      // outward and plants a Potato Mine or Tallnut Battlement where its defenses are thinnest (toward the horde).
+      fortify: { every: 3, busyRange: 26, mineRing: [9, 15], wallRing: [11, 17], angles: 16, wallChance: 0.45,
+        timeout: 10, alignCone: 0.12, hordeWeight: 1.2 },
+      // Garlic Drone: launched when a target sits beyond droneRange and nothing is within droneSafe of the Cactus
+      droneRange: 24, droneSafe: 14 },
   },
   SUNFLOWER: {
     camera: { shoulder: 2.1, aimShoulder: 2.15 }, // keep the broad crown clear of the reticle
@@ -419,6 +443,7 @@ const CONFIG = {
   //     'none'       — no target of its own (Banner: follows the pack)
   //     'highGround' — hero only when they're up high / out of ground reach (Climber)
   //     'closest'    — whichever of hero / statue is nearer, no sight needed (bosses)
+  //     'heroFirst'  — any plant within aggroRange before the statue, no sight needed (bosses)
   //   Optional: noLos (senses the hero without sight), ignoreLeash (no chase timeout / sight loss),
   //   canClimb (uses the climb nav layer), reachesHighGround (may target a hero with no ground path).
   ZOMBIE_TYPES: {
@@ -575,14 +600,14 @@ const CONFIG = {
     // BOSSES — they break the shared rules instead of being plain health sponges.
     miniBoss: {
       name: 'Gargantuar', boss: true,
-      hp: 3000, speed: 2.6, damage: 40, attackCooldown: 1.5,
-      aggroRange: 60, deaggroRange: 80, targetPreference: 'closest', ignoreLeash: true, noLos: true,
+      hp: 6000, speed: 2.6, damage: 40, attackCooldown: 1.5,
+      aggroRange: 90, deaggroRange: 110, targetPreference: 'heroFirst', ignoreLeash: true, noLos: true,
       reachesHighGround: true, radius: 1.35, height: 3.8, color: 0x829166, behavior: 'gargantuar', knockbackResist: 1,
     },
     finalBoss: {
       name: 'Mecha Gargantuar', boss: true, mechanical: true,
-      hp: 3200, speed: 2.5, damage: 40, attackCooldown: 2.8,
-      aggroRange: 65, deaggroRange: 90, targetPreference: 'closest', ignoreLeash: true, noLos: true,
+      hp: 6400, speed: 2.5, damage: 40, attackCooldown: 2.8,
+      aggroRange: 90, deaggroRange: 110, targetPreference: 'heroFirst', ignoreLeash: true, noLos: true,
       reachesHighGround: true, radius: 2.15, height: 5.1, color: 0x713e3d, behavior: 'mecha', knockbackResist: 1,
     },
   },
@@ -632,7 +657,9 @@ const CONFIG = {
     tacticalReloadFrac: 0.5,     // reload out of sight when below this fraction of the clip
     // Pack escorts: each pack of a wave may bring agents that spawn escortDelay s after the pack's burst and guard it.
     // chance = per pack (+ chancePerWave each wave); at most WAVES[i].agentCap per wave (more with more plants).
-    escort: { delay: 3, chance: 0.35, chancePerWave: 0.04, perPack: [1, 2], capPerHero: 0.35,
+    // A pack that rolls an escort brings minPerPack agents, then keeps adding one more while a moreChance roll passes.
+    escort: { delay: 3, chance: 0.7, chancePerWave: 0.08, minPerPack: 2, moreChance: 0.55, maxPerPack: 8,
+              capMult: 2, capPerHero: 0.35,
               followDist: 4,       // guards trail the pack's center by this much (behind it, toward its spawn)
               engageRange: 22,     // a plant this close to the pack or the guard breaks guard and starts the hunt
               // Lively escorts: each guard roams its own drifting orbit around the pack (scouting ahead, sweeping
@@ -737,7 +764,8 @@ const CONFIG = {
     retargetCooldown: 1.5,       // min seconds between target switches
     reaggroCooldown: 4,          // ignore the hero this long after giving up a chase
     packAlertRadius: 10, packAlertDelay: [0.2, 0.8],   // packmates join a spotted chase after a reaction delay
-    directChaseRange: 10,        // steer straight at a visible hero inside this, else use the hero flow field
+    directChaseRange: 10,
+    lineCheck: 0.25,             // s between "is the straight line to my hero walkable?" checks        // steer straight at a visible hero inside this, else use the hero flow field
     playerFieldInterval: 0.4,    // hero flow field rebuild period while someone needs it
     speedJitter: 0.1,            // ±10% speed per zombie
     separation: 1.0,             // extra spacing (m) packmates try to keep
@@ -747,7 +775,7 @@ const CONFIG = {
     heroRise: 1.6,               // hero feet this far above the terrain = on a prop (no ground path)
     slots: { statueOffset: 0.75, statueSpacing: 1.5, statueClaim: 9, queueDist: 3.5,
              heroRadius: 1.6, heroCount: 6, heroClaim: 5, heroHold: 3.2 },
-    stuck: { window: 2, minProgress: 0.6, nudgeTime: 0.7 },
+    stuck: { window: 1.2, minProgress: 0.6, nudgeTime: 0.9, teleportStrikes: 4 },
     distractionRadius: 14,       // default pull radius of a distraction (Chili Bean Bomb, etc.)
     // Several heroes: a zombie targets the best-scoring one = distance − recentDamageBonus if that hero hurt it
     // within recentDamageTime; it switches heroes (retarget cooldown permitting) only when another scores heroSwitchMargin better
@@ -907,6 +935,8 @@ const CONFIG = {
   skullTime: 20,                // the ghost skull marks where a pack spawned for this many seconds
   markerArrowLength: 48,        // metres of each active route shown by ground arrows during the countdown
   maxParticles: 450,
+  plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
+  fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
 
   // Waves as data. Each wave: { lanes?, packs: [{ spawn?, route?, delay, zombies: { type: count } }], modifiers: [] }
   //   lanes     — optional: spawns this wave may use; packs without `spawn` take them in turn
@@ -1162,6 +1192,131 @@ scene.add(rimLight);
 // Muzzle flash light, moved to whichever cob just fired
 const muzzleLight = new THREE.PointLight(0xffc860, 0, 7, 2);
 scene.add(muzzleLight);
+// Pooled effect point lights: always in the scene (dark when free) so the light count never changes, since
+// adding or removing a light mid-match recompiles every lit shader (a long freeze). Borrow with takeFxLight().
+const FX_LIGHTS = [];
+for (let i = 0; i < CONFIG.fxLights; i++) { const l = new THREE.PointLight(0xffffff, 0, 7, 2); l.userData.busy = false; FX_LIGHTS.push(l); scene.add(l); }
+function takeFxLight(color, intensity, distance) {
+  const l = FX_LIGHTS.find(l => !l.userData.busy);
+  if (!l) return null;
+  l.userData.busy = true; l.color.setHex(color); l.intensity = intensity; l.distance = distance;
+  return l;
+}
+function freeFxLight(l) { if (l) { l.userData.busy = false; l.intensity = 0; } }
+
+// Draw-call baking for procedural rigs (built behind the loading screen). A sculpted agent is 200-300 small meshes,
+// each drawn twice (color + shadow), so a busy wave reached thousands of draw calls. Under every pivot, sibling
+// leaf meshes that share a material are merged into one mesh. Left alone so animation and kits keep working:
+// anything named (getObjectByName), referenced from `refs` or any userData, hidden, or otherwise special.
+// Material-driven logic (hit flash, fades, per-material visibility) is unchanged since merges never mix materials.
+function bakeRig(root, refs = null) {
+  const keep = new Set(), seen = new Set();
+  const scan = (v, depth) => {
+    if (!v || typeof v !== 'object' || seen.has(v) || depth > 4) return;
+    seen.add(v);
+    if (v.isObject3D) { keep.add(v); return; }
+    if (v.isMaterial || v.isBufferGeometry || v.isTexture || ArrayBuffer.isView(v)) return;
+    for (const x of (v instanceof Map ? v.values() : Array.isArray(v) || v instanceof Set ? v : Object.values(v))) scan(x, depth + 1);
+  };
+  scan(refs, 0);
+  root.traverse(o => { if (Object.keys(o.userData).length) scan(o.userData, 0); });
+  const plainRender = THREE.Object3D.prototype.onBeforeRender;
+  const parents = [];
+  root.traverse(o => { if (o.children.length > 1 && !o.userData.noMerge) parents.push(o); });
+  for (const p of parents) {
+    const groups = new Map();
+    for (const m of p.children) {
+      if (!m.isMesh || m.isInstancedMesh || m.isSkinnedMesh || m.children.length || m.name || keep.has(m) || !m.visible ||
+        Array.isArray(m.material) || m.onBeforeRender !== plainRender || m.renderOrder || !m.geometry.attributes.position ||
+        Object.keys(m.geometry.morphAttributes).length || m.material.transparent) continue;   // (groups are ignored for one material)
+      const g = m.geometry, attrs = Object.keys(g.attributes).sort().map(k => k + g.attributes[k].itemSize + g.attributes[k].array.constructor.name).join();
+      const key = `${m.material.uuid}|${m.castShadow}|${m.receiveShadow}|${m.frustumCulled}|${!!g.index}|${attrs}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(m);
+    }
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const geos = list.map(m => {
+        if (m.matrixAutoUpdate) m.updateMatrix();
+        const g = m.geometry.clone().applyMatrix4(m.matrix);
+        if (m.matrix.determinant() < 0) {   // mirrored part: flip winding so faces still point outwards
+          if (g.index) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } }
+          else for (const attr of Object.values(g.attributes)) {
+            const a = attr.array, n = attr.itemSize;
+            for (let i = 0; i < attr.count; i += 3) for (let c = 0; c < n; c++) { const t = a[(i + 1) * n + c]; a[(i + 1) * n + c] = a[(i + 2) * n + c]; a[(i + 2) * n + c] = t; }
+          }
+        }
+        return g;
+      });
+      const merged = mergeGeometries(geos, false);
+      geos.forEach(g => g.dispose());
+      if (!merged) continue;
+      const first = list[0], mesh = new THREE.Mesh(merged, first.material);
+      mesh.castShadow = first.castShadow; mesh.receiveShadow = first.receiveShadow; mesh.frustumCulled = first.frustumCulled;
+      p.children.splice(p.children.indexOf(first), 0, mesh); mesh.parent = p;   // keeps children[i] order for kits
+      for (const m of list) p.remove(m);
+    }
+  }
+  return root;
+}
+
+// Shader stall guard. Two things make a frame wait on the GPU's shader compiler mid-match:
+//  1. three.js destroys a program as soon as its last material is disposed (every particle of one kind dies),
+//     so the next spawn compiles it again. Every program is pinned once created, so it stays cached for reuse.
+//  2. An object joins the scene with a material variant no program exists for yet. Its shaders are compiled in
+//     parallel (KHR_parallel_shader_compile) and the object stays hidden (layer mask 0) the few frames it takes.
+const shaderGuard = { active: false, queue: [], pending: [], pinned: 0,
+  parallel: renderer.extensions.has('KHR_parallel_shader_compile') };
+const objectAdd = THREE.Object3D.prototype.add;
+THREE.Object3D.prototype.add = function (object) {
+  const result = objectAdd.apply(this, arguments);
+  if (shaderGuard.active && arguments.length === 1 && object !== this) {   // multi-adds recurse one by one
+    let root = this; while (root.parent) root = root.parent;
+    if (root === scene) shaderGuard.queue.push(object);
+  }
+  return result;
+};
+const guardBatch = { list: null, traverse(cb) { for (const o of this.list) o.traverse(cb); }, traverseVisible() {} };
+function updateShaderGuard() {
+  const G = shaderGuard, programs = renderer.info.programs;
+  if (G.queue.length && G.parallel) {
+    guardBatch.list = G.queue; G.queue = [];
+    const waiting = new Set();
+    for (const m of renderer.compile(guardBatch, camera, scene)) if (!renderer.properties.get(m).currentProgram?.isReady()) waiting.add(m);
+    if (waiting.size) for (const o of guardBatch.list) {
+      const masks = [];
+      o.traverse(c => { if (c.layers.mask !== 0) { masks.push(c, c.layers.mask); c.layers.mask = 0; } });
+      G.pending.push({ masks, waiting });
+    }
+    guardBatch.list = null;
+  } else G.queue.length = 0;
+  for (let i = G.pending.length - 1; i >= 0; i--) {
+    const e = G.pending[i];
+    for (const m of e.waiting) if (renderer.properties.get(m).currentProgram?.isReady() !== false) e.waiting.delete(m);
+    if (e.waiting.size) continue;
+    for (let k = 0; k < e.masks.length; k += 2) e.masks[k].layers.mask = e.masks[k + 1];
+    G.pending.splice(i, 1);
+  }
+  if (programs.length !== G.pinned) pinPrograms();
+}
+function pinPrograms() {
+  for (const p of renderer.info.programs) if (!p.pinned) { p.pinned = true; p.usedTimes++; }
+  shaderGuard.pinned = renderer.info.programs.length;
+}
+// Shadow depth shaders are compiled by the shadow pass itself (the guard can't see them): render one caster per
+// variant the game can produce (cull side x texture map x instancing) once behind the loading screen.
+function prewarmShadowVariants() {
+  const tex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); tex.needsUpdate = true;
+  const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1), group = new THREE.Group(), mats = [];
+  for (const side of [THREE.FrontSide, THREE.BackSide, THREE.DoubleSide]) for (const map of [null, tex]) for (const inst of [false, true]) {
+    const m = new THREE.MeshStandardMaterial({ side, map }); mats.push(m);
+    const mesh = inst ? new THREE.InstancedMesh(geo, m, 1) : new THREE.Mesh(geo, m);
+    mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; group.add(mesh);
+  }
+  group.position.copy(sun.target.position);
+  scene.add(group); renderer.compile(scene, camera); renderer.render(scene, camera); pinPrograms(); scene.remove(group);
+  mats.forEach(m => m.dispose()); geo.dispose(); tex.dispose();
+}
 
 // Statue (box) with a floating health bar
 const S = CONFIG.statue.size;
@@ -2056,15 +2211,16 @@ function disposeCactusMesh(mesh) {
   geometry.forEach(g => g.dispose()); materials.forEach(m => m.dispose());
 }
 function clearCactusWorld() {
-  for (const list of [cactusMines, cactusWalls, cactusDrones, cactusShots, cactusStrikes, cactusTrails]) {
+  for (const list of [cactusMines, cactusWalls, cactusDrones, cactusShots, cactusStrikes]) {
     list.forEach(o => disposeCactusMesh(o.mesh)); list.length = 0;
   }
+  cactusTrails.forEach(releaseCactusTrail); cactusTrails.length = 0;
   for (const h of heroes) if (h.cactus) h.cactus.drone = null;
 }
 function resetCactus(h) {
   if (h.cactus?.drone) endGarlicDrone(h.cactus.drone);
   h.cactus = { charges: {}, recharge: {}, deployT: 0, drone: null,
-    ai: { thinkT: 0, postT: 0, mineT: 0, memory: 0, target: null } };
+    ai: { thinkT: 0, postT: 0, mineT: 0, memory: 0, target: null, fort: null, fortT: 0 } };
   for (const key of ['shuckShot', 'butterBarrage']) {
     h.cactus.charges[key] = h.abilities[key].maxCharges; h.cactus.recharge[key] = 0;
   }
@@ -2187,7 +2343,7 @@ function plantTallnut(h) {
 function spawnCactusNeedle(h, start, dir, weapon, drone = false) {
   const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.72, 7), new THREE.MeshStandardMaterial({ color: drone ? 0xf2dfb0 : 0xd9b49b, roughness: 0.35, emissive: 0x8c6336, emissiveIntensity: 0.25 }));
   mesh.geometry.rotateX(Math.PI / 2); mesh.position.copy(start); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); scene.add(mesh);
-  cactusShots.push({ mesh, owner: h, weapon, vel: dir.clone().multiplyScalar(weapon.kernelSpeed), life: weapon.kernelLife, drone });
+  cactusShots.push({ mesh, owner: h, weapon, vel: dir.clone().multiplyScalar(weapon.kernelSpeed), life: CONFIG.plantShotLife, drone });
 }
 function fireCactusSpike(h) {
   if (h.cactus.drone) return;
@@ -2256,7 +2412,19 @@ function spawnCactusTrail(start, end) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
-  const material = new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
+  const material = cactusTrailMats.pop() || makeCactusTrailMaterial();
+  material.uniforms.age.value = 0;
+  material.uniforms.viewport.value = renderer.getDrawingBufferSize(TRAIL_VIEWPORT).y;
+  const mesh = new THREE.Points(geometry, material); mesh.frustumCulled = false; scene.add(mesh);
+  cactusTrails.push({ mesh, age: 0, life: F.life, start: start.clone(), end: end.clone() });
+}
+// Trail materials are recycled, never disposed: disposing the last ShaderMaterial drops its cached shader source,
+// so the next shot would compile a brand-new program mid-match (a visible hitch on every Cactus shot).
+const cactusTrailMats = [], TRAIL_VIEWPORT = new THREE.Vector2();
+function releaseCactusTrail(trail) { scene.remove(trail.mesh); trail.mesh.geometry.dispose(); cactusTrailMats.push(trail.mesh.material); }
+function makeCactusTrailMaterial() {
+  const F = CONFIG.cactus.smokeTrail;
+  return new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
     uniforms: { age: { value: 0 }, life: { value: F.life }, width: { value: F.width },
       opacity: { value: F.opacity }, color: { value: new THREE.Color(F.color) },
       expansion: { value: F.expansion }, drift: { value: F.drift }, rise: { value: F.rise },
@@ -2287,8 +2455,6 @@ function spawnCactusTrail(start, end) {
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }` });
-  const mesh = new THREE.Points(geometry, material); mesh.frustumCulled = false; scene.add(mesh);
-  cactusTrails.push({ mesh, age: 0, life: F.life, start: start.clone(), end: end.clone() });
 }
 function makeGarlicDrone() {
   const mesh = new THREE.Group(), ivory = new THREE.MeshStandardMaterial({ color: 0xe8dfc4, roughness: 0.52 });
@@ -2425,6 +2591,10 @@ function driveCactus(h, dt) {
   }
   const t = validTarget(b.target) ? b.target : null, seen = !!t && losClear(eyeOf(h, new THREE.Vector3()), t.mesh.position);
   const distance = t ? flatDist(pos, t.mesh.position) : Infinity, homeDistance = Math.hypot(pos.x, pos.z);
+  const F = C.fortify, busy = distance < F.busyRange;
+  ai.fortT -= dt;
+  if (busy || h.cactus.drone || ai.fort && ai.fortT < -F.timeout) ai.fort = null;   // fight first; give up stale spots
+  else if (!ai.fort && ai.fortT <= 0) ai.fort = cactusFortifySpot(h);
   // A threatened sniper backs away while facing the pursuer. Search nearby safe,
   // walkable directions rather than running off the defensive area or into a wall.
   if (t && seen && distance < C.retreatRange && homeDistance < C.guardRadius) {
@@ -2437,6 +2607,10 @@ function driveCactus(h, dt) {
       const score = flatDist(end, t.mesh.position) - Math.hypot(end.x, end.z) * C.postMoveWeight;
       if (score > best) { best = score; inp.move.copy(move); }
     }
+  } else if (ai.fort) {
+    b.state = 'fortify'; b.goalKind = 'fortify';
+    if (!b.goal.equals(ai.fort.stand)) { b.goal.copy(ai.fort.stand); b.pathT = 0; }
+    if (flatDist(pos, ai.fort.stand) < C.arrival) b.path = [];
   } else if (homeDistance > C.guardRadius || t && !b.clearShot || !t && (ai.postT <= 0 || b.goalKind !== 'guard patrol')) {
     b.state = 'reposition';
     if (ai.postT <= 0 || !t && b.goalKind !== 'guard patrol' || b.goalKind !== 'guard post' && t || homeDistance > C.guardRadius && b.goalKind !== 'return home') {
@@ -2446,7 +2620,7 @@ function driveCactus(h, dt) {
     }
   } else if (t && b.clearShot) { b.state = 'engage'; b.goalKind = 'snipe'; b.path = []; }
   else b.state = 'station';
-  if (b.state !== 'retreat' && (b.state === 'reposition' || b.path.length)) {
+  if (b.state !== 'retreat' && (b.state === 'reposition' || b.state === 'fortify' && flatDist(pos, b.goal) >= C.arrival || b.path.length)) {
     if ((b.pathT -= dt) <= 0) { b.pathT = C.repath; b.path = findPath(pos, b.goal) || []; }
     while (b.path.length && flatDist(pos, b.path[0]) < C.arrival) b.path.shift();
     if (b.path.length) inp.move.copy(b.path[0]).sub(pos).setY(0).normalize();
@@ -2464,6 +2638,8 @@ function driveCactus(h, dt) {
     yaw = Math.atan2(-d.x, -d.z) + Math.sin(state.time * 2.7 + h.squadIndex) * error;
     pitch = Math.atan2(d.y, Math.hypot(d.x, d.z)) + Math.sin(state.time * 3.1) * error * 0.5;
   } else if (inp.move.lengthSq() > 0) yaw = Math.atan2(-inp.move.x, -inp.move.z);
+  const placing = ai.fort && flatDist(pos, ai.fort.stand) < C.arrival;
+  if (placing) { yaw = ai.fort.yaw; pitch = -0.2; }   // face outward over the spot before planting
   let delta = Math.atan2(Math.sin(yaw - b.aimYaw), Math.cos(yaw - b.aimYaw));
   const response = 1 - Math.exp(-C.aimResponse * dt), limit = C.turnSpeed * dt;
   b.aimYaw += THREE.MathUtils.clamp(delta * response, -limit, limit); b.aimPitch += THREE.MathUtils.clamp((pitch - b.aimPitch) * response, -limit, limit);
@@ -2479,16 +2655,52 @@ function driveCactus(h, dt) {
       !cactusMines.some(m => flatDist(m.mesh.position, pos) < C.mineSpacing)) {
     inp.shuck = true; ai.mineT = C.mineEvery;
   }
-  // Autonomous drones/battlements are not established for the original Ops AI.
-  // Keep both available to the human; do not invent extra companion ability use.
+  // Fortify: plant once settled on the spot and turned outward (placement uses the body's yaw)
+  if (placing && h.onGround && Math.abs(Math.atan2(Math.sin(ai.fort.yaw - h.yaw), Math.cos(ai.fort.yaw - h.yaw))) < F.alignCone) {
+    if (ai.fort.kind === 'wall') inp.butter = ai.fort.stand; else inp.shuck = true;
+    ai.fort = null; ai.fortT = F.every; inp.fire = false;
+  }
+  // Garlic Drone: a far target and no zombie close to the body (the aiRooted watchdog brings it home)
+  if (!ai.fort && !h.cactus.drone && h.cd.huskHop <= 0 && h.onGround && t && distance > C.droneRange &&
+      !zombies.some(z => validTarget(z) && flatDist(z.mesh.position, pos) < C.droneSafe)) inp.hop = true;
+}
+// Where the AI Cactus should plant next: a ring spot around the statue whose angle is far from its existing
+// mines/walls and close to where zombies are. Returns { stand, yaw, kind } or null (no charges / nowhere to go).
+function cactusFortifySpot(h) {
+  const C = CONFIG.cactus.ai, F = C.fortify, ch = h.cactus.charges, pos = h.mesh.position;
+  const walls = cactusWalls.filter(w => w.owner === h && w.hp > 0), mines = cactusMines.filter(m => m.owner === h);
+  const canWall = ch.butterBarrage > 0, canMine = ch.shuckShot > 0;
+  if (!canWall && !canMine) return null;
+  const kind = canWall && (!canMine || Math.random() < F.wallChance || walls.length < 2) ? 'wall' : 'mine';
+  const A = kind === 'wall' ? h.abilities.butterBarrage : h.abilities.shuckShot;
+  const items = kind === 'wall' ? walls : mines, ring = kind === 'wall' ? F.wallRing : F.mineRing;
+  // Horde direction: average bearing of live zombies (unit vector, may be zero between waves)
+  let hx = 0, hz = 0;
+  for (const z of zombies) if (validTarget(z)) { const p = z.mesh.position, d = Math.hypot(p.x, p.z) || 1; hx += p.x / d; hz += p.z / d; }
+  const hl = Math.hypot(hx, hz); if (hl > 0) { hx /= hl; hz /= hl; }
+  let best = null, bestScore = -Infinity;
+  const spot = new THREE.Vector3();
+  for (let i = 0; i < F.angles; i++) {
+    const a = (i + Math.random() * 0.6) / F.angles * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
+    let gap = Math.PI;   // angular distance to our nearest planted item of this kind
+    for (const it of items) { const p = it.mesh.position; gap = Math.min(gap, Math.abs(Math.atan2(Math.sin(Math.atan2(p.z, p.x) - a), Math.cos(Math.atan2(p.z, p.x) - a)))); }
+    const score = gap + (cx * hx + cz * hz) * F.hordeWeight + Math.random() * 0.3;
+    if (score <= bestScore) continue;
+    const radius = randRange(ring) - A.placeDistance;
+    openSpot(cx * radius, cz * radius, spot);
+    if (!(walkable(pos, spot) || findPath(pos, spot))) continue;
+    const ox = spot.x, oz = spot.z, ol = Math.hypot(ox, oz) || 1;
+    best = { stand: spot.clone(), yaw: Math.atan2(-ox / ol, -oz / ol), kind }; bestScore = score;
+  }
+  return best;
 }
 
 function updateCactusWorld(dt) {
   for (let i = cactusTrails.length - 1; i >= 0; i--) {
     const trail = cactusTrails[i]; trail.age += dt;
-    if (trail.age >= trail.life) { disposeCactusMesh(trail.mesh); cactusTrails.splice(i, 1); continue; }
+    if (trail.age >= trail.life) { releaseCactusTrail(trail); cactusTrails.splice(i, 1); continue; }
     trail.mesh.material.uniforms.age.value = trail.age;
-    trail.mesh.material.uniforms.viewport.value = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+    trail.mesh.material.uniforms.viewport.value = renderer.getDrawingBufferSize(TRAIL_VIEWPORT).y;
   }
   for (let i = cactusMines.length - 1; i >= 0; i--) {
     const m = cactusMines[i], A = m.ability; m.age += dt; m.life -= dt;
@@ -2551,6 +2763,7 @@ function updateCactusWorld(dt) {
     const steps = Math.max(1, Math.ceil(shot.vel.length() * dt / CONFIG.cactus.projectileStep));
     for (let step = 0; step < steps && !dead; step++) {
       p.addScaledVector(shot.vel, dt / steps);
+      if (outsideMap(p)) { dead = true; break; }
       if (solidAt(p)) { dead = true; SFX.play('ricochet', p); break; }
       for (const z of zombies) {
         if (!validTarget(z) || !hitsZombie(z, p, W.kernelRadius)) continue;
@@ -2671,6 +2884,7 @@ function makeHero(type, isAI, spawnAt, squadIndex) {
   const stats = { ...P, ...def.stats }, weapon = { ...W, ...def.weapon };
   const abilities = Object.fromEntries(Object.entries(AB).map(([key, value]) => [key, { ...value, ...def.abilities[key] }]));
   const mesh = new THREE.Group(), corn = plant.buildModel();
+  bakeRig(corn.root, corn);
   const centerY = stats.radius + stats.height / 2;
   corn.root.position.y = -centerY;
   corn.root.rotation.y = Math.PI;
@@ -3397,6 +3611,8 @@ function makeZombieMesh(type) {
   return { mesh, parts };
 }
 
+// Plant bullets die past the map edge (or far above it)
+const outsideMap = p => Math.abs(p.x) > CONFIG.MAP.size / 2 || Math.abs(p.z) > CONFIG.MAP.size / 2 || p.y > 150;
 const randomLane = () => { const k = Object.keys(CONFIG.SPAWN_POINTS); return k[Math.floor(Math.random() * k.length)]; };
 const randomRoute = () => Math.random() < 0.5 ? 'A' : 'B';
 const randRange = ([a, b]) => a + Math.random() * (b - a);
@@ -3436,6 +3652,7 @@ function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
     ai: {},                          // behavior-local state (lunge, scream, charge, phases…)
     buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
     stun: 0, flash: 0, glow: 0, glowColor: 0xff2000,
+    lineAt: 0, lineOk: true,         // cached "straight line to my hero is walkable" check
     dead: false,
   };
   zombies.push(zombie);
@@ -3501,10 +3718,11 @@ function startWave(index) {
     for (const [type, n] of Object.entries(pack.zombies)) for (let i = 0; i < scaledCount(type, n); i++) list.push(type);
     list.sort(() => Math.random() - 0.5);
     // 'split' alternates A/B through the shuffled list, so each half gets a fair mix; the first one drops the skull
-    list.forEach((type, i) => state.spawnQueue.push({
-      t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn, skull: i === 0,
-      route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId,
-    }));
+    // Bosses ignore the pack's lane: they arrive at a random spawn point on a random route
+    list.forEach((type, i) => state.spawnQueue.push(ZT[type].boss
+      ? { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: randomLane(), route: randomRoute(), skull: true }
+      : { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn, skull: i === 0,
+          route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId }));
     queueEscorts(index, pack, packStart + CONFIG.spawnBurst, packId++, escorts);
   }
   // (Future: apply WAVES[index].modifiers here for special waves.)
@@ -4039,7 +4257,7 @@ function fireKernel(h) {
   mesh.position.copy(start);
   mesh.quaternion.setFromUnitVectors(FWD_Z, dir);
   scene.add(mesh);
-  projectiles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: W.kernelLife, owner: h, weapon: W });
+  projectiles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: h, weapon: W });
   h.ammo--;
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   if (!h.isAI) {   // camera recoil + shake belong to the human's view
@@ -4396,7 +4614,7 @@ function fireSunPulse(h) {
   const halo = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 6), new THREE.MeshBasicMaterial({ color: F.pulseColor,
     transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
   halo.scale.z = 2.1; mesh.add(halo); mesh.position.copy(start); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); scene.add(mesh);
-  sunPulses.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), start: start.clone(), life: W.kernelLife, owner: h, weapon: W });
+  sunPulses.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), start: start.clone(), life: CONFIG.plantShotLife, owner: h, weapon: W });
   h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   const arm = h.corn.arms[0]; arm.recoil = 1; arm.flashT = 0.045;
   muzzleLight.position.copy(start); muzzleLight.intensity = 2.4;
@@ -4524,7 +4742,7 @@ function updateSunflowerWorld(dt) {
     const steps = Math.max(1, Math.ceil(p.vel.length() * dt / W.kernelRadius));
     for (let j = 0; j < steps && !dead; j++) {
       pos.addScaledVector(p.vel, dt / steps);
-      if (solidAt(pos)) { dead = true; break; }
+      if (outsideMap(pos) || solidAt(pos)) { dead = true; break; }
       for (const z of zombies) {
         if (!validTarget(z) || !hitsZombie(z, pos, W.kernelRadius)) continue;
         const mult = damageMultiplierFor(z, p.vel), d = p.start.distanceTo(pos);
@@ -4900,7 +5118,7 @@ function firePea(h, gatling = false) {
   const { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, gatling ? G.spread : currentSpread(h));
   const mesh = new THREE.Mesh(peaShotGeo, peaShotMat); mesh.position.copy(start);
   mesh.scale.setScalar(gatling ? 0.085 : W.kernelRadius); scene.add(mesh);
-  projectiles.push({ mesh, vel: dir.multiplyScalar(weapon.kernelSpeed), life: weapon.kernelLife, owner: h, weapon,
+  projectiles.push({ mesh, vel: dir.multiplyScalar(weapon.kernelSpeed), life: CONFIG.plantShotLife, owner: h, weapon,
     pea: true, trailT: 0, gatling });
   if (gatling) h.pea.gatlingAmmo--; else h.ammo--;
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
@@ -5236,8 +5454,9 @@ function think(z) {
   }
 
   // Bosses: whichever target is nearer (with a retarget cooldown so they don't flip-flop)
-  if (z.pref === 'closest') {
-    const want = best && best._d < statueFaceDist(pos) ? best : null;
+  // heroFirst: any plant in aggroRange beats the statue; the statue is only hit with no plant around
+  if (z.pref === 'closest' || z.pref === 'heroFirst') {
+    const want = best && (z.pref === 'heroFirst' || best._d < statueFaceDist(pos)) ? best : null;
     if (want !== cur && z.retargetTimer <= 0) want ? startChase(z, want, false) : stopChase(z, false);
     return;
   }
@@ -5300,13 +5519,17 @@ function resolveTarget(z) {
         if (z.slot) goal = slotPos(z.slot, tmpGoal);
         else t.hold = hd < AI.slots.heroHold;
       } else if (z.slot) releaseSlot(z);
-      if (hd < AI.directChaseRange && (def.canClimb || Math.abs(p.y - pos.y) < 2)) steerDirect(goal, pos, t.dir);
+      // Straight at the hero only when the ground between is clear (rechecked a few times a second),
+      // otherwise the flow field walks around props instead of grinding into them
+      if (!(state.time < z.lineAt)) { z.lineAt = state.time + AI.lineCheck; z.lineOk = def.canClimb || walkable(pos, goal); }
+      if (hd < AI.directChaseRange && z.lineOk && (def.canClimb || Math.abs(p.y - pos.y) < 2)) steerDirect(goal, pos, t.dir);
       else fieldDir(z, true, goal, t.dir);
     } else {
       // Lost sight: search the last known position, then give up
       t.pos.copy(z.lastKnown);
       if (flatDist(z.lastKnown, pos) < 2 && !def.ignoreLeash) stopChase(z, true);
-      steerDirect(z.lastKnown, pos, t.dir);
+      // the hero field leads around obstacles; straight lines only for the last few metres
+      if (flatDist(z.lastKnown, pos) < 4) steerDirect(z.lastKnown, pos, t.dir); else fieldDir(z, true, z.lastKnown, t.dir);
     }
     return t;
   }
@@ -5402,10 +5625,16 @@ function checkStuck(z, dt) {
   const moved = Math.hypot(p.x - st.x, p.z - st.z);
   st.t = 0; st.x = p.x; st.z = p.z;
   if (moved >= AI.stuck.minProgress) { st.strikes = 0; return; }
-  if (++st.strikes < 3) {
-    // nudge sideways for a moment
-    const a = Math.random() * Math.PI * 2;
-    z.nudge = AI.stuck.nudgeTime; z.nudgeDir.set(Math.cos(a), 0, Math.sin(a));
+  if (++st.strikes < AI.stuck.teleportStrikes) {
+    // Nudge toward the most open side: sample 8 headings, prefer ones near perpendicular to where we want to go
+    // (sliding along the blocker), and flip sides on each strike so a corner doesn't trap us twice.
+    const want = Math.atan2(z.tgt.dir.z, z.tgt.dir.x), side = st.strikes % 2 ? 1 : -1;
+    let bestA = want + side * Math.PI / 2;
+    for (const off of [0.25, 0.5, 0.75, 1]) {   // fractions of a half turn, our side first, then the other
+      const a = [want + side * off * Math.PI, want - side * off * Math.PI].find(a => walkable(p, { x: p.x + Math.cos(a) * 3, z: p.z + Math.sin(a) * 3 }));
+      if (a !== undefined) { bestA = a; break; }
+    }
+    z.nudge = AI.stuck.nudgeTime; z.nudgeDir.set(Math.cos(bestA), 0, Math.sin(bestA));
   } else { teleportToOpenCell(z); st.strikes = 0; }
 }
 
@@ -5456,8 +5685,36 @@ function constrainZombie(z, dt) {
 function aiRootedWatchdog(h, dt) {
   const w = h.rootWatch || (h.rootWatch = { t: 0, idle: 0 }), R = CONFIG.squad.aiRooted;
   if (!(h.pea?.gatling || h.sun?.sunbeam || h.cactus?.drone)) { w.t = w.idle = 0; return; }
-  w.t += dt; w.idle = h.input.fire ? 0 : w.idle + dt;
+  w.t += dt; w.idle = h.input.fire || h.cactus?.drone?.firing ? 0 : w.idle + dt;
   if (!h.input.hop && (w.t > R.maxTime || w.idle > R.idleTime)) { h.input.hop = true; w.t = w.idle = 0; }
+}
+// AI-only stuck net, shared by every plant brain (they only differ in how they fill h.input.move)
+function aiUnstick(h, dt) {
+  const U = CONFIG.squad.aiStuck, pos = h.mesh.position, inp = h.input;
+  const w = h.stuckWatch || (h.stuckWatch = { t: 0, x: pos.x, z: pos.z, strikes: 0, escape: 0, dir: new THREE.Vector3() });
+  if (h.dead || h.hopping) { w.t = w.escape = 0; w.x = pos.x; w.z = pos.z; return; }
+  if (w.escape > 0) { w.escape -= dt; inp.move.copy(w.dir); }   // escape walk overrides the brain for a moment
+  if (inp.move.lengthSq() < 1e-4) { w.t = 0; w.x = pos.x; w.z = pos.z; return; }
+  if ((w.t += dt) < U.window) return;
+  const moved = Math.hypot(pos.x - w.x, pos.z - w.z);
+  w.t = 0; w.x = pos.x; w.z = pos.z;
+  if (moved >= U.minProgress) { w.strikes = 0; return; }
+  const b = h.brain, strike = ++w.strikes;
+  if (b) { b.path = []; b.pathT = 0; }   // whatever the brain was following, plan again
+  if (strike === 1) { inp.jump = true; return; }
+  if (strike >= U.snapStrikes) {
+    const k = nearestNavCell(pos.x, pos.z);
+    if (k >= 0) { pos.x = NAV.cx(k % NAV.N); pos.z = NAV.cx(Math.floor(k / NAV.N)); pos.y = Math.max(pos.y, heightAt(pos.x, pos.z) + 0.05); }
+    w.strikes = 0;
+  }
+  // Escape: the walkable heading farthest from the one that failed (ROT_TRIES, back to front)
+  const base = Math.atan2(inp.move.z, inp.move.x);
+  for (let i = ROT_TRIES.length - 1; i >= 0; i--) {
+    const a = base + ROT_TRIES[i];
+    if (walkable(pos, tmP.set(pos.x + Math.cos(a) * U.probe, 0, pos.z + Math.sin(a) * U.probe))) {
+      w.dir.set(Math.cos(a), 0, Math.sin(a)); w.escape = U.escapeTime; inp.jump = true; return;
+    }
+  }
 }
 // ---- Hidden garden alert (no HUD): see CONFIG.gardenAlert ----
 function raiseGardenAlert(z) {
@@ -7233,7 +7490,7 @@ function buildGargantuarImp(parent,H,projectile) {
 }
 
 function attachGargantuarRig(mesh,parts,def) {
-  gargantuarTemplate ??= buildGargantuarTemplate();
+  if (!gargantuarTemplate) { gargantuarTemplate = buildGargantuarTemplate(); bakeRig(gargantuarTemplate.root, gargantuarTemplate); }
   const root=gargantuarTemplate.root.clone(true), clones=new Map(), J={};
   root.traverse(o=>{if(o.isGroup&&o.name) J[o.name]=o;if(o.isMesh){if(!clones.has(o.material)) clones.set(o.material,o.material.clone());o.material=clones.get(o.material);}});
   root.position.y=-(def.radius+def.height/2);mesh.add(root);mesh.material.visible=false;mesh.castShadow=false;
@@ -7967,7 +8224,7 @@ function buildAllStarTemplate() {
 
 // Per-instance clone: shared geometry, own materials (hit flash), named nodes, rest pose in userData.base
 function makeAllStarRig() {
-  AS_TEMPLATE ||= buildAllStarTemplate();
+  AS_TEMPLATE ||= bakeRig(buildAllStarTemplate());
   const root = AS_TEMPLATE.clone(true), map = new Map(), n = {};
   root.traverse(o => {
     if (o.name) n[o.name] = o;
@@ -8574,10 +8831,12 @@ function allStarBehavior(z, t, dt) {
 // spawn and route. They guard their pack (thinkAgent 'guard') until a plant comes near, then hunt.
 function queueEscorts(waveIdx, pack, t, packId, escorts) {
   const E = AG.escort, wave = WAVES[waveIdx];
-  const cap = Math.round((wave.agentCap || 0) * (1 + E.capPerHero * (activeHeroCount() - 1)));
+  const cap = Math.round((wave.agentCap || 0) * E.capMult * (1 + E.capPerHero * (activeHeroCount() - 1)));
   if (escorts.n >= cap || Math.random() > E.chance + E.chancePerWave * waveIdx) return;
   const pool = Object.keys(ZT).filter(k => ZT[k].agent && ZT[k].agent.unlockWave <= waveIdx);
-  const n = Math.min(cap - escorts.n, Math.round(randRange(E.perPack)));
+  let roll = E.minPerPack;
+  while (roll < E.maxPerPack && Math.random() < E.moreChance) roll++;
+  const n = Math.min(cap - escorts.n, roll);
   for (let i = 0; i < n; i++) state.spawnQueue.push({
     t: t + E.delay + i * 0.5, type: pool[Math.floor(Math.random() * pool.length)], spawn: pack.spawn,
     route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId,
@@ -8939,7 +9198,7 @@ const engineerTemplate = (() => {
   root.getObjectByName('handL').add(held);
   const jack = buildJackhammer(M); jack.name = 'jack'; jack.visible = false; jack.position.set(0, 0, 0.42);
   root.add(jack);
-  return root;
+  return bakeRig(root);
 })();
 
 // Clone the template with per-character materials. Returns parts for makeZombieMesh: root, rig nodes, flash list.
@@ -9277,7 +9536,7 @@ const turretTemplate = (() => {
   part(new THREE.CylinderGeometry(0.09, 0.09, 0.04, 12), M.metal, spin, 0, 0, 0.4, Math.PI / 2);
   const fl = part(new THREE.SphereGeometry(0.12, 10, 8), M.flash, spin, 0, 0, 0.52, 0, 0, 0, 1, 1, 1.8); fl.name = 'tFlash'; fl.visible = false; fl.castShadow = false;
   node(spin, 'tMuzzle', 0, 0, 0.5);
-  return root;
+  return bakeRig(root);
 })();
 function makeTurretBody() {
   const root = turretTemplate.clone(true), map = new Map(), flashMats = [];
@@ -9775,7 +10034,7 @@ function buildScientistTemplate() {
     pupil0: R.pupils[0], pupil1: R.pupils[1] };
   for (const [k, o] of Object.entries(named)) o.name = 'sci_' + k;
   R.armL.fingers.forEach((f, i) => f.name = 'sci_fingerL' + i);
-  return { root, M, names: Object.keys(named) };
+  return { root: bakeRig(root), M, names: Object.keys(named) };
 }
 
 // Clone the template with per-rig materials (so hits flash this scientist only)
@@ -9918,7 +10177,7 @@ function makeStationRig(halfH) {
     add(root, new THREE.BoxGeometry(0.1, 0.03, 0.01), M.green, 0, 0.72, 0.16); add(root, new THREE.BoxGeometry(0.03, 0.1, 0.01), M.green, 0, 0.72, 0.16);
     const aura = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 64), new THREE.MeshBasicMaterial({ color: 0x6cff8a, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
     aura.rotation.x = -Math.PI / 2; aura.position.y = 0.05; aura.name = 'st_aura'; root.add(aura);
-    STATION_TEMPLATE = root;
+    STATION_TEMPLATE = bakeRig(root);
   }
   const root = STATION_TEMPLATE.clone(true), mats = new Map();
   root.traverse(o => { if (o.isMesh) { if (!mats.has(o.material)) mats.set(o.material, o.material.clone()); o.material = mats.get(o.material); } });
@@ -12658,7 +12917,7 @@ function buildSuperBrainzTemplate() {
 
 // Clone the template for one zombie: own materials (hit flash), own cape geometry; the capsule becomes invisible
 function attachSuperBrainzRig(mesh, parts, def) {
-  sbTemplate ||= buildSuperBrainzTemplate();
+  sbTemplate ||= bakeRig(buildSuperBrainzTemplate());
   const rig = sbTemplate.clone(true), mats = new Map();
   rig.traverse(o => {
     if (!o.isMesh) return;
@@ -13001,11 +13260,11 @@ function sbThrowBall(z, S, h) {
   const mesh = new THREE.Group();
   const fx = c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
   mesh.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), fx(0xfff2c0)), new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), fx(0xa848ff)));
-  const light = new THREE.PointLight(0xc070ff, 6, 7);
-  mesh.add(light);
+  const light = takeFxLight(0xc070ff, 6, 7);
   mesh.position.copy(start);
+  light?.position.copy(start);
   scene.add(mesh);
-  superBalls.push({ mesh, vel, life: B.life, damage: B.damage * z.buff.damage, owner: z });
+  superBalls.push({ mesh, light, vel, life: B.life, damage: B.damage * z.buff.damage, owner: z });
   S.chargeT = -1; S.throwT = 0; S.cd.ball = B.cooldown;
   SFX.play('sbBall', start);
 }
@@ -13031,6 +13290,7 @@ function updateSuperBalls(dt) {
   for (let i = superBalls.length - 1; i >= 0; i--) {
     const b = superBalls[i], p = b.mesh.position;
     p.addScaledVector(b.vel, dt);
+    b.light?.position.copy(p);
     b.life -= dt;
     b.mesh.children[1].scale.setScalar(1 + Math.sin(state.time * 30) * 0.12);
     if (Math.random() < dt * 40) spawnParticle('spark', Math.random() < 0.5 ? 0xffe080 : 0xb060ff, p.clone(), rand3(1.5), { life: 0.3, gravity: 0, additive: true });
@@ -13041,10 +13301,10 @@ function updateSuperBalls(dt) {
       if ((p.x - c.x) ** 2 + dy * dy + (p.z - c.z) ** 2 < (h.stats.radius + 0.4) ** 2) { boom = true; break; }
     }
     if (!boom && hitsStatue(p, 0.3)) { state.statueHp -= b.damage * 0.5; boom = true; }
-    if (boom) { sbBallBoom(b); scene.remove(b.mesh); b.mesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); superBalls.splice(i, 1); }
+    if (boom) { sbBallBoom(b); freeFxLight(b.light); scene.remove(b.mesh); b.mesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); superBalls.splice(i, 1); }
   }
 }
-function clearSuperBalls() { for (const b of superBalls) scene.remove(b.mesh); superBalls = []; }
+function clearSuperBalls() { for (const b of superBalls) { freeFxLight(b.light); scene.remove(b.mesh); } superBalls = []; }
 function sbStartKick(z, S, h) {
   S.kickT = 0; S.kickHit = false;
   const hp = h.mesh.position, pos = z.mesh.position;
@@ -14847,6 +15107,7 @@ function updateProjectiles(dt) {
     }
     for (let s = 0; s < steps && !dead; s++) {
       pos.addScaledVector(p.vel, dt / steps);
+      if (outsideMap(pos)) { dead = true; break; }
       if (solidAt(pos)) {
         dead = true;
         const shield = allStarShieldAt(pos);
@@ -15610,6 +15871,17 @@ const mateDebug = (() => {
   };
 })();
 
+// Respawn countdown floating over each fallen ally (the nearest downed one shows the revive ring instead)
+function updateFallenTag(h, fallen, left) {
+  const tag = hud(`fallen-${h.squadIndex}`);
+  if (!tag) return;
+  const v = fallen && h !== player && h.active && h !== nearestDownedHero() ? tmP.copy(h.mesh.position).setY(h.mesh.position.y + 1.4).project(camera) : null;
+  if (!v || v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) { tag.style.display = 'none'; return; }
+  tag.style.display = 'block';
+  tag.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
+  tag.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
+  tag.textContent = `${PLANT_ICONS[h.type] || ''} ${h.name} · ${Math.ceil(left)}s`;
+}
 // Revive prompt + progress ring, projected over the downed teammate
 const reviveEl = document.getElementById('revive'), reviveRing = document.getElementById('reviveRing');
 const RING_LEN = 2 * Math.PI * 26;
@@ -15622,7 +15894,7 @@ function updateRevivePrompt() {
   reviveEl.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
   reviveEl.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
   reviveRing.style.strokeDashoffset = RING_LEN * (1 - h.reviveT / (h.reviveDuration || TM.revive.time));
-  reviveEl.querySelector('.txt').textContent = h.reviveNear ? (h.reviveT > 0 ? 'Reviving…' : 'Hold X to revive') : `DOWNED · ${Math.ceil(h.downT)}s`;
+  reviveEl.querySelector('.txt').textContent = h.reviveNear ? (h.reviveT > 0 ? 'Reviving…' : 'Hold X to revive') : `${h.name} DOWN · respawn ${Math.ceil(h.downT)}s`;
   reviveEl.classList.toggle('near', h.reviveNear);
 }
 
@@ -15805,11 +16077,14 @@ function updateHud(dt) {
   hud('playerLabel').textContent = `${player.name} #${player.squadIndex + 1}`;
   hud('weaponLabel').textContent = player.def.weaponName;
   for (const h of heroes) {
-    const id = `squad-${h.squadIndex}`, box = hud(id);
-    setHudBar(id, h.hp / h.stats.hp, dt, (h.regen || h.healedUntil > state.time) && !h.dead);
+    const id = `squad-${h.squadIndex}`, box = hud(id), fallen = h.dead || h.downed, left = respawnLeft(h);
+    // Fallen: the bar becomes the respawn clock (drains to empty as the plant comes back)
+    setHudBar(id, fallen ? left / CONFIG.squad.respawnDelay : h.hp / h.stats.hp, dt, (h.regen || h.healedUntil > state.time) && !fallen);
     box.classList.toggle('controlled', h === player);
-    box.querySelector('.label').textContent = `${h.squadIndex + 1} · ${h.name}${h === player ? ' · YOU' : ' · AI'}`;
-    box.querySelector('.num').textContent = h.dead ? `↻ ${Math.ceil(h.respawnTimer)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`;
+    box.classList.toggle('fallen', fallen);
+    box.querySelector('.label').textContent = `${h.squadIndex + 1} · ${h.name}${h === player ? ' · YOU' : ''}`;
+    box.querySelector('.num').textContent = fallen ? `${h.downed ? 'DOWN' : 'RESPAWN'} ${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`;
+    updateFallenTag(h, fallen, left);
     h.bar.group.visible = h.active && h !== player && !h.dead;
     h.bar.group.position.copy(h.mesh.position).setY(h.mesh.position.y + h.centerY + 0.4);
     h.bar.group.quaternion.copy(camera.quaternion); setWorldBar(h.bar, h.hp / h.stats.hp);
@@ -15882,13 +16157,18 @@ function updateHud(dt) {
 // Only inputs and camera ownership change on handoff; combat state and zombie targets stay attached
 // to the original hero objects (including projectiles, attack slots, cooldowns and respawn clocks).
 // =====================================================================
+const PLANT_ICONS = { corn: '🌽', peashooter: '🫛', sunflower: '🌻', cactus: '🌵' };
+// Seconds until a fallen plant is back (downed: revivable countdown; dead: plain respawn), or 0 when standing
+const respawnLeft = h => h.downed ? Math.max(0, h.downT) : h.dead ? Math.max(0, h.respawnTimer) : 0;
 function rebuildSquadHud() {
-  hud('squadHud').replaceChildren();
+  hud('squadHud').replaceChildren(); hud('fallenTags').replaceChildren();
   for (const key of Object.keys(hudBars)) delete hudBars[key];
   for (const h of heroes) {
     const box = document.createElement('div'); box.id = `squad-${h.squadIndex}`; box.className = 'hbox squadMember';
-    box.innerHTML = '<div class="row"><span class="label"></span><span class="num"></span></div><div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>';
+    box.innerHTML = `<div class="icon">${PLANT_ICONS[h.type] || '🌱'}</div><div class="row"><span class="label"></span><span class="num"></span></div><div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>`;
     hud('squadHud').append(box);
+    const tag = document.createElement('div'); tag.className = 'tag'; tag.id = `fallen-${h.squadIndex}`; tag.style.display = 'none';
+    hud('fallenTags').append(tag);
   }
 }
 function clearHumanInput(releaseKeys = true) {
@@ -15981,7 +16261,7 @@ function loop() {
     state.time += dt;
     readPlayerInput(player);
     updateGardenAlert(dt);
-    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); aiRootedWatchdog(h, dt); }
+    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
     for (const h of heroes) updateHero(h, dt);
     updateZombies(dt);
     updateProjectiles(dt);
@@ -16019,6 +16299,7 @@ function loop() {
   updateSunflowerHud();
   updateRevivePrompt();
   mateDebug.draw();
+  updateShaderGuard();
   renderer.render(scene, camera);
   debugMap.draw();
 }
@@ -16041,8 +16322,9 @@ Object.assign(window.__game, { buildMechaGargantuar, mechaState, mechaBegin, mec
 
 // Prebuilt procedural rigs: each spawn takes a fresh one built behind a loading screen (boot / match reset)
 // instead of sculpting it mid-match; an empty pool falls back to building on the spot.
-const RIG_POOL = { mecha: { build: () => buildMechaGargantuar(), count: 1, list: [] }, imp: { build: () => buildImp(), count: 2, list: [] },
-  zmech: { build: () => buildZMech(), count: 1, list: [] }, soldier: { build: () => buildFootSoldier(), count: 2, list: [] } };
+const bakedRig = r => (bakeRig(r.root || r, r), r);
+const RIG_POOL = { mecha: { build: () => bakedRig(buildMechaGargantuar()), count: 1, list: [] }, imp: { build: () => bakedRig(buildImp()), count: 2, list: [] },
+  zmech: { build: () => bakedRig(buildZMech()), count: 1, list: [] }, soldier: { build: () => bakedRig(buildFootSoldier()), count: 2, list: [] } };
 function takeRig(key) { const p = RIG_POOL[key]; return p.list.pop() || p.build(); }
 function fillRigPools() { for (const p of Object.values(RIG_POOL)) while (p.list.length < p.count) p.list.push(p.build()); }
 
@@ -16054,10 +16336,14 @@ function prewarmAssets() {
   }
   try { AS_IMP ||= asImpTemplate(); AS_SHIELD ||= asShieldTemplate(); } catch (err) { console.warn('prewarm all-star', err); }
   for (const z of zombies) z.mesh.visible = true;
+  spawnCactusTrail(new THREE.Vector3(0, 2, 0), new THREE.Vector3(0, 2, 6));
   renderer.compile(scene, camera);
   renderer.render(scene, camera);
+  pinPrograms();   // keep every program alive past the reset below
+  prewarmShadowVariants();
   resetGame();
   fillRigPools();
+  shaderGuard.active = true;
 }
 prewarmAssets();
 if (bootSelection) {
