@@ -6,7 +6,7 @@
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.17.0)
+## Current state (v1.17.1)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -37,7 +37,8 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - Animation juice (`CONFIG.juice`, section "Animation juice"): layered on every rig after its animator — heroes lean
   into acceleration, flinch on hits, topple/bounce when downed, spring up, pop in on respawn, and play ability gestures
   (`heroAction` → `JH.gestures`); agents flinch away from hits, pop in on spawn and leave a toppling corpse
-  (`agentCorpse`, deferred dispose). Agent offsets are undone before behaviors (`unJuiceAgent`). Test: `tests/animation.cjs`.
+  (`agentCorpse`, deferred dispose) whose rig joints, found by ref name at spawn (`collectLimpJoints`), spring into a
+  per-class `JA.deathPose` and flop on landing. Agent offsets are undone before behaviors (`unJuiceAgent`). Test: `tests/animation.cjs`.
 - Camera (`CONFIG.camera`): plant sits low-left (`shoulder`, `lift`); `clearZone` slides the shoulder out if the
   plant's silhouette reaches the crosshair.
 - Debug: F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses, M map, K stress horde.

@@ -62,16 +62,17 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
         T.updateZombies(1 / 60);
         const corpse = T.corpses.length;
         for (let i = 0; i < 300; i++) T.updateAgentCorpses(1 / 60);
-        return { peak, corpse, left: T.corpses.length, alive: T.zombies.length };
+        return { peak, corpse, left: T.corpses.length, alive: T.zombies.length, joints: (z.limp||[]).map(l=>l.kind).join('') .length, kinds: [...new Set((z.limp||[]).map(l=>l.kind))].join('/') };
       }, [type]);
       console.log(type, JSON.stringify(res));
       assert.ok(res.peak > 0.02, `${type} flinches`);
       assert.equal(res.alive, 0, `${type} removed from the zombie list`);
       assert.equal(res.corpse, type === 'allStar' ? 0 : 1, `${type} leaves a corpse`);
       assert.equal(res.left, 0, `${type} corpse disposed`);
+      if (type !== 'allStar') assert.ok(res.kinds.includes('head') && res.kinds.includes('arm'), `${type} has limp head + arm joints`);
       if (type !== 'allStar') await strip(`death-${type}`, `const z=T.spawnAgent('${type}');z.thinkTimer=99;z.mesh.position.set(0,60+z.mesh.position.y-z.mesh.position.y,0);
           for(let i=0;i<40;i++)T.updateZombies(1/60);const t=z.mesh.position.clone();T.damageZombie(z,1e6,t.clone().add(new T.THREE.Vector3(-1,0,0)));T.updateZombies(1/60);return {target:t,obj:()=>T.corpses[0]?.g};`,
-        `for(let k=0;k<(i?6:1);k++)T.updateAgentCorpses(1/60);`, 5, [4.5, 2.5, 5.5, -0.8]);
+        `for(let k=0;k<(i?9:1);k++)T.updateAgentCorpses(1/60);`, 6, [4.5, 2.5, 5.5, -0.8]);
     }
     // Hero gesture + downed filmstrips (the hero is isolated in the render; 'kind' per class from CONFIG.juice)
     const types = await page.evaluate(() => window.__anTest.heroes.map(h => h.type));
