@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.15.1';
+const VERSION = 'v1.16.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -639,6 +639,7 @@ const CONFIG = {
   // Tactical zombie agents: shared brain tuning (types above carry their own role / weapon numbers).
   // Adaptations for this game, not Garden Warfare constants.
   AGENTS: {
+    sizeMult: 2,                 // every tactical agent is this many times its modelled size (model, hitbox, collision)
     thinkRate: 6,                // decisions per second
     // Target choice: lower score wins = distance − opening·openingWeight − focus bonus (+ crowd penalty past focusCap)
     target: { openingWeight: 6, focusBonus: 6, focusCap: 2, crowdPenalty: 10, revengeBonus: 8, switchMargin: 8 },
@@ -2948,10 +2949,20 @@ const targetable = h => !!h && h.active && !h.dead;
 
 // Shared zombie resources: one geometry + material per type, built from CONFIG
 const ZT = CONFIG.ZOMBIE_TYPES;
+// Agent size: radius/height (hitbox, collision, ground placement) are scaled here; models are still built at the
+// base size (baseRadius/baseHeight, see makeZombieMesh) and the whole mesh is scaled by def.sizeMult.
+function scaleAgentDef(def) {
+  const k = CONFIG.AGENTS.sizeMult;
+  def.baseRadius = def.radius; def.baseHeight = def.height; def.radius *= k; def.height *= k; def.sizeMult = k;
+  return def;
+}
+for (const def of Object.values(ZT)) if (def.agent) scaleAgentDef(def);
+// Half height in the mesh's LOCAL (unscaled) space: where rigs sit under the capsule origin
+const rigHalf = def => (def.baseRadius ?? def.radius) + (def.baseHeight ?? def.height) / 2;
 const zombieAssets = {};
 for (const [name, def] of Object.entries(ZT)) {
   zombieAssets[name] = {
-    geo: new THREE.CapsuleGeometry(def.radius, def.height, 4, 12),
+    geo: new THREE.CapsuleGeometry(def.baseRadius ?? def.radius, def.baseHeight ?? def.height, 4, 12),
     mat: new THREE.MeshLambertMaterial({ color: def.color }),
   };
 }
@@ -3582,7 +3593,19 @@ function respawnHero(h) {
 const zombieDarkMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
 const moundGeo = new THREE.SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
 const moundMat = new THREE.MeshLambertMaterial({ color: 0x5a4028 });
+// Scaled agents: build at the base size (rig code reads def.radius/height), then scale the whole mesh
 function makeZombieMesh(type) {
+  const def = ZT[type];
+  if (!def.sizeMult) return buildZombieMesh(type);
+  const radius = def.radius, height = def.height;
+  def.radius = def.baseRadius; def.height = def.baseHeight;
+  try {
+    const built = buildZombieMesh(type);
+    built.mesh.scale.setScalar(def.sizeMult);
+    return built;
+  } finally { def.radius = radius; def.height = height; }
+}
+function buildZombieMesh(type) {
   const def = ZT[type];
   // Per-zombie material clone so hits can flash just this zombie
   const mesh = new THREE.Mesh(zombieAssets[type].geo, zombieAssets[type].mat.clone());
@@ -8800,8 +8823,8 @@ function updateAllStarShields(dt) {
 function allStarCorpse(mesh, rig) {
   const pos = mesh.position, halfH = ZT.allStar.radius + ZT.allStar.height / 2;
   const g = new THREE.Group();
-  g.position.set(pos.x, pos.y - halfH, pos.z); g.rotation.y = mesh.rotation.y;
-  rig.root.position.y = halfH;
+  g.position.set(pos.x, pos.y - halfH, pos.z); g.rotation.y = mesh.rotation.y; g.scale.setScalar(ZT.allStar.sizeMult || 1);
+  rig.root.position.y = rigHalf(ZT.allStar);
   g.add(rig.root); scene.add(g);
   for (const m of rig.mats) m.emissive.setScalar(0);
   asCorpses.push({ g, rig, t: 0, side: Math.random() < 0.5 ? -1 : 1 });
@@ -11069,12 +11092,12 @@ function disposeRigMats(M) { for (const k in M) if (M[k]?.isMaterial) M[k].dispo
 // ---- per-zombie setup / def swap ------------------------------------------------------------------------------
 // The Imp keeps the shared zombie capsule as an invisible hitbox; the rig is its child. In the mech the zombie's
 // `def` is swapped for a bigger derived def (hitbox, speed, range) and back again on eject.
-const IMP_MECH_DEF = { ...ZT.imp, ...IMP.mech.body, agent: { ...ZT.imp.agent, ...IMP.mech.body.agent } };
+const IMP_MECH_DEF = scaleAgentDef({ ...ZT.imp, ...IMP.mech.body, agent: { ...ZT.imp.agent, ...IMP.mech.body.agent } });
 function setupImp(z) {
   z.mesh.material.colorWrite = false; z.mesh.material.depthWrite = false; z.mesh.castShadow = false;
   const rig = takeRig('imp');
   z.mesh.add(rig.root);
-  rig.root.position.y = -(z.def.radius + z.def.height / 2);
+  rig.root.position.y = -rigHalf(z.def);
   z.rig = rig;
   z.imp = {
     air: 0, vy: 0, jumps: 0, hopT: randRange(IMP.move.hopCooldown), ammo: IMP.blaster.clip, reloadT: 0,
@@ -11090,8 +11113,8 @@ function swapImpDef(z, def) {
   const old = z.def, oldHalf = old.radius + old.height / 2, half = def.radius + def.height / 2;
   z.def = def;
   z.mesh.position.y += half - oldHalf;
-  z.rig.root.position.y = -half;
-  if (z.imp.mech) z.imp.mech.rig.root.position.y = -half;
+  z.rig.root.position.y = -rigHalf(def);
+  if (z.imp.mech) z.imp.mech.rig.root.position.y = -rigHalf(def);
 }
 
 // ---- hero-side effects ---------------------------------------------------------------------------------------
@@ -14129,7 +14152,7 @@ function animateDeadbeard(z, dt) {
   J.pupils[0].position.y = Math.sin(t * 3.1) * 0.01;
   J.pupils[1].position.x = prLerp(J.pupils[1].position.x, -s.look * 0.4, Math.min(1, dt * 20));
   // ---- Ability poses: sunk in the keg (waddle-wobble), seated on the cannon
-  const root = P.rig.root, halfH = z.def.radius + z.def.height / 2;
+  const root = P.rig.root, halfH = rigHalf(z.def);
   root.position.set(0, -halfH - s.sink * 1.02 + s.seat * -0.22, -s.seat * 0.32);
   P.keg.g.visible = s.sink > 0.05;
   if (P.keg.g.visible) {
@@ -14982,7 +15005,8 @@ function updateZombieLook(z, dt) {
   if (z.parts.flashMats) for (const m of z.parts.flashMats) m.emissive.copy(e);   // procedural bodies flash too
   if (z.parts.animate) z.parts.animate(z, dt);
   const sw = z.ai.swing = Math.max(0, (z.ai.swing || 0) - dt);
-  z.mesh.scale.set(1 + sw * 0.8, 1 - sw * 0.8, 1 + sw * 0.8);
+  const k = z.def.sizeMult || 1;
+  z.mesh.scale.set(k * (1 + sw * 0.8), k * (1 - sw * 0.8), k * (1 + sw * 0.8));
   if (z.parts.core && z.parts.core.visible) z.parts.core.scale.setScalar(1 + Math.sin(state.time * 8) * 0.12);
 }
 

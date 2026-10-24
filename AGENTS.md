@@ -6,7 +6,7 @@
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.15.1)
+## Current state (v1.16.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -29,7 +29,7 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   the statue with mines/walls (`cactus.ai.fortify`). Plant bullets fly until they hit something or leave the map.
 - Zombies: `CONFIG.ZOMBIE_TYPES` (behavior key → `BEHAVIORS`), shared brain `CONFIG.AI`. Tactical agents (Imp, Foot
   Soldier, All-Star, Captain Deadbeard, Super Brainz, Engineer, Scientist) use `thinkAgent` + own kits, tuning
-  `CONFIG.AGENTS` (`damageMult`, lively escort roaming in `escort`). Bosses (Gargantuar wave 5, Mecha Gargantuar wave 10)
+  `CONFIG.AGENTS` (`damageMult`, `sizeMult` 2× size: hitbox scaled in `scaleAgentDef`, models built at base size then mesh-scaled; local rig offsets use `rigHalf`). Bosses (Gargantuar wave 5, Mecha Gargantuar wave 10)
   spawn at a random lane and prefer plants (`heroFirst`). Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
 - Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static Float64 flow fields per route
   waypoint, A* for AI plants. Spawns/routes in `CONFIG.SPAWN_POINTS`; waves are data in `CONFIG.WAVES`;
