@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const script = source.split('<script type="module">')[1].split('</script>')[0];
-new Function(script.replace(/^import .*$/gm, ''));
+new (Object.getPrototypeOf(async function () {}).constructor)(script.replace(/^import .*$/gm, ''));
 const expose = `window.__peaTest={THREE,renderer,sun,resetGame,respawnHero,makeHero,newInput,takeControl,animatePeashooter,updateHero,updateProjectiles,firePea,throwChiliBean,togglePeaGatling,useHyper,updateBeanBombs,drivePeashooter,peaTargetScore,peaBeanArcClear,updateHud,damageZombie,shotClear,stopPeaGatling,get beans(){return beanBombs},get shots(){return projectiles},clear(){for(const p of projectiles)scene.remove(p.mesh);projectiles=[];clearBeanBombs();for(const z of zombies)scene.remove(z.mesh);zombies=[];state.distractions=[];state.spawnQueue=[];state.over=false;}};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
