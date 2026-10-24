@@ -50,11 +50,18 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const expired = g.state.stats.match[0].assists === assist;
       a.hp = a.stats.hp - 20;
       const heal = g.healHero(a, 1000, medic), zero = g.healHero(a, 1000, medic);
+      const aiHealXp = g.state.stats.match[2].xp;
+      g.recordStat(medic, 'revives', 1);
+      const aiReviveXp = g.state.stats.match[2].xp;
+      const aiKillXp = g.state.stats.match[1].xp;
+      g.takeControlOf(medic); a.hp -= 20;
+      g.healHero(a, 20, medic);
       const healXp = g.state.stats.match[2].xp;
       medic.hp -= 10; g.healHero(medic, 10, medic);
       const selfNoXp = g.state.stats.match[2].xp === healXp;
       g.recordStat(medic, 'revives', 1);
       const reviveXp = g.state.stats.match[2].xp - healXp;
+      g.takeControlOf(a);
       a.vanquishChain = null; const before = g.state.stats.match[0].xp;
       for (let i = 0; i < 3; i++) { const z = g.spawnZombie('shambler'); g.damageZombie(z, 1e6, z.mesh.position, false, true, a); }
       const chainXp = g.state.stats.match[0].xp - before;
@@ -65,17 +72,41 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       g.state.time += E.chain.window + 1;
       const last = g.spawnZombie('shambler'); g.damageZombie(last, 1e6, last.mesh.position, false, true, a);
       g.saveMastery();
-      return { assist, assistXp, expired, heal, zero, healXp, selfNoXp, reviveXp, chainXp, feed, duplicateSafe, reset: a.vanquishChain.count,
+      return { assist, assistXp, expired, heal, zero, aiHealXp, aiReviveXp, aiKillXp, healXp, selfNoXp, reviveXp, chainXp, feed, duplicateSafe, reset: a.vanquishChain.count,
         expected: E.xp, chainBonus: E.chain.xp[0], saved: JSON.parse(localStorage.getItem(E.storageKey)).plants };
     });
     assert.equal(result.assist, 1); assert.equal(result.assistXp, result.expected.assist); assert.ok(result.expired);
     assert.equal(result.heal, 20); assert.equal(result.zero, 0); assert.equal(result.healXp, 20 * result.expected.heal);
+    assert.equal(result.aiHealXp, 0); assert.equal(result.aiReviveXp, 0); assert.equal(result.aiKillXp, 0);
     assert.ok(result.selfNoXp); assert.equal(result.reviveXp, result.expected.revive);
     assert.equal(result.chainXp, 3 * result.expected.kill + result.chainBonus);
     assert.match(result.feed, /TRIPLE VANQUISH/); assert.ok(result.duplicateSafe); assert.equal(result.reset, 1);
     await boot();
     assert.deepEqual(await page.evaluate(() => __game.mastery.plants), result.saved, 'XP survives reload');
-    console.log('PASS: assists expire; actual healing / revives earn XP; chains expire; dead targets cannot pay twice; mastery survives reload');
+    console.log('PASS: only the controlled plant earns kill / assist / heal / revive XP; switching follows control; mastery survives reload');
+
+    result = await page.evaluate(() => {
+      const g = __game, E = g.CONFIG.engagement;
+      g.endGame(false); g.configureSquad(['corn', 'corn', 'sunflower', 'cactus']); g.startWave(0);
+      const human = g.player, ai = g.heroes[1], target = g.spawnZombie('shambler');
+      g.damageZombie(target, target.hp * 0.3, target.mesh.position, false, false, ai);
+      g.damageZombie(target, 1e6, target.mesh.position, false, true, human);
+      const aiAssist = g.state.stats.match[1].assists, aiAssistXp = g.state.stats.match[1].xp;
+      const before = g.mastery.plants.corn;
+      for (let i = 0; i < 3; i++) { const z = g.spawnZombie('shambler'); g.damageZombie(z, 1e6, z.mesh.position, false, true, ai); }
+      const aiNoMastery = g.mastery.plants.corn === before && g.state.stats.match[1].xp === 0;
+      g.takeControlOf(ai);
+      const z = g.spawnZombie('shambler'); g.damageZombie(z, 1e6, z.mesh.position, false, true, ai);
+      const controlledXp = g.state.stats.match[1].xp;
+      const xpBefore = g.state.stats.match.map(s => s.xp);
+      g.endGame(true);
+      const victoryPaid = g.state.stats.match.map((s, i) => s.xp - xpBefore[i]);
+      g.configureSquad(['corn', 'peashooter', 'sunflower', 'cactus']);
+      return { aiAssist, aiAssistXp, aiNoMastery, controlledXp, victoryPaid, victory: E.xp.victory };
+    });
+    assert.equal(result.aiAssist, 1); assert.equal(result.aiAssistXp, 0); assert.ok(result.aiNoMastery);
+    assert.ok(result.controlledXp > 0); assert.deepEqual(result.victoryPaid, [0, result.victory, 0, 0]);
+    console.log('PASS: AI assists / chains cannot farm shared class mastery; victory XP follows the currently controlled slot');
 
     result = await page.evaluate(() => {
       const g = __game, E = g.CONFIG.engagement;
@@ -96,7 +127,9 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     result = await page.evaluate(() => {
       const g = __game, E = g.CONFIG.engagement, O = E.objectives;
       g.beginCountdown(0); g.startWave(0);
-      const coins = g.state.coins; g.clearWaveRewards(); const paid = g.state.coins - coins;
+      const coins = g.state.coins, xpBefore = g.state.stats.match.map(s => s.xp);
+      g.clearWaveRewards(); const paid = g.state.coins - coins;
+      const xpPaid = g.state.stats.match.map((s, i) => s.xp - xpBefore[i]);
       const once = g.state.coins; g.clearWaveRewards(); g.finishBonus(true);
       const idempotent = once === g.state.coins;
       g.beginCountdown(0); g.startWave(0); g.state.statueHp -= O.protectLoss + 1; g.updateEngagement(0.1);
@@ -110,9 +143,12 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const z = g.spawnZombie('shambler'); g.updateEngagement(0.1);
       const assigned = g.state.engagement.objective.target === z;
       g.damageZombie(z, 1e6, z.mesh.position, false, true, g.player);
-      return { paid, expected: O.coins, idempotent, protectFail, repairNoUndo, blitzFail, assigned, bounty: g.state.engagement.objective.status };
+      return { paid, expected: O.coins, xpPaid, expectedXp: E.xp.wave + E.xp.objective, playerSlot: g.player.squadIndex,
+        idempotent, protectFail, repairNoUndo, blitzFail, assigned, bounty: g.state.engagement.objective.status };
     });
     assert.equal(result.paid, result.expected); assert.ok(result.idempotent);
+    assert.deepEqual(result.xpPaid, result.xpPaid.map((_, i) => i === result.playerSlot ? result.expectedXp : 0),
+      'wave and objective XP go only to the controlled plant');
     assert.equal(result.protectFail, 'missed'); assert.equal(result.repairNoUndo, 'missed'); assert.equal(result.blitzFail, 'missed');
     assert.ok(result.assigned); assert.equal(result.bounty, 'complete');
     console.log('PASS: bonus payouts happen once; damage / timeout failures stay optional; the real wanted kill completes its bounty');

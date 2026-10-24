@@ -1,4 +1,4 @@
-// Default lineup fairness plus picker / spawn lifecycle, against the real game source.
+// Corn defaults, random companions without replacement, and picker / spawn lifecycle against the real source.
 // Playwright and its Chromium browser are test-only dependencies.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -8,21 +8,34 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
-const defaults = JSON.parse(source.match(/\bdefaults:\s*(\[[^\]]+\])/)[1].replace(/'/g, '"'));
-assert.deepEqual([...defaults].sort(), ['cactus', 'corn', 'peashooter', 'sunflower']);
-const shuffleSource = source.match(/function shuffledDefaultSquad\([^]*?\n\}/)[0];
-const shuffle = vm.runInNewContext(`${shuffleSource}; shuffledDefaultSquad;`, { CONFIG: { squad: { defaults } } });
-const permutations = new Set(), first = Object.fromEntries(defaults.map(type => [type, 0]));
-for (let a = 0; a < 4; a++) for (let b = 0; b < 3; b++) for (let c = 0; c < 2; c++) {
-  const draws = [(a + 0.5) / 4, (b + 0.5) / 3, (c + 0.5) / 2];
-  const order = Array.from(shuffle(() => draws.shift()));
+const defaults = ['corn', 'peashooter', 'sunflower', 'cactus'];
+const picks = ['corn', 'random', 'random', 'random'];
+const resolverSource = source.match(/function resolveSquadSelection\([^]*?\n\}/)[0];
+const makeResolver = roster => vm.runInNewContext(`${resolverSource}; resolveSquadSelection;`,
+  { CONFIG: { PLANTS: Object.fromEntries(roster.map(type => [type, {}])) } });
+const resolve = makeResolver(defaults), permutations = new Set();
+for (let a = 0; a < 3; a++) for (let b = 0; b < 2; b++) {
+  const draws = [(a + 0.5) / 3, (b + 0.5) / 2];
+  const order = Array.from(resolve(picks, () => draws.shift()));
+  assert.equal(order[0], 'corn');
   assert.deepEqual([...order].sort(), [...defaults].sort());
-  permutations.add(order.join(',')); first[order[0]]++;
+  permutations.add(order.join(','));
 }
-assert.equal(permutations.size, 24, 'every permutation must be equally reachable');
-assert.ok(Object.values(first).every(count => count === 6), 'each plant must start in 6 of 24 equally likely outcomes');
-assert.deepEqual(defaults, ['corn', 'peashooter', 'sunflower', 'cactus'], 'shuffling must leave configuration unchanged');
-console.log('PASS: all 24 permutations; exactly 25% starting chance per plant');
+assert.equal(permutations.size, 6, 'every companion order must be equally reachable, with Corn fixed');
+assert.deepEqual(picks, ['corn', 'random', 'random', 'random'], 'resolving must leave picker choices unchanged');
+assert.deepEqual(Array.from(resolve(['peashooter', 'random', 'sunflower', 'random'], () => 0)).sort(), [...defaults].sort(),
+  'random slots exclude the player and explicit choices in later slots');
+assert.deepEqual(Array.from(makeResolver(['corn', 'cactus'])(picks, () => 0)), ['corn', 'cactus'],
+  'a smaller roster leaves slots empty rather than duplicating plants');
+const larger = [...defaults, 'future-a', 'future-b'], expanded = makeResolver(larger), seen = new Set();
+for (let a = 0; a < 5; a++) for (let b = 0; b < 4; b++) for (let c = 0; c < 3; c++) for (let d = 0; d < 2; d++) {
+  const draws = [(a + 0.5) / 5, (b + 0.5) / 4, (c + 0.5) / 3, (d + 0.5) / 2];
+  const order = Array.from(expanded(picks, () => draws.shift()));
+  assert.equal(order.length, 4); assert.equal(order[0], 'corn'); assert.equal(new Set(order).size, 4);
+  order.slice(1).forEach(type => seen.add(type));
+}
+assert.deepEqual([...seen].sort(), larger.filter(type => type !== 'corn').sort(), 'new plant entries enter the pool automatically');
+console.log('PASS: Corn fixed; all six companion orders; explicit picks excluded; larger and smaller rosters supported');
 
 const expose = 'window.__defaultSquadTest = { endGame, respawnHero };';
 const html = source.replace(/loop\(\);\s*<\/script>\s*<\/body>/, expose + '</script></body>');
@@ -44,12 +57,12 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       return { types: g.heroes.map(h => h.type), picks, human: g.player.type, ai: g.heroes.filter(h => h.isAI).length };
     });
     assert.deepEqual([...initial.types].sort(), [...defaults].sort());
-    assert.deepEqual(initial.picks, initial.types, 'picker and initial spawn must share one shuffle');
-    assert.equal(initial.human, initial.picks[0]); assert.equal(initial.ai, 3);
+    assert.deepEqual(initial.picks, picks, 'all companion slots default to Random');
+    assert.equal(initial.human, 'corn'); assert.equal(initial.ai, 3);
     await page.click('#matchButton');
-    assert.deepEqual(await page.evaluate(() => __game.heroes.map(h => h.type)), initial.picks);
-    assert.equal(await page.evaluate(() => __game.player.type), initial.picks[0]);
-    console.log('PASS: initial picker, preview and match use one of every plant in the same order');
+    assert.deepEqual(await page.evaluate(() => __game.heroes.map(h => h.type).sort()), [...defaults].sort());
+    assert.equal(await page.evaluate(() => __game.player.type), 'corn');
+    console.log('PASS: picker and match default to Corn plus three different random AI plants');
 
     const lifecycle = await page.evaluate(() => {
       const g = __game, t = __defaultSquadTest, original = [...g.heroes], order = original.map(h => h.type).join(',');
@@ -57,19 +70,25 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const respawnKept = g.player === controlled && original.every((h, i) => h === g.heroes[i]);
       g.switchSquadMember(1);
       const switchKept = original.every((h, i) => h === g.heroes[i]) && g.heroes.map(h => h.type).join(',') === order;
-      const random = Math.random;
-      Math.random = () => order === g.CONFIG.squad.defaults.join(',') ? 0 : 0.999;
-      try { t.endGame(false); } finally { Math.random = random; }
+      t.endGame(false);
       const next = [...document.querySelectorAll('#squadSlots select[id^="pick-"]')].map(el => el.value);
       return { respawnKept, switchKept, next, order };
     });
     assert.equal(lifecycle.respawnKept, true); assert.equal(lifecycle.switchKept, true);
-    assert.deepEqual([...lifecycle.next].sort(), [...defaults].sort());
-    assert.notEqual(lifecycle.next.join(','), lifecycle.order, 'untouched defaults must be reshuffled for the next match');
+    assert.deepEqual(lifecycle.next, picks, 'Random stays selected for the next match');
     await page.click('#matchButton');
-    assert.deepEqual(await page.evaluate(() => __game.heroes.map(h => h.type)), lifecycle.next);
+    assert.deepEqual(await page.evaluate(() => __game.heroes.map(h => h.type).sort()), [...defaults].sort());
     assert.equal(await page.evaluate(() => __game.player.type), lifecycle.next[0]);
     console.log('PASS: respawn / handoff preserve identity; the next default match uses a fresh shuffle');
+
+    await page.evaluate(() => __defaultSquadTest.endGame(false));
+    await page.selectOption('#pick-0', 'peashooter');
+    await page.selectOption('#pick-1', 'random'); await page.selectOption('#pick-2', 'sunflower'); await page.selectOption('#pick-3', 'random');
+    assert.ok(await page.locator('#loadout-1').isDisabled(), 'Random has no class-specific loadout');
+    await page.click('#matchButton');
+    const mixed = await page.evaluate(() => __game.heroes.map(h => h.type));
+    assert.equal(mixed[0], 'peashooter'); assert.equal(mixed[2], 'sunflower'); assert.equal(new Set(mixed).size, 4);
+    console.log('PASS: random companions exclude a manually chosen player and a later explicit companion');
 
     await page.evaluate(() => __defaultSquadTest.endGame(false));
     await page.selectOption('#pick-0', 'corn');
@@ -78,6 +97,18 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await page.evaluate(() => __defaultSquadTest.endGame(false));
     assert.deepEqual(await page.locator('#squadSlots select[id^="pick-"]').evaluateAll(els => els.map(el => el.value)), ['corn', '', '', '']);
     console.log('PASS: manual squad choices remain selected across matches');
+
+    const menu = await browser.newPage();
+    menu.on('pageerror', e => errors.push(e.message));
+    await menu.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+    await menu.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: 'load' });
+    assert.equal(await menu.evaluate(() => !!window.__game), false, 'human menu keeps world construction behind the gate');
+    assert.deepEqual(await menu.locator('#squadSlots select[id^="pick-"]').evaluateAll(els => els.map(el => el.value)), picks);
+    await menu.click('#matchButton');
+    await menu.waitForFunction(() => window.__defaultSquadTest && !document.body.classList.contains('loading'), null, { timeout: 90000 });
+    const booted = await menu.evaluate(() => ({ types: __game.heroes.map(h => h.type), human: __game.player.type }));
+    assert.equal(booted.human, 'corn'); assert.deepEqual([...booted.types].sort(), [...defaults].sort());
+    console.log('PASS: human menu boots the chosen Corn and random companion squad behind the loading screen');
     assert.deepEqual(errors, [], 'no runtime exceptions during lineup lifecycle');
   } finally { await browser?.close(); server.close(); }
 })().catch(error => { console.error(error); server.close(); process.exitCode = 1; });

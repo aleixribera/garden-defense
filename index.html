@@ -385,7 +385,7 @@
 <div id="version"></div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
   <div id="squadPicker"><h2>Choose your squad</h2>
-    <p>Choose your plant and up to three autonomous companions. Duplicate plants are allowed.<br>Each plant keeps its health, ammo and cooldowns when you switch.</p>
+    <p>Choose your plant and up to three autonomous companions. Random picks never repeat a squad plant.<br>Each plant keeps its health, ammo and cooldowns when you switch.</p>
     <div id="squadSlots"></div><div id="squadSummary"></div>
     <label id="difficultyPick">Difficulty <select id="setDifficulty" aria-label="Difficulty"></select></label>
   </div>
@@ -413,7 +413,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.25.1';
+const VERSION = 'v1.25.2';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -423,7 +423,7 @@ const CONFIG = {
   statue: { hp: 1000, size: 4 },
   // Hidden garden alert: a zombie hitting the garden draws nearby AI plants onto it and pulls distant ones closer
   gardenAlert: { duration: 10, respondRadius: 40, pullScale: 0.55 },
-  squad: { maxCompanions: 3, defaults: ['corn', 'peashooter', 'sunflower', 'cactus'], respawnDelay: 20,
+  squad: { maxCompanions: 3, defaultPlayer: 'corn', respawnDelay: 20,
     aiRooted: { maxTime: 8, idleTime: 2 },
     // AI plants that push a direction but barely move escalate: jump + repath → escape walk → snap to an open cell
     aiStuck: { window: 1, minProgress: 0.9, escapeTime: 1, probe: 4, snapStrikes: 3 },   // AI cancels a rooted ability after this long, or after this long without firing
@@ -1551,15 +1551,15 @@ const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
 const SKIP_MENU = AUTOPLAY || navigator.webdriver;
 // Debug keys (spawns, wave skip, free coins, overlays) only with ?debug (or ?autoplay): never in a normal match
 const DEBUG = AUTOPLAY || new URLSearchParams(location.search).has('debug');
-// Fisher–Yates gives every default plant the same chance at every squad slot, including human control.
-// Shuffle once per new default lineup; respawns and control switches keep the existing characters.
-function shuffledDefaultSquad(random = Math.random) {
-  const order = [...CONFIG.squad.defaults];
+// Resolve random companions once when starting a match, from the current plant roster. Reserve every explicit
+// pick first (including later slots); sampling without replacement also works as new plants are added.
+function resolveSquadSelection(selection, random = Math.random) {
+  const order = Object.keys(CONFIG.PLANTS).filter(type => !selection.includes(type));
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
-  return order;
+  return selection.map(type => type === 'random' ? order.pop() : type).filter(Boolean);
 }
 // Load recognition before the menu gate: no three.js or world construction is needed to show mastery.
 const EG = CONFIG.engagement;
@@ -1583,16 +1583,14 @@ function masteryLevel(type) {
   while (xp >= need && level < EG.maxLevel) { xp -= need; level++; need += EG.levelGrowth; }
   return { level, xp, need, title: EG.titles[Math.min(EG.titles.length - 1, Math.floor((level - 1) / EG.titleEvery))] };
 }
-let defaultSquad = shuffledDefaultSquad();
 const squadSlots = document.getElementById('squadSlots');
-let squadSelectionCustomized = false;
 for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
   const label = document.createElement('label'); label.textContent = i === 0 ? 'Your plant' : `Companion ${i}`;
   const select = document.createElement('select'); select.id = `pick-${i}`;
   select.setAttribute('aria-label', i === 0 ? 'Your plant' : `Companion ${i}`);
-  if (i > 0) select.add(new Option('None', ''));
+  if (i > 0) { select.add(new Option('Random (no repeats)', 'random')); select.add(new Option('None', '')); }
   for (const [key, def] of Object.entries(CONFIG.PLANTS)) select.add(new Option(def.name, key));
-  select.value = defaultSquad[i] || '';
+  select.value = i === 0 ? CONFIG.squad.defaultPlayer : 'random';
   // Plant card: role, one-line pitch and the Q / E / F kit of whatever is picked in this slot
   const card = document.createElement('div'); card.className = 'plantCard';
   const loadout = document.createElement('select'); loadout.id = `loadout-${i}`; loadout.className = 'loadoutPick';
@@ -1607,20 +1605,16 @@ for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
       cardType = select.value;
     }
     loadout.disabled = !d;
-    card.innerHTML = !d ? '<i>No companion</i>' : `<b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
+    card.innerHTML = select.value === 'random' ? '<b>Random plant</b>Chosen from the available roster at match start. No repeats within the squad.' :
+      !d ? '<i>No companion</i>' : `<b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
       ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span><kbd>${'QEF'[n]}</kbd>${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>' +
       `<span class="mastery">${m.title} · Level ${m.level}${m.level < EG.maxLevel ? ` · ${Math.floor(m.xp)} / ${m.need} XP` : ' · ★'}</span>` +
       `<div>${loadout.value === 'variant' ? variant.description : d.info.primary}</div>`;
   };
   select.showCard();
-  select.addEventListener('change', () => { squadSelectionCustomized = true; select.showCard(); updateSquadSummary(); });
-  loadout.addEventListener('change', () => { squadSelectionCustomized = true; select.showCard(); });
+  select.addEventListener('change', () => { select.showCard(); updateSquadSummary(); });
+  loadout.addEventListener('change', () => select.showCard());
   label.append(select, card, loadout); squadSlots.append(label);
-}
-function refreshDefaultSquadSelection() {
-  defaultSquad = shuffledDefaultSquad();
-  [...squadSlots.querySelectorAll('select[id^="pick-"]')].forEach((select, i) => { select.value = defaultSquad[i] || ''; select.showCard(); });
-  updateSquadSummary();
 }
 function readSquadSelection() {
   return [...squadSlots.querySelectorAll('select[id^="pick-"]')].map(select => select.value).filter(Boolean);
@@ -3493,7 +3487,8 @@ function makeHero(type, isAI, spawnAt, squadIndex) {
   h.bar = makeWorldBar(1.4, 0x49b8e8); scene.add(h.bar.group);
   return h;
 }
-const heroes = defaultSquad.map((type, i) => makeHero(type, i !== 0, CONFIG.squad.spawnPoints[i], i));
+const initialSquad = resolveSquadSelection(bootSelection || readSquadSelection());
+const heroes = initialSquad.map((type, i) => makeHero(type, i !== 0, CONFIG.squad.spawnPoints[i], i));
 let player = heroes[0];
 let mate = heroes[1] || null; // legacy debug alias: first AI companion
 let playerMesh = player.mesh, corn = player.corn;   // aliases follow control; hero objects never change identity
@@ -5958,7 +5953,7 @@ function recordStat(h, key, n) {
 
 // =====================================================================
 // Garden Ops engagement (research / rationale: docs/gw2-engagement.md)
-// Each hero owns its chain and rewards; switching control cannot transfer or erase them.
+// Each hero owns its chain; mastery XP is earned only while that hero is under player control.
 // =====================================================================
 function rewardNotice(text) {
   if (!state?.engagement || state.over) return;
@@ -5969,7 +5964,7 @@ function rewardNotice(text) {
   if (feed.length > EG.feed.max) feed.shift();
 }
 function awardXp(h, amount, reason = '') {
-  if (!matchStarted || !state || state.over || !h?.active || !heroes.includes(h) || amount <= 0) return;
+  if (!matchStarted || !state || state.over || h !== player || h.isAI || !h.active || !heroes.includes(h) || amount <= 0) return;
   const before = masteryLevel(h.type).level;
   mastery.plants[h.type] = Math.min(EG.maxXp, mastery.plants[h.type] + amount);
   masteryDirty = true; recordStat(h, 'xp', amount);
@@ -6065,8 +6060,8 @@ function finishBonus(success) {
   if (!success) return;
   const coins = EG.objectives.coins + state.waveIndex * EG.objectives.coinsPerWave;
   state.coins += coins; E.completed++; mastery.objectives++; masteryDirty = true;
-  for (const h of heroes) if (h.active) awardXp(h, EG.xp.objective);
-  rewardNotice(`BONUS COMPLETE · +${coins} coins · +${EG.xp.objective} XP per plant`);
+  awardXp(player, EG.xp.objective);
+  rewardNotice(`BONUS COMPLETE · +${coins} coins · +${EG.xp.objective} XP`);
   SFX.play('sunPickup', null); saveMastery();
 }
 function clearWaveRewards() {
@@ -6075,7 +6070,7 @@ function clearWaveRewards() {
   E.rewardedWave = state.waveIndex;
   const o = E.objective;
   if (o?.status === 'active') finishBonus(o.kind === 'protect' || (o.kind === 'blitz' && o.remaining > 0));
-  for (const h of heroes) if (h.active) awardXp(h, EG.xp.wave);
+  awardXp(player, EG.xp.wave);
   saveMastery();
 }
 function bonusLabel(o) {
@@ -6149,7 +6144,7 @@ function drawEngagement() {
   setHtml(hud('masteryHud'), `${m.title} · LV ${m.level} · +${Math.floor(state.stats.match[player.squadIndex]?.xp || 0)} XP this match` +
     `<progress max="${m.need}" value="${m.level >= EG.maxLevel ? m.need : m.xp}" aria-label="Plant mastery progress"></progress>`);
   const status = o?.status === 'complete' ? '✓ Complete' : o?.status === 'missed' ? 'Bonus missed · garden defense continues' :
-    state.phase === 'countdown' ? `+${EG.objectives.coins + state.waveIndex * EG.objectives.coinsPerWave} coins · +${EG.xp.objective} XP per plant` :
+    state.phase === 'countdown' ? `+${EG.objectives.coins + state.waveIndex * EG.objectives.coinsPerWave} coins · +${EG.xp.objective} XP` :
     o?.kind === 'protect' ? `${Math.ceil(o.loss || 0)} / ${EG.objectives.protectLoss} garden HP lost` :
     o?.kind === 'bounty' && !o.target ? 'Waiting for the wanted zombie' :
     `${Math.ceil(o?.remaining || 0)}s left${o?.kind === 'rally' ? ` · ${Math.floor(o.progress * 100)}%${o.contested ? ' · CONTESTED' : ''}` : ''}`;
@@ -6761,12 +6756,11 @@ function setMessage(text, duration = 0) {
 function endGame(won) {
   if (state.over) return;
   if (won) {
-    for (const h of heroes) if (h.active) awardXp(h, EG.xp.victory);
+    awardXp(player, EG.xp.victory);
     mastery.victories++; masteryDirty = true;
   }
   saveMastery(); bonusMarker.visible = false;
   state.over = true;
-  if (!squadSelectionCustomized) refreshDefaultSquadSelection();
   for (const select of squadSlots.querySelectorAll('select[id^="pick-"]')) select.showCard();
   updateSquadSummary();
   SFX.play(won ? 'victory' : 'defeat');
@@ -20188,7 +20182,8 @@ function disposeHero(h) {
 function configureSquad(selection) {
   if (matchStarted && !state.over) return false;
   if (!Array.isArray(selection) || selection.length < 1 || selection.length > CONFIG.squad.maxCompanions + 1 ||
-    selection.some(type => !CONFIG.PLANTS[type] || !PLANT_TYPES[type])) return false;
+    selection.some((type, i) => type === 'random' ? i === 0 : !CONFIG.PLANTS[type] || !PLANT_TYPES[type])) return false;
+  selection = resolveSquadSelection(selection);
   // Reuse compatible rigs by slot; only a roster change constructs a new character.
   const previous = [...heroes];
   heroes.length = 0;
@@ -20432,7 +20427,7 @@ prewarmAssets();
   button.disabled = false;
   document.body.classList.remove('loading');
   if (bootSelection) {
-    configureSquad(bootSelection);
+    configureSquad(initialSquad);
     matchStarted = true;
     document.body.classList.remove('preMatch');
     document.getElementById('overlayTitle').textContent = 'THE GARDEN IS READY';

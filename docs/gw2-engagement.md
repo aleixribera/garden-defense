@@ -37,7 +37,7 @@ optional activities over the main fight. A separate online social hub would requ
 | Immediate recognition | Hit/kill markers, damage numbers, sounds, animation and callouts | Bounded reward feed, per-hero timed vanquish chains and level-up feedback. |
 | Longer goals | Match summary and coins | Saved per-class XP, ten mastery levels, titles, victory count and bonus medals; current progress in menu and HUD. |
 | Tension and release | Pack timing, shops, boss waves, extraction | Healthy squads advance quiet packs; bosses, agents, garden danger, injuries and fallen allies preserve breathing room. |
-| Risk and reward | Leave home to fight; buy defenses between waves | Supplies draw one volunteer away, are contested by enemies, and reward shared coins and squad XP. |
+| Risk and reward | Leave home to fight; buy defenses between waves | Supplies draw one volunteer away, are contested by enemies, and reward shared coins and controlled-plant XP. |
 | Readable spatial decisions | Heightfield, cover, routes, radar, attack directions | Gold objective outline, world label, distance/bearing, countdown and capture progress. |
 | Personality and team spectacle | Procedural art, gnome garden, class animations, music | Playful wave identities and chain celebrations reuse the existing audiovisual vocabulary. |
 
@@ -48,7 +48,8 @@ modified copy; health and abilities remain intact. Corn trades cadence/ammo for 
 impact for rate/ammo; Sunflower trades cadence/ammo for accurate heavy pulses; Cactus trades damage/precision for follow-up
 shots. Pots retain their existing weapon balance. Loadouts persist through respawns and control switches within a match.
 
-Mastery records the squad’s actual hero contributions locally. XP rewards kills, qualifying recent assists, effective
+Mastery records only the currently player-controlled hero’s contributions locally; AI companions earn no XP, including
+when they share the player’s class. Switching control changes which hero can earn XP. XP rewards kills, qualifying recent assists, effective
 healing of other plants, revives, wave clears, bonuses and extraction victory. It unlocks recognition, not combat power.
 No daily attendance requirement, decay, randomized purchases, or time-limited unlocks are introduced. Save writes are
 batched and flushed on level-ups, wave clears, match end and hiding/leaving the page. Unavailable storage leaves play functional.
@@ -57,7 +58,7 @@ Themes replace only part of ordinary shambler packs. Counts stay unchanged; orig
 Types respect their normal introduction wave. Boss slots, extraction, potted defenses, existing music and weapon feedback
 already express the relevant GW2 principles and are preserved.
 
-Bonuses pay once, with a modest shared-wallet reward and XP for each participating squad plant. Supply positions must
+Bonuses pay once, with a modest shared-wallet reward and XP for the currently controlled plant. Supply positions must
 have connected navigation and an actual path; only one healthy non-medic AI volunteers, and garden danger takes priority.
 Bounties mark an existing enemy instead of adding an unbudgeted pack. Repair cannot reverse a failed guard objective.
 The reusable gold marker is built and compiled behind the loading screen, with no new lights or runtime shader variants.
