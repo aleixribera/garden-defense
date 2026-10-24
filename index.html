@@ -215,7 +215,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.11.2';
+const VERSION = 'v1.11.3';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -603,7 +603,7 @@ const CONFIG = {
     tacticalReloadFrac: 0.5,     // reload out of sight when below this fraction of the clip
     // Pack escorts: each pack of a wave may bring agents that spawn escortDelay s after the pack's burst and guard it.
     // chance = per pack (+ chancePerWave each wave); at most WAVES[i].agentCap per wave (more with more plants).
-    escort: { delay: 3, chance: 0.5, chancePerWave: 0.04, perPack: [1, 2], capPerHero: 0.35,
+    escort: { delay: 3, chance: 0.35, chancePerWave: 0.04, perPack: [1, 2], capPerHero: 0.35,
               followDist: 4,       // guards trail the pack's center by this much (behind it, toward its spawn)
               engageRange: 22 },   // a plant this close to the pack or the guard breaks guard and starts the hunt
     damageMult: 0.6,             // global nerf on every agent's weapon damage
