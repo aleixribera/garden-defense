@@ -397,7 +397,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.23.0';
+const VERSION = 'v1.24.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -664,6 +664,15 @@ const CONFIG = {
   //     'heroFirst'  — any plant within aggroRange before the statue, no sight needed (bosses)
   //   Optional: noLos (senses the hero without sight), ignoreLeash (no chase timeout / sight loss),
   //   canClimb (uses the climb nav layer), reachesHighGround (may target a hero with no ground path).
+  // Total hit-capsule height relative to the plants' shared capsule (player.radius * 2 + player.height).
+  // Sculpted hats, hair, flags and weapons may extend beyond it. Keep plants as the fixed size reference:
+  // ordinary zombies ≈ a plant, Imp ≈ half a plant, bruisers taller, then Z-Mech → Gargantuar → Mecha.
+  enemySize: {
+    shambler: 1, sprinter: 0.82, plated: 1.25, spitter: 0.95,
+    bomber: 0.75, banner: 0.85, climber: 0.9, howler: 0.8,
+    imp: 0.6, soldier: 1, allStar: 1.25, pirate: 1.05, superBrainz: 1.3, mechanic: 0.9, scientist: 0.95,
+    engineerTurret: 0.55, healStation: 0.5, zmech: 1.65, miniBoss: 2.25, finalBoss: 3,
+  },
   ZOMBIE_TYPES: {
     shambler: {
       hp: 50, speed: 3.5, damage: 10, attackCooldown: 1.0,
@@ -857,7 +866,6 @@ const CONFIG = {
   // Tactical zombie agents: shared brain tuning (types above carry their own role / weapon numbers).
   // Adaptations for this game, not Garden Warfare constants.
   AGENTS: {
-    sizeMult: 2,                 // every tactical agent is this many times its modelled size (model, hitbox, collision)
     thinkRate: 6,                // decisions per second
     // Target choice: lower score wins = distance − opening·openingWeight − focus bonus (+ crowd penalty past focusCap)
     target: { openingWeight: 6, focusBonus: 6, focusCap: 2, crowdPenalty: 10, revengeBonus: 8, switchMargin: 8 },
@@ -3404,14 +3412,15 @@ const targetable = h => !!h && h.active && !h.dead;
 
 // Shared zombie resources: one geometry + material per type, built from CONFIG
 const ZT = CONFIG.ZOMBIE_TYPES;
-// Agent size: radius/height (hitbox, collision, ground placement) are scaled here; models are still built at the
-// base size (baseRadius/baseHeight, see makeZombieMesh) and the whole mesh is scaled by def.sizeMult.
-function scaleAgentDef(def) {
-  const k = CONFIG.AGENTS.sizeMult;
-  def.baseRadius = def.radius; def.baseHeight = def.height; def.radius *= k; def.height *= k; def.sizeMult = k;
+// One plant-relative scale for every enemy: collision, hitbox, ground placement and rendered body stay together.
+// Preserve sculpting-space dimensions for templates / animation; models are scaled once at the mesh root.
+function scaleEnemyDef(def, type) {
+  const radius = def.baseRadius ?? def.radius, height = def.baseHeight ?? def.height;
+  const k = CONFIG.enemySize[type] * (CONFIG.player.radius * 2 + CONFIG.player.height) / (radius * 2 + height);
+  def.baseRadius = radius; def.baseHeight = height; def.radius = radius * k; def.height = height * k; def.sizeMult = k;
   return def;
 }
-for (const def of Object.values(ZT)) if (def.agent) scaleAgentDef(def);
+for (const [type, def] of Object.entries(ZT)) scaleEnemyDef(def, type);
 // Half height in the mesh's LOCAL (unscaled) space: where rigs sit under the capsule origin
 const rigHalf = def => (def.baseRadius ?? def.radius) + (def.baseHeight ?? def.height) / 2;
 const zombieAssets = {};
@@ -3596,7 +3605,7 @@ function hordeDepthMaterial(bones) {
 // Build (once) a type's merged model, its instanced mesh and its bone texture
 function hordeKit(type) {
   if (HORDE[type]) return HORDE[type];
-  const model = HORDE_MODELS[type], def = ZT[type], halfH = def.radius + def.height / 2, cap = CONFIG.render.zombieBatch;
+  const model = HORDE_MODELS[type], def = ZT[type], halfH = rigHalf(def), cap = CONFIG.render.zombieBatch;
   const M = hordeModeler();
   model.build(M, def);
   const { geo, pivots, parent } = M.build(halfH);
@@ -3906,7 +3915,8 @@ function attachHordeParts(type, mesh, parts, def, halfH) {
     const ring = new THREE.Mesh(new THREE.CircleGeometry(def.buffRadius, 40),
       new THREE.MeshBasicMaterial({ color: 0xff6699, transparent: true, opacity: 0.2, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
-    ring.position.y = -halfH + 0.03;
+    ring.position.y = -halfH + 0.03 / def.sizeMult;
+    ring.scale.setScalar(1 / def.sizeMult);   // aura range is in world metres, independent of body size
     mesh.add(ring);
     parts.dispose = () => { ring.geometry.dispose(); ring.material.dispose(); };
   }
@@ -5973,7 +5983,7 @@ function respawnHero(h) {
 const zombieDarkMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
 const moundGeo = new THREE.SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
 const moundMat = new THREE.MeshLambertMaterial({ color: 0x5a4028 });
-// Scaled agents: build at the base size (rig code reads def.radius/height), then scale the whole mesh
+// Build in sculpting space (rig code reads def.radius/height), then scale the whole enemy, including horde markers.
 function makeZombieMesh(type) {
   const def = ZT[type];
   if (!def.sizeMult) return buildZombieMesh(type);
@@ -10211,7 +10221,7 @@ function attachGargantuarRig(mesh,parts,def) {
   Object.assign(parts,{root,gg:J,warning,flashMats:[...clones.values()].filter(m=>m.roughness>0.3),animate:animateGargantuar,
     onDeath(z){
       const corpse=new THREE.Group();corpse.position.copy(z.mesh.position).setY(feetY(z));corpse.rotation.y=z.mesh.rotation.y;
-      root.position.y=0;corpse.add(root);scene.add(corpse);parts.transferred=true;warning.visible=false;
+      root.position.y=0;corpse.scale.copy(z.mesh.scale);corpse.add(root);scene.add(corpse);parts.transferred=true;warning.visible=false;
       gargantuarCorpses.push({mesh:corpse,root,mats:[...clones.values()],age:0,landed:false});
     },
     dispose(){scene.remove(warning);warning.geometry.dispose();warning.material.dispose();if(!parts.transferred)clones.forEach(m=>m.dispose());}});
@@ -12034,7 +12044,7 @@ function engineerDeath(z) {
   for (const [nodeObj, up] of [[r.hat, 7], [r.gun, 4]]) {
     const w = nodeObj.getWorldPosition(new THREE.Vector3()), q = nodeObj.getWorldQuaternion(new THREE.Quaternion());
     const mesh = nodeObj.clone(true);
-    mesh.position.copy(w); mesh.quaternion.copy(q); mesh.scale.setScalar(nodeObj === r.gun ? 0.9 : 1.12 * 0.9);
+    mesh.position.copy(w); mesh.quaternion.copy(q); nodeObj.getWorldScale(mesh.scale);
     mesh.traverse(o => { if (o.isMesh) o.material = o.material.clone(); });
     scene.add(mesh);
     engineerDebris.push({ mesh, vel: rand3(4).setY(up), spin: rand3(12), life: 3, ground: false });
@@ -12900,7 +12910,7 @@ function makeStationRig(halfH) {
     const pop = Math.min(1, (R.life - life) * 4);
     root.scale.setScalar(Math.max(0.01, pop < 1 ? Math.sin(pop * Math.PI * 0.5) * (1 + 0.2 * Math.sin(pop * Math.PI)) : 1));
     rig.head.rotation.y += dt * 2.5;
-    rig.aura.scale.setScalar(R.radius * (0.92 + 0.08 * Math.sin(t * 3)));
+    rig.aura.scale.setScalar(R.radius * (0.92 + 0.08 * Math.sin(t * 3)) / z.def.sizeMult);
     rig.aura.material.opacity = 0.22 + 0.12 * Math.sin(t * 5) * (life < 3 ? Math.sign(Math.sin(t * 14)) : 1);
     rig.goo.material.emissiveIntensity = 0.7 + 0.4 * Math.sin(t * 6);
     rig.goo.scale.y = Math.max(0.05, life / R.life);
@@ -13675,7 +13685,9 @@ function disposeRigMats(M) { for (const k in M) if (M[k]?.isMaterial) M[k].dispo
 // ---- per-zombie setup / def swap ------------------------------------------------------------------------------
 // The Imp keeps the shared zombie capsule as an invisible hitbox; the rig is its child. In the mech the zombie's
 // `def` is swapped for a bigger derived def (hitbox, speed, range) and back again on eject.
-const IMP_MECH_DEF = scaleAgentDef({ ...ZT.imp, ...IMP.mech.body, agent: { ...ZT.imp.agent, ...IMP.mech.body.agent } });
+const IMP_MECH_DEF = scaleEnemyDef({ ...ZT.imp, ...IMP.mech.body,
+  baseRadius: IMP.mech.body.radius, baseHeight: IMP.mech.body.height,
+  agent: { ...ZT.imp.agent, ...IMP.mech.body.agent } }, 'zmech');
 function setupImp(z) {
   z.mesh.material.colorWrite = false; z.mesh.material.depthWrite = false; z.mesh.castShadow = false;
   const rig = takeRig('imp');
@@ -13696,6 +13708,7 @@ function swapImpDef(z, def) {
   const old = z.def, oldHalf = old.radius + old.height / 2, half = def.radius + def.height / 2;
   z.def = def;
   z.mesh.position.y += half - oldHalf;
+  z.mesh.scale.setScalar(def.sizeMult);
   z.rig.root.position.y = -rigHalf(def);
   if (z.imp.mech) z.imp.mech.rig.root.position.y = -rigHalf(def);
 }
@@ -13826,6 +13839,7 @@ function callZMech(z) {
   const C = IMP.mech, p = z.mesh.position;
   const at = new THREE.Vector3(p.x, heightAt(p.x, p.z), p.z);
   const rig = takeRig('zmech');
+  rig.root.scale.setScalar(IMP_MECH_DEF.sizeMult);   // falling mech has the same world size as the boarded one
   rig.root.position.set(at.x, at.y + C.dropHeight, at.z);
   rig.root.rotation.y = z.mesh.rotation.y;
   for (const j of rig.jets) j.visible = true;
@@ -13851,6 +13865,7 @@ function boardZMech(z) {
   z.mesh.add(rig.root);
   rig.root.position.set(0, 0, 0);
   rig.root.rotation.set(0, 0, 0);
+  rig.root.scale.setScalar(1);   // boarded mech inherits its scale from the enemy mesh
   for (const j of rig.jets) j.visible = false;
   rig.pilot.head.visible = true;
   z.rig.root.visible = false;
@@ -13883,9 +13898,11 @@ function ejectZMech(z) {
   const E = IMP.mech.eject, mm = z.imp.mech, rig = mm.rig;
   z.mesh.updateMatrixWorld(true);
   const wp = new THREE.Vector3(), wq = new THREE.Quaternion();
+  const ws = rig.root.getWorldScale(new THREE.Vector3());
   rig.root.getWorldPosition(wp); rig.root.getWorldQuaternion(wq);
   z.mesh.remove(rig.root);
   rig.root.position.copy(wp); rig.root.quaternion.copy(wq);
+  rig.root.scale.copy(ws);   // detached wreck retains the boarded size
   rig.pilot.head.visible = false;
   scene.add(rig.root);
   impWrecks.push({ rig, t: 0, pos: wp.clone() });
@@ -17153,7 +17170,7 @@ AGENT_KITS.pirate = (z, h, dHero, dt) => pirateWeapon(z, h, z.ai, dt);
 // =====================================================================
 function buildMechaGargantuar() {
   const root = new THREE.Group(), body = new THREE.Group(), mats = [], textures = [], geometries = new Set();
-  root.position.y = -(ZT.finalBoss.radius + ZT.finalBoss.height / 2);
+  root.position.y = -rigHalf(ZT.finalBoss);
   root.add(body);
   const mat = (color, metalness = 0.55, roughness = 0.44, extra = {}) => {
     const m = new THREE.MeshStandardMaterial({ color, metalness, roughness, ...extra }); mats.push(m); return m;
@@ -17449,7 +17466,7 @@ function mechaSmash(z) {
 function mechaPulse(z,target) {
   const C=CONFIG.MECHA.pulse, a=mechaState(z);
   z.mesh.updateMatrixWorld(true);
-  const start=z.mesh.localToWorld(new THREE.Vector3(a.shots%2?0.58:-0.94,6.04-(z.def.radius+z.def.height/2),2.35));
+  const start=z.mesh.localToWorld(new THREE.Vector3(a.shots%2?0.58:-0.94,6.04-rigHalf(z.def),2.35));
   const dir=target.clone().sub(start).normalize(), mesh=new THREE.Mesh(mechaPulseGeo,mechaPulseMat);mesh.position.copy(start);scene.add(mesh);
   enemyProjectiles.push({mesh,vel:dir.multiplyScalar(C.speed),life:C.range/C.speed,r:C.radius,damage:C.damage,owner:z,trail:0x71dcff,mecha:true,
     onEnd(p,at){spawnExplosion(at,0.65,0x7feaff);}});
@@ -17922,7 +17939,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   if (z.imp?.mech) { damageZMech(z, amount, at, mine); return; }   // the Z-Mech soaks everything until it ejects
   if (def.behavior === 'mecha') {
     // The cockpit / upper head bypasses body armor. Existing weapons retain their own critical multiplier.
-    const headHit = !heavy && at.y >= feetY(z) + CONFIG.MECHA.headHeight;
+    const headHit = !heavy && at.y >= feetY(z) + CONFIG.MECHA.headHeight * z.def.sizeMult;
     if (!headHit) { amount *= heavy ? CONFIG.MECHA.heavyMult : CONFIG.MECHA.armorMult; reduced = true; SFX.play('armorClank', at); }
   }
   if (z.ai.armor > 0) {
@@ -19597,7 +19614,7 @@ function updateAwareness(dt) {
     let el = stragglerEls[i];
     if (!el) { el = document.createElement('div'); el.className = 'straggler'; hud('stragglers').append(el); stragglerEls.push(el); }
     const z = show[i];
-    const v = z && tmP.copy(z.mesh.position).setY(z.mesh.position.y + z.def.height * (z.def.sizeMult || 1) + 1).project(camera);
+    const v = z && tmP.copy(z.mesh.position).setY(z.mesh.position.y + z.def.height + 1).project(camera);
     if (!z || v.z > 1) { el.style.display = 'none'; continue; }
     el.style.display = 'block';
     el.style.left = `${THREE.MathUtils.clamp((v.x * 0.5 + 0.5) * innerWidth, 24, innerWidth - 24)}px`;

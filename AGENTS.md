@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.23.0)
+## Current state (v1.24.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -34,7 +34,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Renders: `tests/horde-models.cjs` → `docs/horde-*.png`.
 - Zombies: `CONFIG.ZOMBIE_TYPES` (behavior key → `BEHAVIORS`), shared brain `CONFIG.AI`. Tactical agents (Imp, Foot
   Soldier, All-Star, Captain Deadbeard, Super Brainz, Engineer, Scientist) use `thinkAgent` + own kits, tuning
-  `CONFIG.AGENTS` (`damageMult`, `sizeMult` 2× size: hitbox scaled in `scaleAgentDef`, models built at base size then mesh-scaled; local rig offsets use `rigHalf`). Bosses spawn at a random lane and prefer plants
+  `CONFIG.AGENTS` (`damageMult`). All enemy sizes use `CONFIG.enemySize` (capsule height relative to plants), applied
+  by `scaleEnemyDef` to model + collision; local rig offsets use `rigHalf`. Reference: docs/enemy-scale.png;
+  test: `tests/enemy-scale.cjs` (including Z-Mech boarding/ejection and corpses). Bosses spawn at a random lane and prefer plants
   (`heroFirst`). Boss slot machine (`CONFIG.BOSS_SLOT`): waves 5 and 10 roll Gargantuar / Mecha / agent squad / mixed
   pack for the pack marked `bossSlot` (reel in the countdown banner). After wave 10 the extraction finale
   (`CONFIG.FINALE`, phase `'extract'`): hold a random landing zone until charged under a plant-hunting horde, before
