@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.16.0';
+const VERSION = 'v1.17.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -413,6 +413,22 @@ const CONFIG = {
     statueAlarmGap: 9,                                // s between "statue under attack" horns
     voicePitch: { shambler: 100, sprinter: 150, plated: 82, spitter: 125, bomber: 175, banner: 135, climber: 140,
                   howler: 115, shambler: 105, miniBoss: 58, finalBoss: 46 },   // moan pitch (Hz)
+  },
+  // Secondary animation layered on top of every hero / agent rig (section "Animation juice")
+  juice: {
+    hero: { accelTilt: 0.006, maxTilt: 0.16, tiltK: 140, tiltD: 15,      // lean the whole plant into acceleration
+            flinch: 0.16, flinchMax: 0.32,                                // hit kick (rad) per hit, scaled by damage
+            fallGravity: 22, lieAngle: 1.45, bounce: 0.32, riseK: 170, riseD: 13,   // downed topple / revive spring
+            popK: 260, popD: 19, popStart: 0.12,                          // respawn pop-in
+            // whole-body ability gestures (curves in heroGesturePose), by plant type and action key
+            gestureTime: { throw: 0.5, plant: 0.55, cast: 0.45, root: 0.5 },
+            gestures: { corn: { shuckShot: 'cast', butterBarrage: 'cast' },
+                        peashooter: { shuckShot: 'throw', huskHop: 'root', butterBarrage: 'cast' },
+                        sunflower: { shuckShot: 'cast', huskHop: 'root', butterBarrage: 'plant' },
+                        cactus: { shuckShot: 'plant', huskHop: 'cast', butterBarrage: 'plant' } } },
+    agent: { flinch: 0.28, flinchMax: 0.4, k: 190, d: 12, punch: 0.12,  // directional hit kick + squash
+             spawnTime: 0.55, spawnK: 240, spawnD: 12,                     // pop-in when an agent spawns
+             corpseFall: 0.55, corpseHold: 2.4, corpseSink: 1.1, maxCorpses: 10, corpseSlide: 0.9 },   // slide: knockback m
   },
   camera: {
     distance: 5.2, aimDistance: 3.4,  // hip / zoomed
@@ -939,7 +955,9 @@ const CONFIG = {
   maxParticles: 450,
   render: {
     minShadowCaster: 0.03,     // m: baked rig parts smaller than this skip the shadow pass (under a shadow texel)
-    zombieBatch: 400,          // instanced capsule bodies per zombie type (overflow draws individually)
+    zombieBatch: 400,          // instanced bodies per zombie type (overflow: capsules draw individually, horde skips)
+    hordeRows: 64,             // initial rows of each horde type's bone texture (doubles when the horde outgrows it)
+    corpseTime: 2.4,           // s a dead horde zombie lies on the ground before sinking away
   },
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
@@ -2988,10 +3006,12 @@ for (const [name, a] of Object.entries(zombieAssets)) {
   scene.add(mesh);
   ZOMBIE_BATCH[name] = { mesh, emissive };
 }
-function updateZombieBatches() {
+function updateZombieBatches(dt = 0) {
   for (const b of Object.values(ZOMBIE_BATCH)) b.mesh.count = 0;
+  for (const k of Object.values(HORDE)) k.n = 0;
   for (const z of zombies) {
     if (!z.batched || !z.mesh.parent || !z.mesh.visible) continue;
+    if (z.horde) { hordeDraw(z, dt); continue; }   // sculpted, skinned horde body (section "Horde models")
     const b = ZOMBIE_BATCH[z.type], i = b.mesh.count;
     if (i >= CONFIG.render.zombieBatch) { z.batched = false; z.mesh.material.visible = true; continue; }   // full: draw alone
     z.mesh.updateMatrix();
@@ -3000,7 +3020,1097 @@ function updateZombieBatches() {
     b.mesh.count++;
   }
   for (const b of Object.values(ZOMBIE_BATCH)) if (b.mesh.count) { b.mesh.instanceMatrix.needsUpdate = true; b.emissive.needsUpdate = true; }
+  updateHordeCorpses(dt);
+  flushHordeBatches();
 }
+
+// =====================================================================
+// Horde models — sculpted, GPU-skinned, instanced basic zombies
+// =====================================================================
+// The eight horde types (Browncoat, Sprinter, Screen-Door Brute, Spitter, Bomber, Flag Major, Climber, Howler) are
+// each ONE merged mesh (procedural sculpt: vertex colours, per-vertex roughness / metalness / glow, baked AO) whose
+// vertices carry a bone index. Every frame each zombie is posed on the CPU by its type's procedural clips (idle,
+// walk / run, turn shuffle, wind-up + strike, flinch, stun, spawn, type specials, death) into HB_N bone matrices that
+// go into a float texture; the vertex shader skins every instance from it. A horde of one type is still one draw +
+// one shadow draw, and dead zombies stay in the batch as corpses while their death clip plays (hordeCorpses).
+const HB = { hips: 0, chest: 1, head: 2, jaw: 3, armL: 4, foreL: 5, armR: 6, foreR: 7, thighL: 8, shinL: 9, thighR: 10, shinR: 11, p0: 12, p1: 13, p2: 14, p3: 15 };
+const HB_N = 16;
+// Parent of each bone (props p0–p3 hang off the chest unless a model re-parents them). Parents come before children.
+const HB_PARENT = [-1, 0, 1, 2, 1, 4, 1, 6, 0, 8, 0, 10, 1, 1, 1, 1];
+const HORDE_MODELS = {};   // type → { build(M), gait, windup, pose(z, ha, w), attack(z, ha, wind, k) }  (below)
+const HORDE = {};          // type → built kit: instanced mesh, bone texture, pivots (hordeKit)
+let hordeCorpses = [];     // dead horde zombies playing their death clip inside their type's batch
+
+// Geometry shorthands for the sculpts (all consumed by the modeler)
+const HG = {
+  sph: (r, w = 14, h = 10) => new THREE.SphereGeometry(r, w, h),
+  cap: (r, l, rs = 10) => new THREE.CapsuleGeometry(r, l, 3, rs),
+  cyl: (rt, rb, h, rs = 12) => new THREE.CylinderGeometry(rt, rb, h, rs),
+  box: (w, h, d, r = 0.02) => new RoundedBoxGeometry(w, h, d, 2, Math.max(1e-3, Math.min(r, w / 2, h / 2, d / 2) - 1e-3)),
+  cone: (r, h, rs = 10) => new THREE.ConeGeometry(r, h, rs),
+  tor: (R, r, rs = 6, ts = 16, arc = Math.PI * 2) => new THREE.TorusGeometry(R, r, rs, ts, arc),
+  cut: (r, w, h, t0, tl) => new THREE.SphereGeometry(r, w, h, 0, Math.PI * 2, t0, tl),   // sphere band (eyelids, caps)
+};
+
+// Collects coloured parts per bone and merges them into one skinned geometry. Authored with the feet at y = 0;
+// build() shifts everything down by halfH so the origin matches the zombie's capsule centre.
+function hordeModeler() {
+  const parts = [], piv = new Float32Array(HB_N * 3), parent = HB_PARENT.slice();
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), a = new THREE.Vector3(), b = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+  const M = {
+    marks: {},   // named points the game needs (plate centres, muzzle…), feet-up coordinates
+    pivot(bone, x, y, z, par) { piv.set([x, y, z], bone * 3); if (par !== undefined) parent[bone] = par; return M; },
+    // o: p position, r euler, q quaternion, s scale, rough, metal, glow (self-lit 0..1), ao (bottom darkening)
+    add(geo, bone, color, o = {}) {
+      geo.computeBoundingBox();
+      const P = geo.attributes.position, bb = geo.boundingBox, hgt = Math.max(1e-4, bb.max.y - bb.min.y), aoAmt = o.ao ?? 0.22;
+      const ao = new Float32Array(P.count);
+      for (let i = 0; i < P.count; i++) ao[i] = 1 - aoAmt * (1 - (P.getY(i) - bb.min.y) / hgt) ** 2;
+      if (o.q) q.copy(o.q); else q.setFromEuler(e.set(...(o.r || [0, 0, 0])));
+      m4.compose(a.set(...(o.p || [0, 0, 0])), q, b.set(...(o.s || [1, 1, 1])));
+      geo.applyMatrix4(m4);
+      parts.push({ geo, bone, color: new THREE.Color(color), rough: o.rough ?? 0.78, metal: o.metal ?? 0, glow: o.glow ?? 0, ao });
+      return M;
+    },
+    // Capsule from point p0 to p1 (limbs, strands, poles)
+    seg(bone, color, p0, p1, r, o = {}) {
+      a.fromArray(p0); b.fromArray(p1);
+      const len = a.distanceTo(b), qq = new THREE.Quaternion().setFromUnitVectors(UP, b.clone().sub(a).normalize());
+      return M.add(HG.cap(r, Math.max(1e-3, len), o.rs || 10), bone, color, { ...o, q: qq, p: a.clone().add(b).multiplyScalar(0.5).toArray() });
+    },
+    build(halfH) {
+      let nv = 0, ni = 0;
+      for (const p of parts) { nv += p.geo.attributes.position.count; ni += p.geo.index ? p.geo.index.count : p.geo.attributes.position.count; }
+      const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
+      const bone = new Float32Array(nv), surf = new Float32Array(nv * 3), idx = new (nv > 65535 ? Uint32Array : Uint16Array)(ni);
+      let v = 0, i = 0;
+      for (const p of parts) {
+        const P = p.geo.attributes.position, N = p.geo.attributes.normal, base = v;
+        for (let j = 0; j < P.count; j++, v++) {
+          const y = P.getY(j), ao = p.ao[j] * (0.68 + 0.32 * smooth01(y / 0.5));   // parts darken toward their base and the feet
+          pos[v * 3] = P.getX(j); pos[v * 3 + 1] = y - halfH; pos[v * 3 + 2] = P.getZ(j);
+          nor[v * 3] = N.getX(j); nor[v * 3 + 1] = N.getY(j); nor[v * 3 + 2] = N.getZ(j);
+          const g = p.glow > 0 ? 1 : ao;
+          col[v * 3] = p.color.r * g; col[v * 3 + 1] = p.color.g * g; col[v * 3 + 2] = p.color.b * g;
+          bone[v] = p.bone; surf[v * 3] = p.rough; surf[v * 3 + 1] = p.metal; surf[v * 3 + 2] = p.glow;
+        }
+        if (p.geo.index) for (const k of p.geo.index.array) idx[i++] = k + base;
+        else for (let k = 0; k < P.count; k++) idx[i++] = k + base;
+        p.geo.dispose();
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.setAttribute('aBone', new THREE.BufferAttribute(bone, 1));
+      geo.setAttribute('aSurf', new THREE.BufferAttribute(surf, 3));
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      for (let k = 0; k < HB_N; k++) piv[k * 3 + 1] -= halfH;
+      return { geo, pivots: piv, parent };
+    },
+  };
+  return M;
+}
+
+// ---- Skinning shader: the bone texture holds one 3×4 matrix (3 texels) per bone, one row per instance ----
+const HORDE_SKIN = `
+uniform highp sampler2D hordeBones;
+attribute float aBone;
+mat4 hordeSkin() {
+  int b = int(aBone + 0.5) * 3;
+  vec4 r0 = texelFetch(hordeBones, ivec2(b, gl_InstanceID), 0);
+  vec4 r1 = texelFetch(hordeBones, ivec2(b + 1, gl_InstanceID), 0);
+  vec4 r2 = texelFetch(hordeBones, ivec2(b + 2, gl_InstanceID), 0);
+  return mat4(r0.x, r1.x, r2.x, 0.0, r0.y, r1.y, r2.y, 0.0, r0.z, r1.z, r2.z, 0.0, r0.w, r1.w, r2.w, 1.0);
+}
+`;
+function hordeMaterial(bones) {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: 0.55 });
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.hordeBones = bones;
+    sh.vertexShader = HORDE_SKIN + 'attribute vec3 aSurf;\nattribute vec3 instEmissive;\nattribute float instGlow;\n' +
+      'varying vec3 vSurf;\nvarying vec3 vInstEmissive;\nvarying float vInstGlow;\n' + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  mat4 hSkin = hordeSkin();\n  objectNormal = mat3(hSkin) * objectNormal;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed = (hSkin * vec4(transformed, 1.0)).xyz;\n' +
+        '  vSurf = aSurf; vInstEmissive = instEmissive; vInstGlow = instGlow;');
+    sh.fragmentShader = 'varying vec3 vSurf;\nvarying vec3 vInstEmissive;\nvarying float vInstGlow;\n' + sh.fragmentShader
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vSurf.x;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vSurf.y;')
+      // Self-lit parts (eyes, cores, fuses) glow brighter with the per-instance glow; a soft cartoon rim on everything
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' +
+        '  float hRim = 1.0 - saturate(dot(normal, normalize(vViewPosition)));\n' +
+        '  totalEmissiveRadiance += vInstEmissive + diffuseColor.rgb * (vSurf.z * (0.45 + vInstGlow * 2.6) + hRim * hRim * hRim * 0.16);');
+  };
+  mat.customProgramCacheKey = () => 'horde-skin';
+  return mat;
+}
+function hordeDepthMaterial(bones) {
+  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.hordeBones = bones;
+    sh.vertexShader = HORDE_SKIN + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  transformed = (hordeSkin() * vec4(transformed, 1.0)).xyz;');
+  };
+  mat.customProgramCacheKey = () => 'horde-depth';
+  return mat;
+}
+
+// Build (once) a type's merged model, its instanced mesh and its bone texture
+function hordeKit(type) {
+  if (HORDE[type]) return HORDE[type];
+  const model = HORDE_MODELS[type], def = ZT[type], halfH = def.radius + def.height / 2, cap = CONFIG.render.zombieBatch;
+  const M = hordeModeler();
+  model.build(M, def);
+  const { geo, pivots, parent } = M.build(halfH);
+  const emissive = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  const glow = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('instEmissive', emissive); geo.setAttribute('instGlow', glow);
+  const bones = { value: null };
+  const mesh = new THREE.InstancedMesh(geo, hordeMaterial(bones), cap);
+  mesh.customDepthMaterial = hordeDepthMaterial(bones);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3).setUsage(THREE.DynamicDrawUsage);
+  mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0;
+  scene.add(mesh);
+  // Leg lengths (feet-planting crouches) straight from the pivots
+  const py = b => pivots[b * 3 + 1];
+  const kit = HORDE[type] = { type, model, mesh, emissive, glow, bones, pivots, parent, halfH, marks: M.marks,
+    hipY: py(HB.hips) + halfH, l1: py(HB.thighL) - py(HB.shinL), l2: py(HB.shinL) + halfH - (model.ankle ?? 0.1),
+    world: new Float32Array(HB_N * 12), data: null, tex: null, rows: 0, n: 0 };
+  hordeGrow(kit, CONFIG.render.hordeRows);
+  return kit;
+}
+// The bone texture grows (doubling) with the horde, so small waves upload a small texture every frame
+function hordeGrow(kit, rows) {
+  rows = Math.min(rows, CONFIG.render.zombieBatch);
+  const data = new Float32Array(rows * HB_N * 12);
+  if (kit.data) data.set(kit.data.subarray(0, Math.min(kit.data.length, data.length)));
+  const tex = new THREE.DataTexture(data, HB_N * 3, rows, THREE.RGBAFormat, THREE.FloatType);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+  kit.tex?.dispose();
+  Object.assign(kit, { tex, data, rows });
+  kit.bones.value = tex;
+}
+
+// ---- Pose buffer: per bone rx ry rz scale tx ty tz (pad). Clips add or blend into it, hordeSolve skins it ----
+const HP = new Float32Array(HB_N * 8);
+const hpReset = () => { HP.fill(0); for (let b = 0; b < HB_N; b++) HP[b * 8 + 3] = 1; };
+const hr = (b, x, y = 0, z = 0) => { const o = b * 8; HP[o] += x; HP[o + 1] += y; HP[o + 2] += z; };   // add rotation
+const hmix = (b, x, y, z, w) => { const o = b * 8; HP[o] += (x - HP[o]) * w; HP[o + 1] += (y - HP[o + 1]) * w; HP[o + 2] += (z - HP[o + 2]) * w; };
+const hs = (b, s) => { HP[b * 8 + 3] *= s; };
+const ht = (b, x, y, z) => { const o = b * 8; HP[o + 4] += x; HP[o + 5] += y; HP[o + 6] += z; };
+const hget = (b, axis = 0) => HP[b * 8 + axis];
+
+// Pose → model-space bone matrices (R = Ry·Rx·Rz about each pivot, chained to the parent) → texture row
+function hordeSolve(kit, row) {
+  const W = kit.world, piv = kit.pivots, par = kit.parent;
+  for (let b = 0; b < HB_N; b++) {
+    const o = b * 8, s = HP[o + 3];
+    const cx = Math.cos(HP[o]), sx = Math.sin(HP[o]), cy = Math.cos(HP[o + 1]), sy = Math.sin(HP[o + 1]), cz = Math.cos(HP[o + 2]), sz = Math.sin(HP[o + 2]);
+    const a00 = (cy * cz + sy * sx * sz) * s, a01 = (sy * sx * cz - cy * sz) * s, a02 = sy * cx * s;
+    const a10 = cx * sz * s, a11 = cx * cz * s, a12 = -sx * s;
+    const a20 = (cy * sx * sz - sy * cz) * s, a21 = (sy * sz + cy * sx * cz) * s, a22 = cy * cx * s;
+    const px = piv[b * 3], py = piv[b * 3 + 1], pz = piv[b * 3 + 2];
+    const t0 = px - (a00 * px + a01 * py + a02 * pz) + HP[o + 4];
+    const t1 = py - (a10 * px + a11 * py + a12 * pz) + HP[o + 5];
+    const t2 = pz - (a20 * px + a21 * py + a22 * pz) + HP[o + 6];
+    const w = b * 12, p = par[b];
+    if (p < 0) { W[w] = a00; W[w + 1] = a01; W[w + 2] = a02; W[w + 3] = t0; W[w + 4] = a10; W[w + 5] = a11; W[w + 6] = a12; W[w + 7] = t1;
+      W[w + 8] = a20; W[w + 9] = a21; W[w + 10] = a22; W[w + 11] = t2; continue; }
+    for (let r = 0, q = p * 12; r < 3; r++, q += 4) {
+      const m0 = W[q], m1 = W[q + 1], m2 = W[q + 2], m3 = W[q + 3];
+      W[w + r * 4] = m0 * a00 + m1 * a10 + m2 * a20; W[w + r * 4 + 1] = m0 * a01 + m1 * a11 + m2 * a21;
+      W[w + r * 4 + 2] = m0 * a02 + m1 * a12 + m2 * a22; W[w + r * 4 + 3] = m0 * t0 + m1 * t1 + m2 * t2 + m3;
+    }
+  }
+  kit.data.set(W, row * HB_N * 12);
+}
+
+// ---- Shared clip layers ----
+// Hip drop that keeps the feet on the ground for thigh angle a (forward) and knee bend b
+const hordeLegDrop = (kit, a, b) => kit.l1 * (1 - Math.cos(a)) + kit.l2 * (1 - Math.cos(b - a));
+function hordeCrouch(kit, a, b, w) {
+  hr(HB.thighL, -a * w); hr(HB.thighR, -a * w); hr(HB.shinL, b * w); hr(HB.shinR, b * w);
+  ht(HB.hips, 0, -hordeLegDrop(kit, a * w, b * w), 0);
+}
+// Walk / run cycle on the legs, hips and spine. g = the type's gait, w = how much it is moving (0..1)
+function hordeGait(kit, ha, g, w) {
+  const ph = ha.gait, s = Math.sin(ph), c = Math.cos(ph), run = ha.run, L = THREE.MathUtils.lerp;
+  const A = L(g.stride, g.runStride ?? g.stride, run) * w, K = L(g.knee, g.runKnee ?? g.knee, run) * w, limp = (g.limp || 0) * w;
+  const cr = g.crouch || 0, crK = cr * 1.9;
+  // Left leg leads when sin(ph) > 0; the swinging leg (foot in the air) bends its knee
+  hr(HB.thighL, -A * s - cr); hr(HB.shinL, K * Math.max(0, c) + crK);
+  hr(HB.thighR, A * s * (1 - limp * 0.55) - cr, 0, -limp * 0.14); hr(HB.shinR, K * Math.max(0, -c) * (1 - limp * 0.8) + crK);
+  if (limp) hr(HB.shinR, 0, 0.35 * limp, 0);   // dragged foot turns out
+  const bob = L(g.bob, g.runBob ?? g.bob, run) * w;
+  ht(HB.hips, 0, (Math.abs(c) - 0.7) * bob - hordeLegDrop(kit, cr, crK), 0);
+  const lurch = limp * 0.1 * Math.max(0, -s);   // body drops onto the bad leg
+  hr(HB.hips, 0, s * g.twist * w, -s * g.roll * w - lurch);
+  const lean = L(g.lean, g.runLean ?? g.lean, run) * w + (g.idleLean ?? g.lean * 0.4) * (1 - w);
+  hr(HB.chest, lean, -s * g.twist * 1.7 * w, s * g.roll * 0.55 * w + lurch * 1.4);
+  hr(HB.head, -lean * 0.55 + (Math.abs(c) - 0.5) * bob * 0.8, s * g.twist * 0.7 * w, -s * g.roll * 0.35 * w);
+}
+// Arms swing against the legs; pump bends the elbow of the arm that comes forward (running)
+function hordeArmSwing(ha, w, amp, base = 0, spread = 0.12, elbow = -0.25, pump = 0) {
+  const s = Math.sin(ha.gait) * w * amp;
+  hr(HB.armL, base + s, 0, spread); hr(HB.armR, base - s, 0, -spread);
+  hr(HB.foreL, elbow - Math.max(0, -s) * pump); hr(HB.foreR, elbow - Math.max(0, s) * pump);
+}
+// Standing still: breathing, weight shifts, arms drifting
+function hordeIdle(ha, w) {
+  const t = ha.t, sd = ha.seed * 9, i = 1 - w, br = Math.sin(t * 1.8 + sd);
+  hr(HB.chest, br * 0.03 * i, Math.sin(t * 0.5 + sd) * 0.06 * i); hr(HB.head, -br * 0.04 * i);
+  hr(HB.hips, 0, 0, Math.sin(t * 0.7 + sd) * 0.035 * i); ht(HB.hips, 0, br * 0.008 * i, 0);
+  hr(HB.armL, Math.sin(t * 1.3 + sd) * 0.06 * i, 0, 0.04 * i); hr(HB.armR, Math.sin(t * 1.1 + sd * 0.7) * 0.06 * i, 0, -0.04 * i);
+  hr(HB.jaw, (0.06 + Math.sin(t * 0.9 + sd) * 0.05) * (0.5 + i * 0.5));
+}
+// Claw swipe with one or both arms: wind = anticipation 0..1, k = strike 0..1
+function hordeClaw(ha, wind, k, side = 0) {   // side: 1 = left arm, -1 = right, 0 = both
+  for (const s of [1, -1]) {
+    if (side && side !== s) continue;
+    const A = s > 0 ? HB.armL : HB.armR, F = s > 0 ? HB.foreL : HB.foreR;
+    hmix(A, -2.55, 0, 0.35 * s, wind); hmix(F, -0.95, 0, 0, wind);
+    hmix(A, -0.75, 0, -0.28 * s, k); hmix(F, -0.18, 0, 0, k);
+  }
+  const twist = side * 0.38;
+  hr(HB.chest, -0.2 * wind + 0.45 * k, twist * wind - twist * k); hr(HB.hips, 0.08 * k);
+  ht(HB.hips, 0, -0.05 * k, 0.1 * k);
+  hr(HB.head, -0.14 * wind + 0.22 * k); hr(HB.jaw, 0.25 * wind + 0.5 * k);
+}
+// 0 → 1 fast when the hit lands, hold, then ease back
+function hordeStrikeK(t) {
+  if (t < 0.06) { const x = t / 0.06; return 1 - (1 - x) * (1 - x); }
+  return t < 0.14 ? 1 : 1 - smooth01((t - 0.14) / 0.38);
+}
+
+// Per-zombie animation state: velocity in body space, gait phase, event timers
+function hordeAnimState(z) {
+  const p = z.mesh.position;
+  return z.ha ||= { gait: Math.random() * 6.28, fwd: 0, side: 0, vy: 0, spd: 0, run: 0, move: 0, turn: 0, px: p.x, py: p.y, pz: p.z,
+    yaw: z.mesh.rotation.y, atk: 9, atkN: Math.floor(Math.random() * 2), swingPrev: 0, flashPrev: 0, hit: 9, hitSide: 1, age: 0,
+    seed: Math.random(), t: Math.random() * 50, look: 0, lookTo: 0, lookT: 0, wind: 0, stunW: 0, special: 0, climbW: 0, step: 0,
+    tint: 0.9 + Math.random() * 0.14, pose: new Float32Array(HB_N * 8) };
+}
+function hordeAnimate(z, dt) {
+  const kit = z.horde, model = kit.model, g = model.gait, ha = hordeAnimState(z), p = z.mesh.position;
+  ha.t += dt; ha.age += dt; ha.dt = dt;
+  if (dt > 0) {
+    const yaw = z.mesh.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
+    let vx = (p.x - ha.px) / dt, vz = (p.z - ha.pz) / dt, vy = (p.y - ha.py) / dt;
+    if (vx * vx + vz * vz > 900) vx = vz = vy = 0;   // teleports / respawns are not steps
+    const k = 1 - Math.exp(-dt * 10);
+    ha.fwd += (vx * fx + vz * fz - ha.fwd) * k; ha.side += (vx * fz - vz * fx - ha.side) * k; ha.vy += (vy - ha.vy) * k;
+    let dyaw = yaw - ha.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+    ha.turn += (dyaw / dt - ha.turn) * k * 0.6;
+    ha.yaw = yaw;
+  }
+  ha.px = p.x; ha.py = p.y; ha.pz = p.z;
+  ha.spd = Math.hypot(ha.fwd, ha.side);
+  ha.run = smooth01((ha.spd - g.walkSpeed) / (g.runSpeed - g.walkSpeed));
+  // Moving weight: walking, shuffling round on the spot, or climbing
+  const climbing = !!z.climbing;
+  ha.climbW += ((climbing ? 1 : 0) - ha.climbW) * Math.min(1, dt * 8);
+  const turning = Math.min(1, Math.abs(ha.turn) / 2.5);
+  const wantMove = Math.max(smooth01(ha.spd / Math.max(0.4, g.walkSpeed * 0.7)), turning * 0.6);
+  ha.move += (wantMove - ha.move) * Math.min(1, dt * 8);
+  const adv = (Math.sign(ha.fwd || 1) * ha.spd + (ha.spd < 0.5 ? Math.abs(ha.turn) * 0.5 : 0) + (climbing ? Math.abs(ha.vy) : 0)) / g.cycle;
+  const prevStep = Math.floor(ha.gait / Math.PI);
+  ha.gait += adv * Math.PI * 2 * dt;
+  if (Math.floor(ha.gait / Math.PI) !== prevStep && ha.move > 0.5 && !climbing) model.footfall?.(z, ha);
+  // Events: an attack landed (swing rises), a hit landed (flash rises)
+  const sw = z.ai.swing || 0;
+  if (sw > ha.swingPrev + 1e-4) { ha.atk = 0; ha.atkN++; ha.wind = 0; }
+  ha.swingPrev = sw; ha.atk += dt;
+  if (z.flash > ha.flashPrev + 1e-4) { ha.hit = 0; ha.hitSide = Math.random() < 0.5 ? -1 : 1; }
+  ha.flashPrev = z.flash; ha.hit += dt;
+  // Anticipation: the attack cooldown is about to run out while in reach
+  const wu = model.windup || 0;
+  const wantWind = wu && z.mode === 'attack' && z.attackTimer > 0 && z.attackTimer < wu && ha.atk > 0.45 ? 1 - z.attackTimer / wu : 0;
+  ha.wind += (wantWind - ha.wind) * Math.min(1, dt * 14);
+  ha.stunW += ((z.stun > 0 ? 1 : 0) - ha.stunW) * Math.min(1, dt * 7);
+  // Head look: at the hunted hero, else glances around while idle
+  let look = 0;
+  const tgt = z.heroTgt && targetable(z.heroTgt) ? z.heroTgt.mesh.position : null;
+  if (tgt) { const d = Math.atan2(tgt.x - p.x, tgt.z - p.z) - z.mesh.rotation.y; look = THREE.MathUtils.clamp(Math.atan2(Math.sin(d), Math.cos(d)), -0.9, 0.9); }
+  else { if ((ha.lookT -= dt) <= 0) { ha.lookT = 1.5 + Math.random() * 3; ha.lookTo = (Math.random() - 0.5) * 1.1; } look = ha.lookTo * (1 - ha.move); }
+  ha.look += (look - ha.look) * Math.min(1, dt * 4);
+
+  hpReset();
+  model.pose(z, ha, ha.move * (1 - ha.climbW));
+  hordeOverlays(z, ha, kit);
+  ha.pose.set(HP);
+}
+// Layers every type shares, on top of its own pose: look, attack, flinch, stun, spawn
+function hordeOverlays(z, ha, kit) {
+  const model = kit.model;
+  hr(HB.head, 0, ha.look * 0.65, 0); hr(HB.chest, 0, ha.look * 0.3, 0);
+  const k = hordeStrikeK(ha.atk);
+  if (ha.wind > 0.002 || k > 0.002) model.attack(z, ha, ha.atk < 0.6 ? 0 : ha.wind, k);
+  if (ha.hit < 0.34) {   // flinch: snapped back, arms thrown out
+    const f = Math.sin(ha.hit / 0.34 * Math.PI) * (model.flinch ?? 1), sd = ha.hitSide;
+    hr(HB.chest, -0.3 * f, 0.22 * sd * f, 0.1 * sd * f); hr(HB.head, -0.38 * f, 0, -0.22 * sd * f); hr(HB.jaw, 0.3 * f);
+    hr(HB.armL, -0.35 * f, 0, 0.45 * f); hr(HB.armR, -0.35 * f, 0, -0.45 * f); ht(HB.hips, 0, -0.03 * f, -0.06 * f);
+  }
+  if (ha.stunW > 0.002) {   // dazed: head rolling, arms limp, knees soft
+    const s = ha.stunW, t = ha.t;
+    hmix(HB.chest, 0.3, Math.sin(t * 1.7) * 0.15, Math.sin(t * 3.1) * 0.08, s);
+    hmix(HB.head, 0.35 + Math.cos(t * 3.4) * 0.14, Math.sin(t * 1.7) * 0.3, Math.sin(t * 3.4) * 0.32, s);
+    hmix(HB.jaw, 0.45, 0, 0.12, s);
+    hmix(HB.armL, 0.12, 0, 0.16 + Math.sin(t * 2.3) * 0.1, s); hmix(HB.armR, 0.12, 0, -0.16 - Math.sin(t * 2.1) * 0.1, s);
+    hmix(HB.foreL, -0.1, 0, 0, s); hmix(HB.foreR, -0.1, 0, 0, s);
+    hordeCrouch(kit, 0.25, 0.5, s);
+  }
+  if (ha.age < 0.85) {   // spawn: rise out of a crouch, arms clawing up
+    const e = 1 - smooth01(ha.age / 0.85);
+    hordeCrouch(kit, 1.2, 2.2, e);
+    hr(HB.chest, 0.6 * e); hr(HB.head, -0.3 * e); hr(HB.armL, -1.2 * e, 0, 0.3 * e); hr(HB.armR, -1.6 * e, 0, -0.3 * e);
+  }
+}
+
+// Draw one live zombie into its type's batch
+function hordeDraw(z, dt) {
+  const kit = z.horde, i = kit.n;
+  if (i >= CONFIG.render.zombieBatch) return false;
+  if (i >= kit.rows) hordeGrow(kit, kit.rows * 2);
+  hordeAnimate(z, dt);
+  hordeSolve(kit, i);
+  z.mesh.updateMatrix();
+  kit.mesh.setMatrixAt(i, z.mesh.matrix);
+  const f = z.flash > 0 ? 0.5 : 0;
+  kit.emissive.setXYZ(i, f, f * 0.95, f * 0.85);
+  kit.glow.setX(i, Math.min(1.5, (z.glow || 0) + (kit.model.glow?.(z, z.ha) || 0)));
+  const c = z.ha.tint; kit.mesh.instanceColor.setXYZ(i, c, c * (0.98 + z.ha.seed * 0.04), c);
+  kit.n++;
+  return true;
+}
+
+// ---- Death: the last live pose blends into a fall, the body lies a moment, then sinks into the ground ----
+const hordeTmpM = new THREE.Matrix4(), hordeTmpM2 = new THREE.Matrix4();
+function hordeKill(z) {
+  if (!z.ha) return;
+  const p = z.mesh.position;
+  hordeCorpses.push({ kit: z.horde, x: p.x, y: p.y, z: p.z, yaw: z.mesh.rotation.y, t: 0, back: z.ha.seed < 0.5,
+    snap: z.ha.pose.slice(), ha: z.ha, landed: false, scale: z.mesh.scale.x });
+}
+function hordeDeathPose(c) {
+  const kit = c.kit, t = c.t, model = kit.model;
+  hpReset();
+  let tilt;
+  if (c.back) {   // stiff topple onto the back, arms flung up, then flopping down
+    const f = smooth01(t / 0.12);
+    tilt = -(Math.PI / 2 - 0.06) * Math.min(1, (t / 0.62) ** 2);
+    if (t > 0.62) tilt += Math.sin(Math.min(1, (t - 0.62) / 0.28) * Math.PI) * 0.1;
+    const flop = smooth01((t - 0.6) / 0.35);
+    hr(HB.armL, -1.7 * f + 1.5 * flop, 0, 0.5 * f); hr(HB.armR, -1.5 * f + 1.4 * flop, 0, -0.6 * f);
+    hr(HB.foreL, -0.4 * f); hr(HB.foreR, -0.6 * f);
+    hr(HB.head, -0.35 * f + 0.25 * flop, 0, 0.3 * flop); hr(HB.jaw, 0.65 * f);
+    hr(HB.thighL, -0.25 * f); hr(HB.shinL, 0.4 * f); hr(HB.chest, -0.1 * f);
+  } else {   // knees buckle, then a face-plant
+    const kneel = smooth01(t / 0.32);
+    hordeCrouch(kit, 0.25, 1.75, kneel);
+    tilt = 1.35 * Math.min(1, Math.max(0, (t - 0.28) / 0.5) ** 2);
+    if (t > 0.78) tilt -= Math.sin(Math.min(1, (t - 0.78) / 0.25) * Math.PI) * 0.08;
+    const reach = smooth01((t - 0.25) / 0.3);
+    hr(HB.chest, 0.35 * kneel); hr(HB.head, 0.4 * kneel - 0.6 * reach, 0, 0.35 * reach); hr(HB.jaw, 0.5 * kneel);
+    hr(HB.armL, -0.2 * kneel - 2.4 * reach, 0, 0.35 * reach); hr(HB.armR, -0.2 * kneel - 2.1 * reach, 0, -0.45 * reach);
+  }
+  model.death?.(c, t);
+  return tilt;
+}
+function updateHordeCorpses(dt) {
+  for (let i = hordeCorpses.length - 1; i >= 0; i--) {
+    const c = hordeCorpses[i], kit = c.kit;
+    c.t += dt;
+    const sinkT = CONFIG.render.corpseTime;
+    if (c.t > sinkT + 1.2) { hordeCorpses.splice(i, 1); continue; }
+    if (kit.n >= CONFIG.render.zombieBatch) continue;
+    if (kit.n >= kit.rows) hordeGrow(kit, kit.rows * 2);
+    const tilt = hordeDeathPose(c), b = smooth01(c.t / 0.14);
+    for (let j = 0; j < HP.length; j++) HP[j] = c.snap[j] + (HP[j] - c.snap[j]) * b;
+    hordeSolve(kit, kit.n);
+    // Fall about a pivot on the ground (behind the heels / in front of the knees), then sink
+    const landT = c.back ? 0.62 : 0.78;
+    if (!c.landed && c.t > landT) {
+      c.landed = true;
+      const fwd = c.back ? -1 : 1, reach = (kit.hipY + 0.6) * c.scale * fwd;
+      const at = new THREE.Vector3(c.x + Math.sin(c.yaw) * reach, c.y - kit.halfH * c.scale + 0.2, c.z + Math.cos(c.yaw) * reach);
+      for (let k = 0; k < 6; k++) spawnParticle('puff', 0x9a8a68, at.clone().add(rand3(0.6 * c.scale, 0.1)), rand3(2.2, 0.8), { life: 0.6, gravity: -0.5, grow: 2.2, drag: 4, size: 0.7 * c.scale });
+      SFX.play('land', at, true, 0.6);
+    }
+    const sink = c.t > sinkT ? (c.t - sinkT) ** 1.6 * 1.1 : 0;
+    const pz = c.back ? -0.22 : 0.3;
+    hordeTmpM.makeRotationY(c.yaw).setPosition(c.x, c.y - sink, c.z);
+    hordeTmpM.multiply(hordeTmpM2.makeTranslation(0, -kit.halfH * c.scale, pz)).multiply(hordeTmpM2.makeRotationX(tilt))
+      .multiply(hordeTmpM2.makeTranslation(0, kit.halfH * c.scale, -pz)).multiply(hordeTmpM2.makeScale(c.scale, c.scale, c.scale));
+    kit.mesh.setMatrixAt(kit.n, hordeTmpM);
+    kit.emissive.setXYZ(kit.n, 0, 0, 0); kit.glow.setX(kit.n, 0);
+    const tn = c.ha.tint * (1 - smooth01((c.t - 0.3) / 1.5) * 0.25);   // the colour drains a little
+    kit.mesh.instanceColor.setXYZ(kit.n, tn, tn, tn);
+    kit.n++;
+  }
+}
+function flushHordeBatches() {
+  for (const kit of Object.values(HORDE)) {
+    kit.mesh.count = kit.n;
+    if (!kit.n) continue;
+    kit.mesh.instanceMatrix.needsUpdate = true; kit.mesh.instanceColor.needsUpdate = true;
+    kit.emissive.needsUpdate = true; kit.glow.needsUpdate = true; kit.tex.needsUpdate = true;
+  }
+}
+
+// Game-side stand-ins for a horde zombie (plates / core markers, the Flag's buff ring); the body is the batch
+function attachHordeParts(type, mesh, parts, def, halfH) {
+  const kit = hordeKit(type), marks = kit.marks;
+  mesh.material.visible = false; mesh.castShadow = false;
+  const marker = (p, vis = true) => { const o = new THREE.Object3D(); o.position.set(p[0], p[1] - halfH, p[2]); o.visible = vis; mesh.add(o); return o; };
+  if (def.plateBreaks) { parts.plates = marks.plates.map(p => marker(p)); parts.core = marker(marks.core, false); }
+  if (type === 'banner') {
+    const ring = new THREE.Mesh(new THREE.CircleGeometry(def.buffRadius, 40),
+      new THREE.MeshBasicMaterial({ color: 0xff6699, transparent: true, opacity: 0.2, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = -halfH + 0.03;
+    mesh.add(ring);
+    parts.dispose = () => { ring.geometry.dispose(); ring.material.dispose(); };
+  }
+}
+
+// ---------------------------------------------------------------------
+// Sculpt helpers shared by the horde
+// ---------------------------------------------------------------------
+const HC = { skin: 0xa3b685, skinDk: 0x7f9267, lid: 0x8d9a72, eye: 0xf3efdc, pupil: 0x121212, tooth: 0xe6dcad, mouth: 0x3a1418, gum: 0x7a2a30 };
+// Droopy cartoon eye: white, pupil (look = [x, y] offset), heavy upper lid tilted down by `droop`
+function hordeEye(M, b, x, y, z, r, look = [0, 0], droop = 0.55, lid = HC.lid) {
+  M.add(HG.sph(r, 14, 10), b, HC.eye, { p: [x, y, z], rough: 0.22, ao: 0.05 });
+  M.add(HG.sph(r * 0.36, 8, 6), b, HC.pupil, { p: [x + look[0] * r * 0.42, y + look[1] * r * 0.42, z + r * 0.86], rough: 0.12, ao: 0 });
+  M.add(HG.cut(r * 1.1, 14, 6, 0, Math.PI * 0.45), b, lid, { p: [x, y, z], r: [droop, 0, 0], ao: 0.05 });
+}
+// Zombie hand on the end of a forearm: palm + three fingers + thumb, curled a little forward
+function hordeHand(M, F, x, y, s, skin = HC.skin, r = 0.07, claw = null) {
+  M.add(HG.sph(r, 10, 8), F, skin, { p: [x, y - r * 0.55, 0.01], s: [0.9, 1.15, 0.62] });
+  for (let i = -1; i <= 1; i++) {
+    const fx = x + i * r * 0.55 + s * r * 0.08;
+    M.seg(F, skin, [fx, y - r * 1.15, 0.02], [fx + i * r * 0.12, y - r * 2.25, 0.07], r * 0.22, { rs: 6 });
+    if (claw) M.add(HG.cone(r * 0.16, r * 0.5, 5), F, claw, { p: [fx + i * r * 0.14, y - r * 2.6, 0.09], r: [Math.PI + 0.3, 0, 0], rough: 0.4 });
+  }
+  M.seg(F, skin, [x - s * r * 0.55, y - r * 0.7, r * 0.35], [x - s * r * 0.75, y - r * 1.5, r * 0.75], r * 0.22, { rs: 6 });
+}
+// Legs: thigh + shin capsules per side, pivots at hip / knee; foot(M, shinBone, x, side) dresses the lower leg
+function hordeLegs(M, o) {
+  for (const s of [1, -1]) {
+    const T = s > 0 ? HB.thighL : HB.thighR, S = s > 0 ? HB.shinL : HB.shinR, x = o.legX * s;
+    M.pivot(T, x, o.hipY - 0.02, 0).pivot(S, x, o.kneeY, 0);
+    M.seg(T, o.pants, [x, o.hipY, 0], [x, o.kneeY, 0.01], o.thighR, { rough: o.rough ?? 0.9 });
+    M.seg(S, o.shin ?? o.pants, [x, o.kneeY, 0.01], [x, o.ankleY ?? 0.12, 0], o.shinR, { rough: o.rough ?? 0.9 });
+    o.foot(M, S, x, s);
+  }
+}
+// Arms: upper arm + forearm per side, pivots at shoulder / elbow; hand(M, foreBone, x, wristY, side)
+function hordeArms(M, o) {
+  for (const s of [1, -1]) {
+    const A = s > 0 ? HB.armL : HB.armR, F = s > 0 ? HB.foreL : HB.foreR;
+    const sx = o.shX * s, ex = (o.shX + (o.out ?? 0.03)) * s, ey = o.shY - o.upper, wy = ey - o.fore;
+    M.pivot(A, sx, o.shY, 0).pivot(F, ex, ey, 0);
+    M.seg(A, o.sleeve, [sx, o.shY, 0], [ex, ey, 0], o.armR, { rough: o.rough ?? 0.9 });
+    const fc = typeof o.foreColor === 'function' ? o.foreColor(s) : o.foreColor ?? o.sleeve;
+    M.seg(F, fc, [ex, ey, 0], [ex, wy, 0], typeof o.foreR === 'function' ? o.foreR(s) : o.foreR, { rough: o.rough ?? 0.9 });
+    o.dress?.(M, A, F, sx, ex, ey, wy, s);
+    o.hand(M, F, ex, wy, s);
+  }
+}
+const hordeShoe = (color, w, h, l, sole = 0x1b130d) => (M, b, x, s) => {
+  M.add(HG.box(w, h, l, h * 0.45), b, color, { p: [x, h / 2 + 0.01, l * 0.2], rough: 0.45 });
+  M.add(HG.box(w * 1.04, 0.03, l * 1.02, 0.012), b, sole, { p: [x, 0.015, l * 0.2], rough: 0.9 });
+};
+
+// ---------------------------------------------------------------------
+// Browncoat (shambler): the classic — brown suit, crooked red tie, one big eye, a dragging right leg
+// ---------------------------------------------------------------------
+HORDE_MODELS.shambler = {
+  gait: { cycle: 1.45, walkSpeed: 1.2, runSpeed: 7, stride: 0.42, knee: 0.6, bob: 0.06, twist: 0.12, roll: 0.07, lean: 0.14, limp: 0.85 },
+  windup: 0.38,
+  build(M) {
+    const coat = 0x6c4a2c, coatDk = 0x4f3420, pants = 0x51493b, shirt = 0xe8e2d0, tie = 0xb4252b;
+    M.pivot(HB.hips, 0, 1.0, 0).pivot(HB.chest, 0, 1.05, 0).pivot(HB.head, 0, 1.72, 0.0).pivot(HB.jaw, 0, 1.88, 0.07);
+    hordeLegs(M, { hipY: 1.02, kneeY: 0.56, legX: 0.15, thighR: 0.1, shinR: 0.085, pants, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.098, 0.13, 0.15, 10), b, pants, { p: [x, 0.22, 0], rough: 0.95 });   // ragged hem
+      M.add(HG.cyl(0.066, 0.07, 0.1, 8), b, 0xd6cfba, { p: [x, 0.13, 0] });                // sock
+      hordeShoe(0x33241a, 0.19, 0.12, 0.34)(M, b, x, s);
+    } });
+    // Coat: skirt on the hips, body + shoulders on the chest, open front showing the shirt and tie
+    M.add(HG.cyl(0.27, 0.32, 0.32, 18), HB.hips, coat, { p: [0, 0.98, -0.01], s: [1, 1, 0.78] });
+    M.add(HG.box(0.06, 0.3, 0.05, 0.02), HB.hips, coatDk, { p: [0, 0.97, -0.24] });   // back vent
+    M.add(HG.cyl(0.24, 0.28, 0.66, 18), HB.chest, coat, { p: [0, 1.37, 0], s: [1, 1, 0.76] });
+    M.add(HG.sph(0.25, 18, 10), HB.chest, coat, { p: [0, 1.64, 0], s: [1.2, 0.42, 0.78] });
+    M.add(HG.box(0.2, 0.52, 0.06, 0.025), HB.chest, shirt, { p: [0, 1.41, 0.185], r: [-0.07, 0, 0], rough: 0.7 });
+    for (const s of [1, -1]) {
+      M.add(HG.box(0.075, 0.34, 0.035, 0.015), HB.chest, coatDk, { p: [0.105 * s, 1.47, 0.205], r: [-0.08, 0, -0.34 * s] });   // lapels
+      M.add(HG.cone(0.045, 0.1, 4), HB.chest, shirt, { p: [0.065 * s, 1.655, 0.185], r: [0.4, 0, 2.6 * s], s: [1, 1, 0.4] });  // collar points
+      M.add(HG.sph(0.125, 12, 8), HB.chest, coat, { p: [0.31 * s, 1.6, 0], s: [1, 0.85, 0.9] });                            // shoulder pads
+    }
+    M.add(HG.sph(0.042, 8, 6), HB.chest, tie, { p: [0, 1.62, 0.222], rough: 0.5 });
+    M.add(HG.box(0.085, 0.3, 0.022, 0.01), HB.chest, tie, { p: [0.015, 1.44, 0.233], r: [-0.08, 0, 0.12], rough: 0.5 });
+    M.add(HG.cone(0.043, 0.07, 4), HB.chest, tie, { p: [0.034, 1.26, 0.25], r: [Math.PI - 0.08, Math.PI / 4, 0.12], s: [1, 1, 0.35], rough: 0.5 });
+    M.add(HG.box(0.13, 0.11, 0.02, 0.01), HB.chest, 0x8d6a43, { p: [-0.17, 1.22, 0.17], r: [0, -0.55, 0.22] });   // patch
+    M.add(HG.box(0.11, 0.025, 0.02, 0.008), HB.chest, coatDk, { p: [0.17, 1.52, 0.17], r: [0, 0.55, 0] });       // pocket
+    for (const y of [1.3, 1.17]) M.add(HG.sph(0.02, 6, 4), HB.chest, 0x2a1c12, { p: [0.15, y, 0.18] });
+    // Head
+    M.add(HG.cyl(0.07, 0.085, 0.2, 10), HB.head, HC.skin, { p: [0, 1.74, 0] });
+    M.add(HG.sph(0.34, 22, 16), HB.head, HC.skin, { p: [0, 2.01, 0.03], s: [1, 1.08, 0.95], rough: 0.7 });
+    M.add(HG.sph(0.17, 10, 8), HB.head, HC.skin, { p: [0.11, 2.24, -0.07], rough: 0.7 });   // lumpy crown
+    for (const s of [1, -1]) M.add(HG.sph(0.075, 8, 6), HB.head, HC.skinDk, { p: [0.33 * s, 1.98, -0.01], s: [0.45, 1, 0.8] });
+    M.seg(HB.head, HC.skinDk, [0.04, 2.17, 0.29], [0.23, 2.13, 0.24], 0.035, { rs: 6 });   // brows (one raised)
+    M.seg(HB.head, HC.skinDk, [-0.05, 2.11, 0.31], [-0.22, 2.14, 0.25], 0.032, { rs: 6 });
+    hordeEye(M, HB.head, 0.13, 2.05, 0.255, 0.118, [-0.3, 0.25], 0.5);
+    hordeEye(M, HB.head, -0.125, 2.03, 0.285, 0.09, [0.45, -0.3], 0.75);
+    for (const s of [1, -1]) M.add(HG.sph(0.07, 8, 6), HB.head, HC.lid, { p: [0.13 * s, 1.955, 0.27], s: [1.15, 0.42, 0.6] });   // eye bags
+    M.add(HG.sph(0.055, 10, 8), HB.head, HC.skinDk, { p: [0.01, 1.965, 0.345], s: [0.85, 1, 1.1] });   // nose
+    M.add(HG.sph(0.15, 12, 8), HB.head, HC.mouth, { p: [0, 1.86, 0.2], s: [1.2, 0.55, 0.8], rough: 0.5 });
+    M.add(HG.box(0.05, 0.065, 0.03, 0.01), HB.head, HC.tooth, { p: [-0.045, 1.855, 0.31], r: [0, 0, -0.1], rough: 0.35 });
+    M.add(HG.box(0.048, 0.06, 0.03, 0.01), HB.head, HC.tooth, { p: [0.05, 1.86, 0.305], r: [0, 0, 0.12], rough: 0.35 });
+    for (const [x, z, h] of [[0.02, 0.06, 0.16], [-0.07, 0.0, 0.13], [0.08, -0.1, 0.1]])   // three sad hairs
+      M.seg(HB.head, 0x2b2a22, [x, 2.33, z], [x * 2.2 + 0.03, 2.33 + h, z + 0.06], 0.013, { rs: 5 });
+    M.add(HG.sph(0.205, 16, 10), HB.jaw, HC.skin, { p: [0, 1.795, 0.13], s: [1.05, 0.52, 0.95], rough: 0.7 });
+    M.add(HG.box(0.045, 0.05, 0.03, 0.01), HB.jaw, HC.tooth, { p: [0.06, 1.83, 0.3], rough: 0.35 });
+    // Arms: the right sleeve is torn off at the elbow
+    hordeArms(M, { shX: 0.31, shY: 1.6, upper: 0.31, fore: 0.27, armR: 0.085, sleeve: coat,
+      foreColor: s => s > 0 ? coat : HC.skin, foreR: s => s > 0 ? 0.078 : 0.055,
+      dress: (M, A, F, sx, ex, ey, wy, s) => {
+        if (s > 0) M.add(HG.tor(0.07, 0.022, 6, 14), F, shirt, { p: [ex, wy + 0.02, 0], r: [Math.PI / 2, 0, 0] });
+        else M.add(HG.cyl(0.085, 0.105, 0.09, 9), A, coat, { p: [ex, ey + 0.02, 0], rough: 0.95 });
+      },
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s) });
+  },
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t, sd = ha.seed, reachL = sd > 0.5;
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Classic reach: one arm stretched out in front, the other dangling and swinging
+    const s = Math.sin(ha.gait), reach = -1.3 - Math.sin(t * 1.7 + sd * 7) * 0.08;
+    const up = reachL ? HB.armL : HB.armR, upF = reachL ? HB.foreL : HB.foreR, dn = reachL ? HB.armR : HB.armL, dnF = reachL ? HB.foreR : HB.foreL, sgn = reachL ? 1 : -1;
+    hr(up, reach * (0.55 + 0.45 * w) + s * 0.08 * w, 0, 0.12 * sgn); hr(upF, -0.25 + Math.sin(t * 2.3 + sd) * 0.08);
+    hr(dn, 0.1 + s * 0.35 * w * sgn, 0, -0.1 * sgn); hr(dnF, -0.15 - Math.max(0, s * sgn) * 0.25 * w);
+    hr(HB.head, 0.1, 0, 0.16 * Math.sin(t * 0.9 + sd * 4) + 0.12);   // lolling head
+    hr(HB.jaw, 0.1 + Math.max(0, Math.sin(t * 2.7 + sd)) * 0.15);
+  },
+  attack(z, ha, wind, k) { hordeClaw(ha, wind, k, ha.atkN % 3 === 2 ? 0 : ha.atkN % 2 ? 1 : -1); },
+};
+
+// ---------------------------------------------------------------------
+// Sprinter: wiry track-team zombie — tank top, headband streamers, high knees, pounces at heroes
+// ---------------------------------------------------------------------
+HORDE_MODELS.sprinter = {
+  gait: { cycle: 2.9, walkSpeed: 1.5, runSpeed: 7, stride: 0.5, runStride: 1.0, knee: 0.7, runKnee: 1.75, bob: 0.05, runBob: 0.1,
+    twist: 0.18, roll: 0.05, lean: 0.25, runLean: 0.55, idleLean: 0.2 },
+  windup: 0.22,
+  build(M) {
+    const top = 0xe7c41e, topDk = 0xb8941a, shorts = 0x1f3f86, band = 0xd2302a;
+    M.pivot(HB.hips, 0, 0.78, 0).pivot(HB.chest, 0, 0.82, 0).pivot(HB.head, 0, 1.33, 0.03).pivot(HB.jaw, 0, 1.43, 0.08);
+    M.pivot(HB.p0, 0, 1.6, -0.18, HB.head);   // headband streamers
+    hordeLegs(M, { hipY: 0.79, kneeY: 0.44, legX: 0.11, thighR: 0.07, shinR: 0.058, pants: HC.skin, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.062, 0.066, 0.17, 8), b, 0xf2efe6, { p: [x, 0.2, 0] });                     // tube sock
+      for (const y of [0.25, 0.27]) M.add(HG.tor(0.064, 0.009, 4, 12), b, band, { p: [x, y, 0], r: [Math.PI / 2, 0, 0] });
+      hordeShoe(0xf0eee8, 0.14, 0.1, 0.27, 0xd2302a)(M, b, x, s);
+      M.add(HG.box(0.02, 0.05, 0.16, 0.008), b, band, { p: [x + 0.071 * s, 0.065, 0.04] });       // stripe
+    } });
+    for (const s of [1, -1]) M.seg(s > 0 ? HB.thighL : HB.thighR, shorts, [0.11 * s, 0.8, 0], [0.12 * s, 0.62, 0.01], 0.092, { rough: 0.6 });
+    M.add(HG.cyl(0.17, 0.2, 0.18, 14), HB.hips, shorts, { p: [0, 0.82, 0], s: [1, 1, 0.75], rough: 0.6 });
+    M.add(HG.tor(0.175, 0.018, 5, 18), HB.hips, 0xf2efe6, { p: [0, 0.9, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.75, 1] });   // waistband
+    // Skinny chest in a tank top with a number patch
+    M.add(HG.cyl(0.16, 0.15, 0.42, 14), HB.chest, top, { p: [0, 1.08, 0], s: [1, 1, 0.72], rough: 0.65 });
+    M.add(HG.sph(0.17, 14, 8), HB.chest, HC.skin, { p: [0, 1.27, -0.005], s: [1.25, 0.45, 0.72] });   // collarbones
+    M.add(HG.box(0.15, 0.13, 0.02, 0.012), HB.chest, 0xf6f3ea, { p: [0, 1.1, 0.112], rough: 0.6 });
+    M.add(HG.box(0.035, 0.08, 0.022, 0.005), HB.chest, band, { p: [-0.03, 1.1, 0.118] });
+    M.add(HG.box(0.035, 0.08, 0.022, 0.005), HB.chest, band, { p: [0.03, 1.1, 0.118] });
+    for (const s of [1, -1]) M.add(HG.box(0.035, 0.2, 0.02, 0.008), HB.chest, topDk, { p: [0.085 * s, 1.2, 0.09], r: [-0.2, 0, -0.15 * s] });   // straps
+    // Head: narrow, bug-eyed, big grin with tongue out
+    M.add(HG.cyl(0.05, 0.06, 0.18, 8), HB.head, HC.skin, { p: [0, 1.36, 0.01] });
+    M.add(HG.sph(0.23, 18, 14), HB.head, HC.skin, { p: [0, 1.56, 0.04], s: [0.95, 1.12, 0.95], rough: 0.7 });
+    M.add(HG.tor(0.215, 0.035, 6, 20), HB.head, band, { p: [0, 1.66, 0.035], r: [Math.PI / 2 + 0.12, 0, 0], s: [1, 0.95, 1] });
+    hordeEye(M, HB.head, 0.085, 1.6, 0.2, 0.085, [0.1, 0.1], 0.2);
+    hordeEye(M, HB.head, -0.085, 1.6, 0.2, 0.08, [-0.1, 0.15], 0.25);
+    M.add(HG.sph(0.04, 8, 6), HB.head, HC.skinDk, { p: [0, 1.53, 0.25] });
+    M.add(HG.sph(0.12, 12, 8), HB.head, HC.mouth, { p: [0, 1.46, 0.15], s: [1.1, 0.5, 0.75], rough: 0.5 });
+    for (let i = -2; i <= 2; i++) M.add(HG.box(0.032, 0.04, 0.02, 0.008), HB.head, HC.tooth, { p: [i * 0.036, 1.475, 0.235 - Math.abs(i) * 0.012], r: [0, i * 0.25, 0], rough: 0.35 });
+    for (const s of [1, -1]) M.add(HG.sph(0.06, 8, 6), HB.head, HC.skinDk, { p: [0.21 * s, 1.55, 0.01], s: [0.45, 1, 0.8] });
+    M.add(HG.sph(0.14, 14, 8), HB.jaw, HC.skin, { p: [0, 1.4, 0.1], s: [1, 0.5, 1], rough: 0.7 });
+    M.add(HG.box(0.06, 0.02, 0.12, 0.01), HB.jaw, 0xc8505a, { p: [0.02, 1.42, 0.2], r: [0.5, 0, 0], rough: 0.4 });   // tongue
+    for (const s of [1, -1]) M.add(HG.box(0.03, 0.22, 0.012, 0.005), HB.p0, band, { p: [0.03 * s, 1.52, -0.22 - 0.04], r: [0.25, 0, 0.1 * s] });
+    hordeArms(M, { shX: 0.2, shY: 1.25, upper: 0.25, fore: 0.24, armR: 0.052, foreR: 0.047, sleeve: HC.skin, out: 0.02,
+      dress: (M, A, F, sx, ex, ey, wy, s) => M.add(HG.cyl(0.055, 0.055, 0.06, 8), F, 0xf2efe6, { p: [ex, wy + 0.05, 0] }),   // sweatband
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s, HC.skin, 0.058) });
+  },
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t, a = z.ai;
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Sprinting arms pump hard with bent elbows; walking they swing loose
+    hordeArmSwing(ha, w, 0.55 + ha.run * 0.6, -0.15 * ha.run, 0.14, -0.3 - ha.run * 0.9, 0.6);
+    hr(HB.p0, 0.4 + ha.spd * 0.12 + Math.sin(t * 22) * 0.08 * Math.min(1, ha.spd / 4), Math.sin(t * 13) * 0.15);
+    hr(HB.jaw, 0.15 + ha.run * 0.25);
+    // Pounce: launch into a flat dive, claws first
+    const L = a.lungeT > 0 ? 1 : 0;
+    ha.special += (L - ha.special) * Math.min(1, ha.dt * 18);
+    const P = ha.special;
+    if (P > 0.01) {
+      const arc = z.def.lunge ? Math.sin(Math.min(1, 1 - (a.lungeT || 0) / z.def.lunge.time) * Math.PI) : 0;
+      hmix(HB.chest, 0.95, 0, 0, P); hmix(HB.head, -0.75, 0, 0, P); hmix(HB.jaw, 0.8, 0, 0, P);
+      hmix(HB.armL, -2.6, 0, 0.45, P); hmix(HB.armR, -2.6, 0, -0.45, P); hmix(HB.foreL, -0.2, 0, 0, P); hmix(HB.foreR, -0.2, 0, 0, P);
+      hmix(HB.thighL, 0.55, 0, 0.1, P); hmix(HB.thighR, 0.35, 0, -0.1, P); hmix(HB.shinL, 0.5, 0, 0, P); hmix(HB.shinR, 1.1, 0, 0, P);
+      ht(HB.hips, 0, 0.35 * arc * P, 0.1 * P);
+    }
+  },
+  attack(z, ha, wind, k) { hordeClaw(ha, wind, k, ha.atkN % 2 ? 1 : -1); },
+};
+
+// ---------------------------------------------------------------------
+// Screen-Door Brute (plated): a hulking zombie in overalls hiding behind three riveted junk plates bolted into a
+// harness; each plate tears off at its hp threshold and the last one bares a glowing furnace heart (weak point)
+// ---------------------------------------------------------------------
+HORDE_MODELS.plated = {
+  gait: { cycle: 1.6, walkSpeed: 0.8, runSpeed: 5, stride: 0.34, knee: 0.5, bob: 0.1, twist: 0.06, roll: 0.11, lean: 0.12 },
+  windup: 0.5, flinch: 0.45, ankle: 0.16,
+  build(M) {
+    const over = 0x3f5b78, overDk = 0x2d4259, shirt = 0xb34a2c, steel = 0xa7b1b9, rust = 0x8a5634, strap = 0x3b2a1e;
+    M.pivot(HB.hips, 0, 1.22, 0).pivot(HB.chest, 0, 1.3, -0.05).pivot(HB.head, 0, 2.62, 0.18).pivot(HB.jaw, 0, 2.72, 0.32);
+    hordeLegs(M, { hipY: 1.24, kneeY: 0.68, legX: 0.34, thighR: 0.21, shinR: 0.19, pants: over, ankleY: 0.18, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.2, 0.24, 0.2, 12), b, overDk, { p: [x, 0.3, 0] });
+      M.add(HG.box(0.36, 0.24, 0.56, 0.1), b, 0x3a2b20, { p: [x, 0.12, 0.1], rough: 0.5 });   // work boots
+      M.add(HG.sph(0.15, 10, 6), b, 0x8b8e8f, { p: [x, 0.12, 0.33], s: [1.1, 0.75, 0.7], metal: 0.8, rough: 0.35 });   // steel toe
+    } });
+    // Big barrel torso: overalls over a red shirt
+    M.add(HG.sph(0.56, 20, 14), HB.hips, over, { p: [0, 1.32, -0.02], s: [1.05, 0.62, 0.85] });
+    M.add(HG.sph(0.72, 22, 16), HB.chest, shirt, { p: [0, 2.02, -0.1], s: [1.05, 0.95, 0.85], rough: 0.85 });
+    M.add(HG.box(0.9, 0.62, 0.3, 0.12), HB.chest, over, { p: [0, 1.62, 0.36] });
+    for (const s of [1, -1]) {
+      M.add(HG.box(0.13, 0.85, 0.06, 0.03), HB.chest, over, { p: [0.3 * s, 2.1, 0.52], r: [-0.25, 0, 0.12 * s] });   // braces
+      M.add(HG.sph(0.05, 8, 6), HB.chest, 0xd8b04a, { p: [0.3 * s, 1.86, 0.6], metal: 0.9, rough: 0.3 });
+      M.add(HG.sph(0.33, 14, 10), HB.chest, shirt, { p: [0.68 * s, 2.42, -0.08], s: [1, 0.9, 1] });   // hulking shoulders
+    }
+    // Harness straps across the back
+    M.add(HG.tor(0.7, 0.04, 6, 24), HB.chest, strap, { p: [0, 1.95, -0.08], r: [Math.PI / 2, 0, 0], s: [1.07, 0.88, 1] });
+    // Head: small on that body, sunk between the shoulders, under a dented bucket
+    M.add(HG.sph(0.32, 18, 14), HB.head, HC.skin, { p: [0, 2.92, 0.26], s: [1.05, 1, 1], rough: 0.7 });
+    M.add(HG.cyl(0.3, 0.36, 0.34, 18), HB.head, 0x7f8a90, { p: [0, 3.2, 0.22], r: [-0.12, 0, 0.08], metal: 0.75, rough: 0.4 });
+    M.add(HG.tor(0.36, 0.025, 5, 20), HB.head, 0x5f686d, { p: [0, 3.04, 0.24], r: [Math.PI / 2 - 0.12, 0, 0.08], metal: 0.7, rough: 0.4 });
+    M.add(HG.tor(0.26, 0.012, 4, 14, Math.PI), HB.head, 0x5f686d, { p: [0, 3.36, 0.22], r: [0, 0, 0], metal: 0.7, rough: 0.4 });   // handle
+    hordeEye(M, HB.head, 0.12, 2.97, 0.5, 0.085, [0, -0.2], 0.95);
+    hordeEye(M, HB.head, -0.12, 2.97, 0.5, 0.085, [0, -0.2], 0.95);
+    M.seg(HB.head, HC.skinDk, [-0.22, 3.04, 0.5], [0.22, 3.04, 0.5], 0.045);   // unibrow
+    M.add(HG.sph(0.07, 10, 8), HB.head, HC.skinDk, { p: [0, 2.88, 0.58] });
+    M.add(HG.sph(0.26, 16, 10), HB.jaw, HC.skin, { p: [0, 2.72, 0.42], s: [1.15, 0.6, 0.85], rough: 0.7 });   // underbite jaw
+    for (const s of [1, -1]) M.add(HG.cone(0.035, 0.11, 6), HB.jaw, HC.tooth, { p: [0.12 * s, 2.82, 0.6], rough: 0.35 });
+    // Arms: huge forearms, fingerless gloves
+    hordeArms(M, { shX: 0.72, shY: 2.4, upper: 0.5, fore: 0.5, armR: 0.17, foreR: 0.22, sleeve: shirt, foreColor: HC.skin, out: 0.08,
+      dress: (M, A, F, sx, ex, ey, wy, s) => M.add(HG.cyl(0.21, 0.19, 0.16, 12), F, 0x4a3a2c, { p: [ex, wy + 0.08, 0] }),
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s, HC.skin, 0.15) });
+    // Junk plates: top (fridge door), middle (road sign), bottom (trash-can lid) — hidden one by one via scale
+    const plates = [[HB.p0, 2.28, 1.2, 0.52, steel], [HB.p1, 1.74, 1.28, 0.56, 0x9fa86a], [HB.p2, 1.2, 1.16, 0.52, 0x8d989f]];
+    M.marks.plates = [];
+    for (const [b, y, w, h, col] of plates) {
+      const zf = 0.82 - (2.3 - y) * 0.06;
+      M.pivot(b, 0, y, zf - 0.1, b === HB.p2 ? HB.hips : HB.chest);
+      M.add(HG.box(w, h, 0.09, 0.045), b, col, { p: [0, y, zf], metal: 0.7, rough: 0.42 });
+      M.add(HG.box(w * 0.94, 0.04, 0.03, 0.01), b, rust, { p: [0, y + h * 0.18, zf + 0.05], metal: 0.3, rough: 0.8 });
+      for (const sx of [-1, 1]) for (const sy of [-1, 1])
+        M.add(HG.sph(0.03, 6, 4), b, 0x4f565b, { p: [sx * (w / 2 - 0.07), y + sy * (h / 2 - 0.07), zf + 0.05], metal: 0.8, rough: 0.3 });
+      M.marks.plates.push([0, y, zf]);
+    }
+    M.add(HG.box(0.3, 0.06, 0.04, 0.01), HB.p1, 0xf4f1e2, { p: [0, 1.74, 0.85] });   // faded sign stripe
+    M.add(HG.cyl(0.05, 0.05, 0.08, 8), HB.p0, 0x3d4347, { p: [0.45, 2.36, 0.88], r: [Math.PI / 2, 0, 0], metal: 0.6, rough: 0.4 });   // fridge handle
+    M.add(HG.cyl(0.1, 0.1, 0.05, 10), HB.p2, 0x6d777d, { p: [0, 1.2, 0.83], r: [Math.PI / 2, 0, 0], metal: 0.8, rough: 0.35 });      // lid knob
+    // Furnace heart behind the plates (weak point), glowing through a cracked rib cage
+    M.pivot(HB.p3, 0, 1.85, 0.5);
+    M.add(HG.sph(0.32, 16, 12), HB.p3, 0xff6a24, { p: [0, 1.85, 0.5], glow: 1 });
+    M.add(HG.sph(0.18, 12, 8), HB.p3, 0xffd36a, { p: [0, 1.85, 0.66], glow: 1 });
+    M.marks.core = [0, 1.85, 0.7];
+  },
+  glow: (z, ha) => z.parts.core?.visible ? 0.4 + Math.sin(ha.t * 8) * 0.25 : 0,
+  footfall(z, ha) {   // heavy stomps kick up dust and nudge the camera when close
+    const p = z.mesh.position, side = Math.cos(ha.gait) > 0 ? 1 : -1, yaw = z.mesh.rotation.y;
+    const at = new THREE.Vector3(p.x + Math.cos(yaw) * 0.34 * side, feetY(z) + 0.1, p.z - Math.sin(yaw) * 0.34 * side);
+    for (let i = 0; i < 3; i++) spawnParticle('puff', 0x9a8a68, at.clone().add(rand3(0.3, 0.05)), rand3(1.4, 0.4), { life: 0.5, gravity: -0.4, grow: 1.6, drag: 4, size: 0.55 });
+    addShake(0.04, p);
+  },
+  pose(z, ha, w) {
+    const kit = z.horde, plates = z.parts.plates, left = plates ? plates.filter(p => p.visible).length : 0;
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Plates: shown while their marker is; the furnace heart pulses once it is bare
+    for (let i = 0; i < 3; i++) if (plates && !plates[i].visible) hs(HB.p0 + i, 0);
+    const core = z.parts.core;
+    if (!core?.visible) hs(HB.p3, 0.0); else hs(HB.p3, core.scale.x);
+    // Arms: bracing the plates while any are left, else heavy knuckle-drag swing
+    ha.special += ((left ? 1 : 0) - ha.special) * Math.min(1, ha.dt * 6);
+    const hold = ha.special, s = Math.sin(ha.gait) * w;
+    hr(HB.armL, (-0.95 + s * 0.08) * hold + (0.05 + s * 0.4) * (1 - hold), 0, 0.42 * hold + 0.2 * (1 - hold));
+    hr(HB.armR, (-0.95 - s * 0.08) * hold + (0.05 - s * 0.4) * (1 - hold), 0, -0.42 * hold - 0.2 * (1 - hold));
+    hr(HB.foreL, -1.05 * hold - 0.25 * (1 - hold), -0.5 * hold); hr(HB.foreR, -1.05 * hold - 0.25 * (1 - hold), 0.5 * hold);
+    for (let i = 0; i < 3; i++) hr(HB.p0 + i, Math.sin(ha.gait * 2 + i) * 0.03 * w, 0, Math.sin(ha.gait + i) * 0.03 * w);   // rattling
+    hr(HB.head, 0.1);
+  },
+  attack(z, ha, wind, k) {
+    if (ha.special > 0.5) {   // shield shove: gather low, then ram the plates forward
+      hr(HB.chest, -0.25 * wind + 0.45 * k, 0.25 * wind - 0.1 * k); ht(HB.hips, 0, -0.1 * wind - 0.06 * k, -0.1 * wind + 0.35 * k);
+      hr(HB.armL, 0.3 * wind - 0.4 * k); hr(HB.armR, 0.3 * wind - 0.4 * k); hr(HB.head, -0.1 * wind + 0.15 * k);
+      hordeCrouch(z.horde, 0.25, 0.5, wind * 0.8 + k * 0.4);
+    } else {                  // double-fist hammer from overhead
+      for (const s of [1, -1]) { hmix(s > 0 ? HB.armL : HB.armR, -3.0, 0, 0.2 * s, wind); hmix(s > 0 ? HB.foreL : HB.foreR, -0.6, 0, 0, wind);
+        hmix(s > 0 ? HB.armL : HB.armR, -0.7, 0, -0.1 * s, k); hmix(s > 0 ? HB.foreL : HB.foreR, -0.1, 0, 0, k); }
+      hr(HB.chest, -0.3 * wind + 0.6 * k); hr(HB.head, -0.2 * wind + 0.2 * k); hr(HB.jaw, 0.3 * wind + 0.4 * k);
+      hordeCrouch(z.horde, 0.3, 0.6, k * 0.7);
+    }
+  },
+};
+
+// ---------------------------------------------------------------------
+// Spitter: bloated toxic zombie with a glowing throat sac and pustules; rears back, inflates, spits
+// ---------------------------------------------------------------------
+HORDE_MODELS.spitter = {
+  gait: { cycle: 1.35, walkSpeed: 1, runSpeed: 6, stride: 0.38, knee: 0.55, bob: 0.06, twist: 0.08, roll: 0.13, lean: 0.25 },
+  windup: 0.55,
+  build(M) {
+    const shirt = 0x7a6f8c, pants = 0x48405a, goo = 0xb45cff, sac = 0x9b4fd6;
+    M.pivot(HB.hips, 0, 0.92, 0).pivot(HB.chest, 0, 0.96, 0).pivot(HB.head, 0, 1.68, 0.12).pivot(HB.jaw, 0, 1.8, 0.2);
+    M.pivot(HB.p0, 0, 1.68, 0.3, HB.head);   // throat sac
+    hordeLegs(M, { hipY: 0.94, kneeY: 0.5, legX: 0.16, thighR: 0.1, shinR: 0.08, pants, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.09, 0.12, 0.14, 10), b, pants, { p: [x, 0.2, 0] });
+      hordeShoe(0x2e2a26, 0.17, 0.11, 0.3)(M, b, x, s);
+    } });
+    // Pot belly in a stained vest, hunched shoulders, glowing pustules on the back
+    M.add(HG.sph(0.36, 18, 14), HB.hips, shirt, { p: [0, 1.0, 0.04], s: [1, 0.75, 0.95] });
+    M.add(HG.sph(0.4, 18, 14), HB.chest, shirt, { p: [0, 1.28, 0.06], s: [1, 0.95, 0.95] });
+    M.add(HG.sph(0.3, 16, 10), HB.chest, shirt, { p: [0, 1.56, -0.04], s: [1.15, 0.6, 0.9] });
+    M.add(HG.sph(0.12, 10, 8), HB.chest, 0x5d5370, { p: [-0.18, 1.18, 0.36], s: [1, 0.8, 0.3] });   // stain
+    for (const [x, y, z, r] of [[0.14, 1.52, -0.26, 0.07], [-0.1, 1.42, -0.32, 0.06], [0.02, 1.62, -0.24, 0.05], [-0.2, 1.58, -0.18, 0.045], [0.24, 1.32, -0.22, 0.05]])
+      M.add(HG.sph(r, 8, 6), HB.chest, goo, { p: [x, y, z], glow: 0.7, rough: 0.2 });
+    // Head: drooping, swollen cheeks, glowing eyes
+    M.add(HG.sph(0.3, 18, 14), HB.head, HC.skin, { p: [0, 1.9, 0.16], s: [1.05, 0.95, 1], rough: 0.65 });
+    for (const s of [1, -1]) M.add(HG.sph(0.13, 10, 8), HB.head, HC.skin, { p: [0.19 * s, 1.82, 0.3], rough: 0.65 });   // cheeks
+    for (const s of [1, -1]) {
+      M.add(HG.sph(0.075, 12, 8), HB.head, 0xe9c8ff, { p: [0.11 * s, 1.97, 0.4], glow: 0.9, rough: 0.2 });
+      M.add(HG.sph(0.03, 6, 4), HB.head, 0x2a0d3d, { p: [0.11 * s, 1.97, 0.47] });
+      M.add(HG.cut(0.084, 12, 5, 0, Math.PI * 0.45), HB.head, HC.lid, { p: [0.11 * s, 1.97, 0.4], r: [0.75, 0, -0.2 * s] });
+    }
+    M.add(HG.sph(0.1, 10, 8), HB.head, HC.mouth, { p: [0, 1.8, 0.36], s: [1.2, 0.6, 0.7] });
+    M.add(HG.sph(0.05, 8, 6), HB.head, goo, { p: [0.04, 1.77, 0.43], glow: 0.8, rough: 0.15 });   // drool
+    M.add(HG.sph(0.18, 14, 8), HB.jaw, HC.skin, { p: [0, 1.74, 0.28], s: [1.1, 0.5, 0.95], rough: 0.65 });
+    M.add(HG.sph(0.2, 16, 12), HB.p0, sac, { p: [0, 1.62, 0.36], s: [1.05, 0.9, 0.85], glow: 0.55, rough: 0.18 });
+    for (const [x, y] of [[0.08, 1.68], [-0.07, 1.58], [0.02, 1.54]]) M.add(HG.sph(0.025, 6, 4), HB.p0, 0x5a2a7a, { p: [x, y, 0.52] });   // veins
+    hordeArms(M, { shX: 0.36, shY: 1.55, upper: 0.3, fore: 0.28, armR: 0.07, foreR: 0.063, sleeve: HC.skin, out: 0.04,
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s, HC.skin, 0.065) });
+  },
+  glow: (z, ha) => ha.wind * 0.9 + (ha.atk < 0.3 ? 0.6 * (1 - ha.atk / 0.3) : 0),
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t;
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Heavy arms hanging forward, sac throbbing
+    hordeArmSwing(ha, w, 0.3, -0.3, 0.22, -0.45);
+    hs(HB.p0, 1 + Math.sin(t * 2.4 + ha.seed * 5) * 0.05);
+    hr(HB.head, 0.15, 0, Math.sin(t * 0.8 + ha.seed * 3) * 0.08);
+    if (z.mode === 'special' && ha.fwd < -0.3) hr(HB.chest, -0.15);   // backing off: leans away from the hero
+  },
+  attack(z, ha, wind, k) {
+    // Rear back while the sac swells, then thrust the head forward and spit
+    hr(HB.chest, -0.4 * wind + 0.45 * k); hr(HB.head, -0.5 * wind + 0.5 * k); hr(HB.jaw, 0.15 * wind + 0.9 * k);
+    hs(HB.p0, 1 + wind * 0.65 - k * 0.2);
+    hmix(HB.armL, 0.4, 0, 0.55, wind * 0.8); hmix(HB.armR, 0.4, 0, -0.55, wind * 0.8);
+    hmix(HB.armL, -0.6, 0, 0.3, k * 0.5); hmix(HB.armR, -0.6, 0, -0.3, k * 0.5);
+    ht(HB.hips, 0, 0, -0.06 * wind + 0.08 * k);
+  },
+};
+
+// ---------------------------------------------------------------------
+// Bomber: stocky demolition zombie in goggles hauling a lit cartoon bomb over its head, fuse sparking with the beeps
+// ---------------------------------------------------------------------
+HORDE_MODELS.bomber = {
+  gait: { cycle: 1.5, walkSpeed: 1.2, runSpeed: 6, stride: 0.5, runStride: 0.62, knee: 0.7, runKnee: 1.1, bob: 0.08, runBob: 0.12, twist: 0.06, roll: 0.16, lean: 0.12 },
+  build(M) {
+    const suit = 0xc8452c, suitDk = 0x8f2c1d, bomb = 0x22252b, band = 0xf0d040;
+    M.pivot(HB.hips, 0, 0.7, 0).pivot(HB.chest, 0, 0.74, 0).pivot(HB.head, 0, 1.28, 0.05).pivot(HB.jaw, 0, 1.4, 0.15);
+    M.pivot(HB.p0, 0, 1.72, 0.02).pivot(HB.p1, 0.05, 2.38, 0.1, HB.p0);
+    hordeLegs(M, { hipY: 0.72, kneeY: 0.4, legX: 0.19, thighR: 0.12, shinR: 0.105, pants: suit, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.12, 0.13, 0.12, 10), b, 0x2a2622, { p: [x, 0.18, 0] });
+      hordeShoe(0x2a2622, 0.22, 0.14, 0.32)(M, b, x, s);
+    } });
+    // Barrel body in a red jumpsuit with a utility belt and hazard stripes
+    M.add(HG.sph(0.42, 18, 14), HB.hips, suit, { p: [0, 0.82, 0], s: [1, 0.7, 0.85] });
+    M.add(HG.tor(0.4, 0.05, 6, 22), HB.hips, 0x3b2a1e, { p: [0, 0.8, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.85, 1] });
+    M.add(HG.box(0.12, 0.09, 0.04, 0.015), HB.hips, 0xc9a340, { p: [0, 0.8, 0.35], metal: 0.8, rough: 0.3 });
+    for (const s of [1, -1]) M.add(HG.box(0.1, 0.13, 0.08, 0.02), HB.hips, 0x5a4330, { p: [0.28 * s, 0.78, 0.22], r: [0, 0.5 * s, 0] });   // pouches
+    M.add(HG.sph(0.44, 18, 14), HB.chest, suit, { p: [0, 1.05, 0], s: [1.05, 0.85, 0.85] });
+    M.add(HG.box(0.5, 0.07, 0.03, 0.01), HB.chest, band, { p: [0, 1.0, 0.36], r: [-0.15, 0, 0] });
+    M.add(HG.box(0.5, 0.07, 0.03, 0.01), HB.chest, band, { p: [0, 1.12, 0.35], r: [-0.25, 0, 0] });
+    M.add(HG.box(0.06, 0.4, 0.03, 0.01), HB.chest, suitDk, { p: [0, 1.06, 0.36], r: [-0.1, 0, 0] });   // zipper flap
+    // Head: wide, grinning, goggles and a bandana
+    M.add(HG.sph(0.27, 18, 14), HB.head, HC.skin, { p: [0, 1.5, 0.08], s: [1.15, 0.95, 1], rough: 0.7 });
+    M.add(HG.tor(0.27, 0.05, 6, 20), HB.head, suitDk, { p: [0, 1.6, 0.07], r: [Math.PI / 2 + 0.1, 0, 0], s: [1.15, 1, 1] });
+    M.add(HG.cone(0.08, 0.22, 6), HB.head, suitDk, { p: [0.05, 1.6, -0.24], r: [-1.9, 0, 0.3] });   // bandana tail
+    for (const s of [1, -1]) {
+      M.add(HG.cyl(0.085, 0.085, 0.06, 12), HB.head, 0x4b4f55, { p: [0.11 * s, 1.56, 0.3], r: [Math.PI / 2, 0, 0], metal: 0.7, rough: 0.35 });
+      M.add(HG.cyl(0.07, 0.07, 0.02, 12), HB.head, 0xffb347, { p: [0.11 * s, 1.56, 0.335], r: [Math.PI / 2, 0, 0], rough: 0.08, glow: 0.35 });
+    }
+    M.add(HG.box(0.06, 0.03, 0.03, 0.01), HB.head, 0x4b4f55, { p: [0, 1.56, 0.31] });
+    M.add(HG.sph(0.15, 12, 8), HB.head, HC.mouth, { p: [0, 1.4, 0.2], s: [1.25, 0.5, 0.75] });
+    for (let i = -2; i <= 2; i++) if (i !== 1) M.add(HG.box(0.04, 0.045, 0.025, 0.01), HB.head, HC.tooth, { p: [i * 0.048, 1.42, 0.31 - Math.abs(i) * 0.02], r: [0, i * 0.3, 0], rough: 0.35 });
+    M.add(HG.sph(0.2, 14, 8), HB.jaw, HC.skin, { p: [0, 1.35, 0.14], s: [1.15, 0.45, 1], rough: 0.7 });
+    // Arms up holding the bomb
+    hordeArms(M, { shX: 0.38, shY: 1.3, upper: 0.24, fore: 0.24, armR: 0.085, foreR: 0.08, sleeve: suit, foreColor: HC.skin, out: 0.02,
+      dress: (M, A, F, sx, ex, ey, wy, s) => M.add(HG.cyl(0.095, 0.09, 0.1, 10), F, 0x3b3530, { p: [ex, wy + 0.06, 0] }),   // gloves cuffs
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s, 0x3b3530, 0.075) });
+    // The bomb: glossy black ball, metal cap, fuse with a glowing spark
+    M.add(HG.sph(0.4, 20, 16), HB.p0, bomb, { p: [0, 2.0, 0.02], rough: 0.25, metal: 0.3 });
+    M.add(HG.sph(0.1, 8, 6), HB.p0, 0xffffff, { p: [-0.16, 2.17, 0.3], s: [1, 0.6, 0.4], rough: 0.05, glow: 0.25 });   // shine
+    M.add(HG.cyl(0.1, 0.12, 0.08, 12), HB.p0, 0x6c7176, { p: [0.03, 2.38, 0.06], r: [0.15, 0, -0.1], metal: 0.85, rough: 0.3 });
+    M.seg(HB.p0, 0xd9c08a, [0.04, 2.4, 0.08], [0.07, 2.5, 0.12], 0.018, { rs: 5 });
+    M.add(HG.sph(0.05, 8, 6), HB.p1, 0xffe06a, { p: [0.07, 2.53, 0.12], glow: 1 });
+    M.add(HG.sph(0.085, 8, 6), HB.p1, 0xff7a20, { p: [0.07, 2.53, 0.12], glow: 0.9, s: [1, 1.2, 1] });
+    M.marks.bomb = [0, 2.0, 0.02];
+  },
+  glow: (z, ha) => 0.4,
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t, s = Math.sin(ha.gait) * w;
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Both arms straight up under the bomb; the bomb lags the bounce a little
+    hmix(HB.armL, -2.85 + s * 0.06, 0, 0.42, 1); hmix(HB.armR, -2.85 - s * 0.06, 0, -0.42, 1);
+    hmix(HB.foreL, -0.55, 0, 0, 1); hmix(HB.foreR, -0.55, 0, 0, 1);
+    hr(HB.chest, -0.12 - 0.12 * w);   // leans back under the weight
+    hr(HB.p0, 0.12 + 0.12 * w, Math.sin(t * 1.3) * 0.2, -Math.sin(ha.gait) * 0.06 * w);
+    ht(HB.p0, 0, -Math.abs(Math.cos(ha.gait)) * 0.04 * w, 0);
+    hs(HB.p0, 1 + (z.glow || 0) * 0.07);   // swells on each beep
+    hs(HB.p1, 0.8 + Math.random() * 0.5);
+    hr(HB.jaw, 0.2 + Math.sin(t * 9) * 0.05);   // giggling
+  },
+  attack() {},
+};
+
+// ---------------------------------------------------------------------
+// Flag Major (banner): a marching drum-major zombie — shako with plume, sash, pole with a pink brain banner
+// ---------------------------------------------------------------------
+HORDE_MODELS.banner = {
+  gait: { cycle: 1.7, walkSpeed: 1.2, runSpeed: 5, stride: 0.42, knee: 1.0, runKnee: 1.3, bob: 0.07, twist: 0.08, roll: 0.05, lean: -0.04, runLean: 0.25, idleLean: -0.05 },
+  windup: 0.35,
+  build(M) {
+    const jacket = 0x7b2140, jacketDk = 0x55162c, gold = 0xe0b84a, white = 0xefe9dc, pink = 0xff6f9a, pole = 0x6d4b2a;
+    M.pivot(HB.hips, 0, 0.84, 0).pivot(HB.chest, 0, 0.88, 0).pivot(HB.head, 0, 1.43, 0.02).pivot(HB.jaw, 0, 1.56, 0.08);
+    hordeLegs(M, { hipY: 0.86, kneeY: 0.47, legX: 0.12, thighR: 0.085, shinR: 0.075, pants: white, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.08, 0.085, 0.2, 10), b, 0x1e1e22, { p: [x, 0.2, 0], rough: 0.4 });   // spats
+      hordeShoe(0x18181b, 0.16, 0.11, 0.3)(M, b, x, s);
+    } });
+    for (const s of [1, -1]) M.add(HG.box(0.025, 0.36, 0.02, 0.008), s > 0 ? HB.thighL : HB.thighR, jacket, { p: [0.205 * s, 0.68, 0], r: [0, 0, 0] });   // trouser stripe
+    M.add(HG.cyl(0.2, 0.23, 0.2, 16), HB.hips, white, { p: [0, 0.86, 0], s: [1, 1, 0.78] });
+    // Bandsman jacket: frogging, epaulettes, sash
+    M.add(HG.cyl(0.2, 0.22, 0.5, 16), HB.chest, jacket, { p: [0, 1.15, 0], s: [1, 1, 0.78], rough: 0.65 });
+    M.add(HG.sph(0.21, 16, 8), HB.chest, jacket, { p: [0, 1.38, 0], s: [1.2, 0.45, 0.8], rough: 0.65 });
+    for (const y of [1.0, 1.1, 1.2, 1.3]) M.add(HG.box(0.17, 0.02, 0.02, 0.008), HB.chest, gold, { p: [0, y, 0.165], metal: 0.8, rough: 0.35 });
+    for (const s of [1, -1]) {
+      M.add(HG.cyl(0.1, 0.1, 0.035, 12), HB.chest, gold, { p: [0.25 * s, 1.41, 0], r: [0, 0, -0.25 * s], metal: 0.8, rough: 0.35 });
+      for (let i = -2; i <= 2; i++) M.seg(HB.chest, gold, [0.25 * s + i * 0.035, 1.395, 0.02], [0.27 * s + i * 0.04, 1.33, 0.02], 0.009, { rs: 4, metal: 0.8, rough: 0.4 });
+    }
+    M.add(HG.box(0.08, 0.62, 0.03, 0.01), HB.chest, pink, { p: [0.0, 1.16, 0.17], r: [-0.05, 0, 0.62], rough: 0.5 });   // sash
+    M.add(HG.cyl(0.06, 0.07, 0.15, 10), HB.head, HC.skin, { p: [0, 1.45, 0] });
+    M.add(HG.cyl(0.11, 0.1, 0.08, 14), HB.head, jacketDk, { p: [0, 1.46, 0] });   // high collar
+    // Head with chin-strapped shako and pink plume
+    M.add(HG.sph(0.25, 18, 14), HB.head, HC.skin, { p: [0, 1.66, 0.03], s: [1, 1.08, 0.96], rough: 0.7 });
+    M.add(HG.cyl(0.2, 0.22, 0.32, 16), HB.head, 0x1d1d26, { p: [0, 1.95, 0.0], r: [-0.12, 0, 0], rough: 0.45 });
+    M.add(HG.cyl(0.225, 0.225, 0.04, 16), HB.head, gold, { p: [0, 1.81, 0.02], r: [-0.12, 0, 0], metal: 0.8, rough: 0.35 });
+    M.add(HG.box(0.2, 0.03, 0.12, 0.01), HB.head, 0x111116, { p: [0, 1.81, 0.24], r: [0.25, 0, 0], rough: 0.2 });   // visor
+    M.add(HG.cone(0.06, 0.12, 6), HB.head, gold, { p: [0, 1.96, 0.2], r: [-0.12, 0, 0], s: [1, 1, 0.3], metal: 0.8, rough: 0.35 });   // badge
+    M.add(HG.sph(0.08, 10, 8), HB.head, pink, { p: [0, 2.17, -0.02], s: [0.8, 1.6, 0.8], rough: 0.9 });   // plume
+    M.add(HG.tor(0.2, 0.01, 4, 16, Math.PI), HB.head, gold, { p: [0, 1.62, 0.06], r: [0, Math.PI / 2, Math.PI], metal: 0.8, rough: 0.4 });   // chin strap
+    hordeEye(M, HB.head, 0.085, 1.7, 0.21, 0.08, [0, 0.1], 0.35);
+    hordeEye(M, HB.head, -0.085, 1.7, 0.21, 0.08, [0, 0.1], 0.35);
+    M.add(HG.sph(0.04, 8, 6), HB.head, HC.skinDk, { p: [0, 1.63, 0.26] });
+    M.seg(HB.head, 0x2b2a22, [-0.12, 1.57, 0.22], [0.12, 1.57, 0.22], 0.022, { rs: 6 });   // moustache
+    M.add(HG.sph(0.1, 10, 6), HB.head, HC.mouth, { p: [0, 1.53, 0.17], s: [1.1, 0.5, 0.7] });
+    M.add(HG.sph(0.15, 14, 8), HB.jaw, HC.skin, { p: [0, 1.5, 0.1], s: [1, 0.5, 0.95], rough: 0.7 });
+    hordeArms(M, { shX: 0.25, shY: 1.36, upper: 0.26, fore: 0.24, armR: 0.068, foreR: 0.062, sleeve: jacket, out: 0.02,
+      dress: (M, A, F, sx, ex, ey, wy, s) => M.add(HG.cyl(0.072, 0.072, 0.05, 10), F, gold, { p: [ex, wy + 0.04, 0], metal: 0.8, rough: 0.35 }),
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s, white, 0.062) });
+    // Pole in the right fist; the banner is two cloth panels so it can ripple (p1 hinge at the pole, p2 the free half)
+    const hx = -0.29, hy = 0.86;
+    M.pivot(HB.p0, hx, hy, 0.02, HB.foreR).pivot(HB.p1, hx, 1.9, -0.02, HB.p0).pivot(HB.p2, hx, 1.9, -0.36, HB.p1);
+    M.seg(HB.p0, pole, [hx, 0.55, 0.02], [hx, 2.5, 0.02], 0.025, { rs: 8, rough: 0.6 });
+    M.add(HG.sph(0.05, 10, 8), HB.p0, gold, { p: [hx, 2.55, 0.02], s: [1, 1.4, 1], metal: 0.85, rough: 0.25 });
+    M.add(HG.box(0.025, 0.56, 0.34, 0.008), HB.p1, pink, { p: [hx, 2.18, -0.19], rough: 0.85 });
+    M.add(HG.box(0.025, 0.56, 0.36, 0.008), HB.p2, pink, { p: [hx, 2.18, -0.53], rough: 0.85 });
+    // Brain emblem across both panels (raised blobs, both sides)
+    for (const [y, z, r, b] of [[2.22, -0.3, 0.09, HB.p1], [2.25, -0.42, 0.1, HB.p2], [2.13, -0.36, 0.08, HB.p2], [2.13, -0.25, 0.07, HB.p1]])
+      M.add(HG.sph(r, 8, 6), b, 0xffc2d4, { p: [hx, y, z], s: [0.32, 1, 1] });
+    for (const y of [1.92, 2.44]) M.add(HG.box(0.03, 0.03, 0.7, 0.01), y > 2 ? HB.p1 : HB.p1, gold, { p: [hx, y, -0.36], s: [1, 1, 0.5], metal: 0.6, rough: 0.4 });
+  },
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t, flee = z.mode === 'special';
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Left arm marches; right arm holds the pole out front
+    const s = Math.sin(ha.gait) * w;
+    hr(HB.armL, s * (flee ? 1.2 : 0.75) - (flee ? 0.4 : 0), 0, 0.12); hr(HB.foreL, -0.35 - Math.max(0, -s) * 0.6);
+    const pump = flee ? 0 : Math.max(0, Math.sin(t * 3.4)) * (1 - w) * 0.35;   // standing: pumps the flag to rally
+    hr(HB.armR, -0.45 - pump - s * 0.05, 0, -0.12); hr(HB.foreR, -1.1 - pump * 0.5);
+    // Keep the pole upright whatever the arm does, swaying with the march / waving while standing
+    const tilt = hget(HB.armR) + hget(HB.foreR) + hget(HB.chest);
+    hr(HB.p0, -tilt + Math.sin(ha.gait) * 0.08 * w + (flee ? 0.4 : 0), 0, Math.sin(t * 2.2) * (0.18 * (1 - w) + 0.05));
+    // Banner ripple: a travelling wave from the pole to the free edge, streaming harder with speed
+    const f = 5 + ha.spd * 1.5, a = 0.25 + Math.min(0.25, ha.spd * 0.05);
+    hr(HB.p1, 0, Math.sin(t * f) * a - ha.turn * 0.1, 0); hr(HB.p2, 0, Math.sin(t * f - 1.4) * a * 1.5, Math.sin(t * f * 0.5) * 0.05);
+    if (flee) { hr(HB.head, -0.1, (ha.seed > 0.5 ? 1 : -1) * 0.9, 0); hr(HB.jaw, 0.5); }   // looks back over its shoulder in panic
+    else hr(HB.head, -0.12);   // chin up, proud
+  },
+  attack(z, ha, wind, k) { hordeClaw(ha, wind, k, 1); },
+};
+
+// ---------------------------------------------------------------------
+// Climber: hunched mountaineer zombie — teal parka, rope coil and pack, goggles up, ice-pick hands; scales walls
+// ---------------------------------------------------------------------
+HORDE_MODELS.climber = {
+  gait: { cycle: 1.9, walkSpeed: 1.2, runSpeed: 5, stride: 0.5, knee: 0.75, bob: 0.07, twist: 0.12, roll: 0.07, lean: 0.55, idleLean: 0.45, crouch: 0.25 },
+  windup: 0.35,
+  build(M) {
+    const parka = 0x2f7a78, parkaDk = 0x215655, pants = 0x5a4a3a, rope = 0xc89a54, pick = 0x8e979d;
+    M.pivot(HB.hips, 0, 0.86, 0).pivot(HB.chest, 0, 0.9, -0.02).pivot(HB.head, 0, 1.48, 0.12).pivot(HB.jaw, 0, 1.6, 0.18);
+    hordeLegs(M, { hipY: 0.88, kneeY: 0.48, legX: 0.14, thighR: 0.095, shinR: 0.082, pants, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.095, 0.105, 0.16, 10), b, 0x8a4a2a, { p: [x, 0.2, 0] });   // gaiters
+      hordeShoe(0x3a2d22, 0.18, 0.14, 0.32)(M, b, x, s);
+      for (let i = 0; i < 3; i++) M.add(HG.cone(0.02, 0.05, 4), b, pick, { p: [x + (i - 1) * 0.05, -0.01, 0.12], r: [Math.PI, 0, 0], metal: 0.8, rough: 0.35 });   // crampons
+    } });
+    M.add(HG.cyl(0.23, 0.26, 0.24, 16), HB.hips, parkaDk, { p: [0, 0.88, 0], s: [1, 1, 0.8] });
+    M.add(HG.cyl(0.25, 0.25, 0.55, 16), HB.chest, parka, { p: [0, 1.18, 0], s: [1, 1, 0.82], rough: 0.7 });
+    M.add(HG.sph(0.26, 16, 10), HB.chest, parka, { p: [0, 1.45, 0], s: [1.15, 0.5, 0.85], rough: 0.7 });
+    M.add(HG.tor(0.15, 0.06, 8, 18), HB.chest, 0xe5dfcc, { p: [0, 1.5, 0.04], r: [Math.PI / 2 - 0.3, 0, 0] });   // fur collar
+    M.add(HG.box(0.03, 0.5, 0.03, 0.01), HB.chest, 0xd0d4d6, { p: [0, 1.18, 0.21], metal: 0.6, rough: 0.4 });   // zip
+    for (const y of [1.05, 1.3]) M.add(HG.tor(0.25, 0.015, 4, 20), HB.chest, parkaDk, { p: [0, y, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.82, 1] });   // quilting
+    // Backpack with a rope coil and a spare pick
+    M.add(HG.box(0.36, 0.42, 0.18, 0.07), HB.chest, 0x7a5432, { p: [0, 1.25, -0.29] });
+    M.add(HG.tor(0.14, 0.04, 6, 18), HB.chest, rope, { p: [0, 1.32, -0.4], r: [0, 0, 0], rough: 0.95 });
+    M.add(HG.tor(0.11, 0.035, 6, 16), HB.chest, rope, { p: [0.02, 1.32, -0.43], r: [0, 0.2, 0.4], rough: 0.95 });
+    M.seg(HB.chest, 0x5a3e24, [-0.17, 1.05, -0.38], [0.2, 1.6, -0.36], 0.018);
+    // Head: goggles pushed up, toque, scraggly beard
+    M.add(HG.sph(0.24, 18, 14), HB.head, HC.skin, { p: [0, 1.7, 0.16], s: [1, 1.05, 1], rough: 0.7 });
+    M.add(HG.cut(0.255, 18, 8, 0, Math.PI * 0.42), HB.head, 0xd44a2a, { p: [0, 1.73, 0.15], rough: 0.95 });   // toque
+    M.add(HG.sph(0.06, 8, 6), HB.head, 0xf0ebe0, { p: [0, 1.98, 0.13], rough: 1 });   // pompom
+    M.add(HG.tor(0.24, 0.025, 5, 20), HB.head, 0x333333, { p: [0, 1.8, 0.16], r: [Math.PI / 2 - 0.2, 0, 0] });
+    for (const s of [1, -1]) {
+      M.add(HG.cyl(0.07, 0.07, 0.05, 12), HB.head, 0x444a50, { p: [0.09 * s, 1.85, 0.36], r: [Math.PI / 2 - 0.7, 0, 0], metal: 0.6, rough: 0.35 });
+      M.add(HG.cyl(0.058, 0.058, 0.015, 12), HB.head, 0x7ad7e8, { p: [0.09 * s, 1.865, 0.385], r: [Math.PI / 2 - 0.7, 0, 0], rough: 0.05, glow: 0.2 });
+    }
+    hordeEye(M, HB.head, 0.08, 1.72, 0.34, 0.07, [0, 0.2], 0.4);
+    hordeEye(M, HB.head, -0.08, 1.71, 0.34, 0.065, [0.1, 0.1], 0.5);
+    M.add(HG.sph(0.045, 8, 6), HB.head, 0xb87a6a, { p: [0, 1.66, 0.4] });   // frostbitten nose
+    M.add(HG.sph(0.16, 14, 8), HB.jaw, HC.skin, { p: [0, 1.58, 0.22], s: [1, 0.5, 0.95], rough: 0.7 });
+    for (let i = -2; i <= 2; i++) M.add(HG.cone(0.03, 0.12, 5), HB.jaw, 0x6a5a48, { p: [i * 0.045, 1.5, 0.3 - Math.abs(i) * 0.02], r: [Math.PI - 0.3, 0, i * 0.15], rough: 1 });   // beard
+    // Long arms ending in ice picks
+    hordeArms(M, { shX: 0.28, shY: 1.42, upper: 0.36, fore: 0.34, armR: 0.075, foreR: 0.068, sleeve: parka, out: 0.04,
+      dress: (M, A, F, sx, ex, ey, wy, s) => M.add(HG.cyl(0.08, 0.08, 0.08, 10), F, parkaDk, { p: [ex, wy + 0.05, 0] }),
+      hand: (M, F, x, y, s) => {
+        hordeHand(M, F, x, y, s, 0x4a3b2c, 0.07);
+        M.seg(F, 0x4a3b2c, [x, y - 0.08, 0.03], [x, y - 0.32, 0.06], 0.022);   // pick shaft
+        M.add(HG.cone(0.035, 0.26, 5), F, pick, { p: [x, y - 0.33, 0.18], r: [Math.PI / 2 + 0.25, 0, 0], s: [1, 1, 0.45], metal: 0.85, rough: 0.3 });
+        M.add(HG.box(0.06, 0.05, 0.12, 0.01), F, pick, { p: [x, y - 0.33, -0.05], metal: 0.85, rough: 0.3 });
+      } });
+  },
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t, s = Math.sin(ha.gait);
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Ape-like scuttle: long arms swinging low, picks scraping the ground
+    hordeArmSwing(ha, w, 0.55, -0.35, 0.16, -0.35, 0.3);
+    hr(HB.head, -0.35, 0, Math.sin(t * 1.1 + ha.seed) * 0.08);
+    // Climbing: hugging the wall, arms hacking upward in turn, knees pumping
+    const c = ha.climbW;
+    if (c > 0.01) {
+      const p = ha.gait;
+      hmix(HB.chest, 0.15, 0, 0, c); hmix(HB.hips, -0.1, 0, 0, c); hmix(HB.head, -0.7, 0, 0, c);
+      hmix(HB.armL, -2.6 + Math.sin(p) * 0.5, 0, 0.2, c); hmix(HB.armR, -2.6 - Math.sin(p) * 0.5, 0, -0.2, c);
+      hmix(HB.foreL, -0.4 - Math.max(0, -Math.sin(p)) * 0.8, 0, 0, c); hmix(HB.foreR, -0.4 - Math.max(0, Math.sin(p)) * 0.8, 0, 0, c);
+      hmix(HB.thighL, -1.0 - Math.sin(p) * 0.45, 0, 0.15, c); hmix(HB.thighR, -1.0 + Math.sin(p) * 0.45, 0, -0.15, c);
+      hmix(HB.shinL, 1.4, 0, 0, c); hmix(HB.shinR, 1.4, 0, 0, c);
+      ht(HB.hips, 0, 0, -0.12 * c);
+    }
+  },
+  attack(z, ha, wind, k) { hordeClaw(ha, wind, k, ha.atkN % 2 ? 0 : (ha.seed > 0.5 ? 1 : -1)); },
+};
+
+// ---------------------------------------------------------------------
+// Howler: gaunt escaped-convict zombie in an orange jumpsuit with broken shackles and an unhinged jaw;
+// inhales (chest swells), then screams with its mouth glowing
+// ---------------------------------------------------------------------
+HORDE_MODELS.howler = {
+  gait: { cycle: 2.6, walkSpeed: 1.5, runSpeed: 6.5, stride: 0.5, runStride: 0.95, knee: 0.7, runKnee: 1.6, bob: 0.05, runBob: 0.09, twist: 0.14, roll: 0.05, lean: 0.25, runLean: 0.5 },
+  windup: 0.25,
+  build(M) {
+    const suit = 0xe8822a, suitDk = 0xb35e1a, iron = 0x5a5f63;
+    M.pivot(HB.hips, 0, 0.78, 0).pivot(HB.chest, 0, 0.82, 0).pivot(HB.head, 0, 1.36, 0.06).pivot(HB.jaw, 0, 1.47, 0.1);
+    hordeLegs(M, { hipY: 0.8, kneeY: 0.43, legX: 0.11, thighR: 0.075, shinR: 0.065, pants: suit, foot: (M, b, x, s) => {
+      M.add(HG.cyl(0.075, 0.1, 0.14, 10), b, suit, { p: [x, 0.2, 0], rough: 0.95 });
+      M.add(HG.sph(0.075, 10, 8), b, HC.skin, { p: [x, 0.06, 0.07], s: [0.9, 0.6, 1.6] });   // bare feet
+      for (let i = -1; i <= 1; i++) M.add(HG.sph(0.025, 6, 4), b, HC.skinDk, { p: [x + i * 0.035, 0.035, 0.18] });
+    } });
+    M.add(HG.cyl(0.17, 0.19, 0.2, 14), HB.hips, suit, { p: [0, 0.8, 0], s: [1, 1, 0.78] });
+    // Jumpsuit torn open over a bony rib cage
+    M.add(HG.cyl(0.18, 0.16, 0.46, 14), HB.chest, suit, { p: [0, 1.06, -0.01], s: [1, 1, 0.75], rough: 0.85 });
+    M.add(HG.sph(0.13, 12, 8), HB.chest, HC.skin, { p: [0, 1.17, 0.07], s: [0.9, 1.4, 0.55] });
+    for (let i = 0; i < 4; i++) M.add(HG.tor(0.1, 0.012, 4, 12, Math.PI), HB.chest, HC.skinDk, { p: [0, 1.06 + i * 0.065, 0.11], r: [0, 0, Math.PI], s: [1, 0.55, 1] });
+    M.add(HG.sph(0.19, 14, 8), HB.chest, suit, { p: [0, 1.3, -0.01], s: [1.25, 0.45, 0.78] });
+    M.add(HG.box(0.13, 0.08, 0.02, 0.01), HB.chest, 0xf2efe6, { p: [-0.09, 1.2, 0.12], r: [0, -0.3, 0] });   // inmate number patch
+    for (let i = 0; i < 4; i++) M.add(HG.box(0.015, 0.035, 0.022, 0.004), HB.chest, 0x222222, { p: [-0.13 + i * 0.025, 1.2, 0.128], r: [0, -0.3, 0] });
+    // Head: sunken eyes, wild hair, huge hinged jaw full of teeth
+    M.add(HG.cyl(0.045, 0.055, 0.18, 8), HB.head, HC.skin, { p: [0, 1.38, 0.03] });
+    M.add(HG.sph(0.22, 18, 14), HB.head, HC.skin, { p: [0, 1.62, 0.06], s: [0.95, 1.1, 0.95], rough: 0.7 });
+    for (const s of [1, -1]) {
+      M.add(HG.sph(0.065, 10, 8), HB.head, 0x3a3a2c, { p: [0.08 * s, 1.66, 0.22], s: [1, 1, 0.5] });   // sockets
+      M.add(HG.sph(0.035, 8, 6), HB.head, 0xffd27a, { p: [0.08 * s, 1.66, 0.245], glow: 0.9 });          // pinprick eyes
+      M.seg(HB.head, HC.skinDk, [0.03 * s, 1.73, 0.25], [0.15 * s, 1.75, 0.2], 0.022, { rs: 5 });
+    }
+    for (const [x, z, a] of [[0, 0.02, 0], [0.09, -0.02, 0.5], [-0.09, -0.02, -0.5], [0.04, -0.1, 0.3], [-0.05, -0.1, -0.3], [0.13, 0.05, 0.9], [-0.13, 0.05, -0.9]])
+      M.add(HG.cone(0.035, 0.18, 5), HB.head, 0xd8d4c4, { p: [x, 1.84, z], r: [-0.2, 0, -a] , rough: 1 });   // white wild hair
+    M.add(HG.sph(0.15, 12, 8), HB.head, 0x5a1a10, { p: [0, 1.5, 0.12], s: [1.15, 0.5, 0.9], glow: 0.15 });   // throat (glows when screaming)
+    for (let i = -3; i <= 3; i++) M.add(HG.cone(0.02, 0.055, 4), HB.head, HC.tooth, { p: [i * 0.032, 1.51, 0.22 - Math.abs(i) * 0.012], r: [Math.PI, 0, 0], rough: 0.35 });
+    M.add(HG.sph(0.18, 14, 10), HB.jaw, HC.skin, { p: [0, 1.4, 0.1], s: [1.05, 0.55, 1.05], rough: 0.7 });
+    M.add(HG.sph(0.13, 12, 8), HB.jaw, 0x5a1a10, { p: [0, 1.44, 0.12], s: [1.1, 0.4, 0.9], glow: 0.15 });
+    for (let i = -3; i <= 3; i++) M.add(HG.cone(0.02, 0.05, 4), HB.jaw, HC.tooth, { p: [i * 0.03, 1.47, 0.24 - Math.abs(i) * 0.014], rough: 0.35 });
+    hordeArms(M, { shX: 0.21, shY: 1.3, upper: 0.27, fore: 0.26, armR: 0.05, foreR: 0.042, sleeve: suit, foreColor: HC.skin, out: 0.02,
+      dress: (M, A, F, sx, ex, ey, wy, s) => {
+        M.add(HG.cyl(0.065, 0.065, 0.07, 10), F, iron, { p: [ex, wy + 0.06, 0], metal: 0.8, rough: 0.4 });   // shackle
+        for (let i = 0; i < 2; i++) M.add(HG.tor(0.025, 0.008, 4, 8), F, iron, { p: [ex + s * 0.02, wy + 0.0 - i * 0.045, 0.07], r: [0, i * 1.5, 0], metal: 0.8, rough: 0.4 });
+        M.add(HG.cyl(0.06, 0.07, 0.07, 9), A, suitDk, { p: [ex, ey + 0.02, 0], rough: 0.95 });
+      },
+      hand: (M, F, x, y, s) => hordeHand(M, F, x, y, s, HC.skin, 0.055, 0x2f2a20) });
+  },
+  // Throat / eyes light up while inhaling and screaming
+  glow(z, ha) { return ha.special * 1.2; },
+  pose(z, ha, w) {
+    const kit = z.horde, t = ha.t, a = z.ai, Sc = z.def.scream;
+    hordeGait(kit, ha, this.gait, w);
+    hordeIdle(ha, w);
+    // Running: arms trail behind, flapping; walking: loose swing
+    const s = Math.sin(ha.gait) * w;
+    hr(HB.armL, 0.9 * ha.run + s * (0.6 - 0.3 * ha.run), 0, 0.15 + 0.2 * ha.run); hr(HB.armR, 0.9 * ha.run - s * (0.6 - 0.3 * ha.run), 0, -0.15 - 0.2 * ha.run);
+    hr(HB.foreL, -0.3 + Math.sin(t * 9) * 0.15 * ha.run); hr(HB.foreR, -0.3 - Math.sin(t * 9 + 1) * 0.15 * ha.run);
+    hr(HB.jaw, 0.2 + ha.run * 0.3 + Math.sin(t * 7) * 0.05);
+    // Inhale (windup) → scream (first 0.9 s after it fires)
+    const inhale = a.windup > 0 ? 1 - a.windup / Sc.windup : 0;
+    const scream = a.screamCd > Sc.cooldown - 0.9 ? 1 : 0;
+    ha.special += (Math.max(inhale, scream) - ha.special) * Math.min(1, ha.dt * 14);
+    const i = inhale, sc = scream * ha.special, jit = Math.sin(t * 61) * 0.04 * sc;
+    if (i > 0) {
+      hmix(HB.chest, -0.35, 0, 0, i); hs(HB.chest, 1 + 0.06 * i); hmix(HB.head, -0.65, 0, 0, i); hmix(HB.jaw, 0.25, 0, 0, i);
+      hmix(HB.armL, 0.5, 0, 0.6, i); hmix(HB.armR, 0.5, 0, -0.6, i); hordeCrouch(kit, 0.2, 0.4, i);
+    }
+    if (sc > 0) {
+      hmix(HB.chest, 0.4, jit, jit, sc); hmix(HB.head, 0.15 + jit, jit * 2, jit, sc); hmix(HB.jaw, 1.25, 0, 0, sc);
+      hmix(HB.armL, 0.9, 0, 1.0, sc); hmix(HB.armR, 0.9, 0, -1.0, sc); hmix(HB.foreL, -0.6, 0, 0, sc); hmix(HB.foreR, -0.6, 0, 0, sc);
+      hordeCrouch(kit, 0.35, 0.7, sc);
+    }
+  },
+  attack(z, ha, wind, k) {   // lunging bite
+    hr(HB.chest, -0.25 * wind + 0.55 * k); hr(HB.head, -0.4 * wind + 0.35 * k); hr(HB.jaw, 0.9 * wind - 0.6 * k);
+    hmix(HB.armL, -1.2, 0, 0.4, k); hmix(HB.armR, -1.2, 0, -0.4, k);
+    ht(HB.hips, 0, -0.03 * k, 0.12 * k);
+  },
+};
 const spitGeo = new THREE.SphereGeometry(ZT.spitter.projectileRadius, 8, 8);
 const spitMat = new THREE.MeshBasicMaterial({ color: 0xb060ff });
 const kernelShotGeo = new THREE.SphereGeometry(1, 8, 6);
@@ -3522,6 +4632,7 @@ let popups = [];             // floating damage numbers
 function resetGame() {
   clearMechaWorld();
   clearAllStarWorld();
+  clearAgentCorpses();
   clearImpWorld();
   clearScientistWorld();
   clearCactusWorld();
@@ -3538,6 +4649,7 @@ function resetGame() {
   popups.forEach(p => p.el.remove());
   skulls.forEach(s => s.life = 0);   // removed on the next updateSkulls
   zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
+  hordeCorpses = [];
   state = {
     statueHp: CONFIG.statue.hp,
     gardenAlert: null,   // { z, t } while a zombie is hitting the garden (hidden AI alert)
@@ -3571,6 +4683,7 @@ function respawnHero(h) {
   h.hp = P.hp;
   h.lastHurt = -Infinity;
   h.dead = false; h.downed = false; h.floatT = 0;
+  h.anim.spawnPop = true;
   h.vel.set(0, 0, 0);
   h.hopping = false;
   if (h.type === 'peashooter') resetPeashooter(h);
@@ -3613,6 +4726,7 @@ function buildZombieMesh(type) {
   mesh.rotation.order = 'YXZ';                  // yaw first, then lean (climbing, charging)
   const halfH = def.radius + def.height / 2;   // mesh origin is at its center
   const parts = {};
+  if (HORDE_MODELS[type]) { attachHordeParts(type, mesh, parts, def, halfH); return { mesh, parts }; }
   if (type === 'finalBoss') {
     mesh.material.visible = false; mesh.castShadow = false;
     Object.assign(parts, takeRig('mecha'));
@@ -3747,6 +4861,7 @@ function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
   };
   zombies.push(zombie);
   if (type === 'imp') setupImp(zombie);
+  if (HORDE_MODELS[type]) { zombie.horde = hordeKit(type); zombie.batched = true; return zombie; }   // skinned horde batch
   // A plain visible capsule joins its type's instanced batch; its own mesh stays as the hidden logic/flash body
   if (mesh.material.visible && mesh.material.colorWrite) { zombie.batched = true; mesh.material.visible = false; }
   return zombie;
@@ -4201,9 +5316,9 @@ function updateHero(h, dt) {
   }
   // Presses first (they used to run straight from the key handlers, before the movement step)
   if (inp.reload) startReload(h);
-  if (inp.shuck) h.plant.actions.shuckShot(h);
-  if (inp.hop) h.plant.actions.huskHop(h);
-  if (inp.butter) h.plant.actions.butterBarrage(h, inp.butter);
+  if (inp.shuck) heroAction(h, 'shuckShot');
+  if (inp.hop) heroAction(h, 'huskHop');
+  if (inp.butter) heroAction(h, 'butterBarrage', inp.butter);
   h.zoom += ((inp.zoom ? 1 : 0) - h.zoom) * Math.min(1, dt * 12);
 
   // Wished velocity, approached smoothly for weight
@@ -4595,6 +5710,7 @@ function damageHero(h, amount) {
   if (!targetable(h)) return;
   h.hp -= amount;
   h.lastHurt = state.time;   // pauses passive regen
+  heroFlinch(h, amount);
   if (h.isAI) SFX.play('mateHurt', h.mesh.position); else SFX.play('hurt', amount > 20);
   if (!h.isAI) {
     state.hurt = Math.min(1, state.hurt + amount / 40);
@@ -5805,7 +6921,7 @@ function constrainZombie(z, dt) {
     p.y = Math.max(ground, feet - 14 * dt) + halfH;   // follow small rises, fall quickly off drops
     z.climbing = false;
   }
-  z.mesh.rotation.x = z.climbing ? -0.7 : 0;
+  z.mesh.rotation.x = 0;   // the climb itself is an animation (section "Horde models")
 }
 
 // AI-only: rooted abilities (Pea Gatling, Sunbeam, Garlic Drone) are cancelled when they stall —
@@ -7314,12 +8430,10 @@ function howlerBehavior(z, t, dt) {
   if (a.windup > 0) {
     a.windup -= dt; z.mode = 'special';
     faceToward(z, z.heroTgt ? z.heroTgt.mesh.position : t.pos, dt);
-    z.parts.mouth.scale.set(1.4, 1.2, 0.6);
     z.glow = 0.8; z.glowColor = 0xffa040;
     if (a.windup <= 0) scream(z);
     return;
   }
-  z.parts.mouth.scale.set(1, 0.6, 0.4);
   if (t.isHero && t.dist < Sc.range && a.screamCd <= 0) { a.windup = Sc.windup; SFX.play('inhale', z.mesh.position, Sc.windup); return; }
   meleeBehavior(z, t, dt);
 }
@@ -14993,6 +16107,171 @@ function applyBannerBuffs() {
   }
 }
 
+// =====================================================================
+// Animation juice: secondary motion shared by every hero and agent rig (tuning CONFIG.juice).
+// Each class animator poses its own body; this layer adds the physical reactions on the outermost transform:
+// leaning into acceleration, directional hit flinches, a gravity topple + ground bounce when downed, a springy
+// get-up / respawn pop, an agent spawn pop and agent death topples (the body falls away from the killing hit).
+// =====================================================================
+const JH = CONFIG.juice.hero, JA = CONFIG.juice.agent;
+const jclamp = THREE.MathUtils.clamp;
+// Damped spring step on a (value, velocity) pair stored in `o`
+const springStep = (o, x, v, target, k, d, dt) => { o[v] += ((target - o[x]) * k - o[v] * d) * dt; o[x] += o[v] * dt; };
+
+function heroJuice(h, dt) {
+  const C = h.corn, A = h.anim;
+  const j = A.juice ||= { fall: 0, fallV: 0, tx: 0, tz: 0, tvx: 0, tvz: 0, fx: 0, fz: 0, fvx: 0, fvz: 0, pop: 1, popV: 0, vx: 0, vz: 0 };
+  if (A.spawnPop) {   // respawned at the base: pop up out of the ground instead of appearing
+    A.spawnPop = false;
+    Object.assign(j, { fall: 0, fallV: 0, fx: 0, fz: 0, fvx: 0, fvz: 0, pop: JH.popStart, popV: 0, vx: h.vel.x, vz: h.vel.z });
+  }
+  if (dt > 0) {
+    if (h.downed) {
+      // Gravity tips the plant over its feet (slow start, fast finish), one bounce + dust when it hits the ground
+      j.fallV += JH.fallGravity * Math.sin(j.fall + 0.2) * dt; j.fall += j.fallV * dt;
+      if (j.fall >= JH.lieAngle) {
+        j.fall = JH.lieAngle;
+        if (j.fallV > 2) {
+          const p = h.mesh.position.clone().setY(h.mesh.position.y - h.centerY + 0.15);
+          for (let i = 0; i < 6; i++) spawnParticle('puff', 0xb7a27a, p.clone().add(rand3(0.9).setY(0)), rand3(1.6, 0.8), { life: 0.6, gravity: -0.5, grow: 2, drag: 3 });
+          j.fallV = -j.fallV * JH.bounce;
+        } else j.fallV = 0;
+      }
+    } else springStep(j, 'fall', 'fallV', 0, JH.riseK, JH.riseD, dt);   // revived: spring upright with a little overshoot
+    // Lean into acceleration (mesh space: +Z is behind the plant), only with feet on the ground
+    const ax = (h.vel.x - j.vx) / dt, az = (h.vel.z - j.vz) / dt; j.vx = h.vel.x; j.vz = h.vel.z;
+    const sy = Math.sin(h.yaw), cy = Math.cos(h.yaw), g = h.onGround && !h.downed ? JH.accelTilt : 0;
+    springStep(j, 'tx', 'tvx', jclamp((ax * sy + az * cy) * g, -JH.maxTilt, JH.maxTilt), JH.tiltK, JH.tiltD, dt);
+    springStep(j, 'tz', 'tvz', jclamp((ax * cy - az * sy) * g, -JH.maxTilt, JH.maxTilt), JH.tiltK, JH.tiltD, dt);
+    springStep(j, 'fx', 'fvx', 0, JH.tiltK * 1.4, JH.tiltD * 0.9, dt);
+    springStep(j, 'fz', 'fvz', 0, JH.tiltK * 1.4, JH.tiltD * 0.9, dt);
+    springStep(j, 'pop', 'popV', 1, JH.popK, JH.popD, dt);
+  }
+  let gp = 0, gr = 0, gs = 0;
+  const G = A.gesture;
+  if (G && !h.downed) {
+    G.t += dt;
+    if (G.t >= G.dur) A.gesture = null;
+    else [gp, gr, gs] = heroGesturePose(G.kind, G.t / G.dur);
+  }
+  C.root.rotation.x = j.fall + j.tx + j.fx + gp;
+  C.root.rotation.z = j.tz + j.fz + gr;
+  if (gs) { C.root.scale.x *= 1 + gs * 0.5; C.root.scale.z *= 1 + gs * 0.5; C.root.scale.y *= 1 - gs; }
+  if (!h.downed && Math.abs(j.pop - 1) + Math.abs(j.popV) > 1e-3) {   // animators set root.scale every upright frame
+    const s = Math.max(0.01, j.pop), st = jclamp(j.popV * 0.02, -0.15, 0.2);
+    C.root.scale.x *= s * (1 - st * 0.5); C.root.scale.z *= s * (1 - st * 0.5); C.root.scale.y *= s * (1 + st);
+  }
+}
+// Run an ability; if it went off (cooldown restarted or a stance toggled), play the class's body gesture
+const heroStance = h => `${!!h.pea?.gatling}${!!h.sun?.sunbeam}${!!h.sun?.healTarget}${!!h.cactus?.drone}`;
+function heroAction(h, key, arg) {
+  const cd = h.cd[key], stance = heroStance(h);
+  h.plant.actions[key](h, arg);
+  const kind = JH.gestures[h.type]?.[key];
+  if (kind && (h.cd[key] > cd || heroStance(h) !== stance)) h.anim.gesture = { kind, t: 0, dur: JH.gestureTime[kind] };
+}
+// Gesture curves over u = 0..1 → [pitch (+ = lean back), roll, squash (+ = shorter / wider)]
+const bump = (u, a, b) => u <= a || u >= b ? 0 : Math.sin((u - a) / (b - a) * Math.PI);
+function heroGesturePose(kind, u) {
+  switch (kind) {
+    case 'throw': return [0.2 * bump(u, 0, 0.35) - 0.3 * bump(u, 0.25, 1) ** 1.5, 0.12 * bump(u, 0.1, 0.8), 0.06 * bump(u, 0.25, 0.6)];   // wind up, snap through
+    case 'plant': return [-0.38 * bump(u, 0, 1) ** 0.8, 0, 0.14 * bump(u, 0.05, 0.75) - 0.05 * bump(u, 0.7, 1)];            // bow down, pop back up
+    case 'cast': return [0.1 * bump(u, 0, 0.5) - 0.06 * bump(u, 0.45, 1), 0, -0.1 * bump(u, 0, 0.55) + 0.06 * bump(u, 0.5, 1)];   // rise + stretch, settle
+    case 'root': return [-0.12 * bump(u, 0.15, 1), 0, 0.2 * bump(u, 0, 0.45) + 0.06 * bump(u, 0.4, 1)];                    // stomp in
+  }
+  return [0, 0, 0];
+}
+// Hit reaction: knocked back a little (more for big hits), with a random twist
+function heroFlinch(h, amount) {
+  const j = h.anim.juice; if (!j) return;
+  const amp = Math.min(JH.flinchMax, JH.flinch * (0.35 + amount / 25)) * Math.sqrt(JH.tiltK * 1.4);
+  j.fvx += amp; j.fvz += (Math.random() - 0.5) * amp * 1.2;
+}
+
+// ---- Agents: offsets are added after the behaviors pose the mesh and removed before the next frame's behaviors ----
+const newAgentJuice = () => ({ x: 0, z: 0, vx: 0, vz: 0, ox: 0, oz: 0, punch: 0, pop: 0.2, popV: 0, born: true });
+function agentFlinch(z, at, amount) {
+  if (!isAgent(z) || !at) return;
+  const j = z.juice ||= newAgentJuice(), p = z.mesh.position;
+  let dx = p.x - at.x, dz = p.z - at.z; const d = Math.hypot(dx, dz);
+  if (d < 1e-3) { dx = -Math.sin(z.mesh.rotation.y); dz = -Math.cos(z.mesh.rotation.y); } else { dx /= d; dz /= d; }
+  const sy = Math.sin(z.mesh.rotation.y), cy = Math.cos(z.mesh.rotation.y);
+  const amp = Math.min(JA.flinchMax, JA.flinch * (0.3 + amount / 40)) * Math.sqrt(JA.k) / Math.sqrt(z.def.sizeMult || 1);
+  j.vx += (dx * sy + dz * cy) * amp;        // pitch: the top tips away from the shot
+  j.vz -= (dx * cy - dz * sy) * amp;        // roll (YXZ: +z tips the top toward -X)
+  j.punch = Math.min(1, j.punch + 0.5 + amount / 60);
+  z.lastHitAt = (z.lastHitAt || new THREE.Vector3()).copy(at);
+}
+function unJuiceAgent(z) {
+  const j = z.juice; if (!j) return;
+  z.mesh.rotation.x -= j.ox; z.mesh.rotation.z -= j.oz; j.ox = j.oz = 0;
+}
+function juiceAgent(z, dt) {
+  const j = z.juice ||= newAgentJuice();
+  if (j.born) {   // first frame alive: kick up the dirt it climbs out of
+    j.born = false;
+    const p = z.mesh.position.clone().setY(feetY(z) + 0.15);
+    for (let i = 0; i < 7; i++) spawnParticle('puff', 0x8a7a5a, p.clone().add(rand3(z.def.radius * 1.5).setY(0)), rand3(2, 1.5), { life: 0.7, gravity: -0.4, grow: 2.2, drag: 3 });
+  }
+  springStep(j, 'x', 'vx', 0, JA.k, JA.d, dt);
+  springStep(j, 'z', 'vz', 0, JA.k, JA.d, dt);
+  springStep(j, 'pop', 'popV', 1, JA.spawnK, JA.spawnD, dt);
+  j.punch *= Math.exp(-dt * 14);
+  j.ox = jclamp(j.x, -0.6, 0.6); j.oz = jclamp(j.z, -0.6, 0.6);
+  z.mesh.rotation.x += j.ox; z.mesh.rotation.z += j.oz;
+  // Scale is set fresh each frame by updateZombieLook: hit punch squashes, spawn pop stretches up from small
+  const s = Math.max(0.05, j.pop), st = jclamp(j.popV * 0.015, -0.15, 0.25) - j.punch * JA.punch;
+  z.mesh.scale.x *= s * (1 - st * 0.5); z.mesh.scale.z *= s * (1 - st * 0.5); z.mesh.scale.y *= s * (1 + st);
+}
+
+// ---- Agent death: the body (frozen in its last pose) topples away from the killing hit, bounces, then sinks ----
+let agentCorpses = [];
+function agentCorpse(z, finish) {
+  if (agentCorpses.length >= JA.maxCorpses) { const old = agentCorpses.shift(); scene.remove(old.g); old.finish(); }
+  const m = z.mesh, p = m.position, feet = feetY(z), yaw = m.rotation.y;
+  let dx = -Math.sin(yaw), dz = -Math.cos(yaw);   // no recent hit: fall backwards
+  if (z.lastHitAt && state.time - (z.lastHitT ?? -9) < 1) {
+    const ex = p.x - z.lastHitAt.x, ez = p.z - z.lastHitAt.z, d = Math.hypot(ex, ez);
+    if (d > 1e-3) { dx = ex / d; dz = ez / d; }
+  }
+  const g = new THREE.Group(); g.rotation.order = 'YXZ';
+  g.position.set(p.x, feet, p.z); g.rotation.y = Math.atan2(dx, dz);
+  m.position.set(0, p.y - feet, 0); m.rotation.set(0, yaw - g.rotation.y, 0); m.scale.setScalar(z.def.sizeMult || 1);
+  g.add(m); scene.add(g);
+  if (z.type === 'mechanic' && z.parts.rig) { z.parts.rig.hat.visible = false; z.parts.rig.gun.visible = false; }   // popped off (engineerDeath)
+  agentCorpses.push({ g, z, finish, t: 0, landed: false, twist: (Math.random() - 0.5) * 0.7, lift: z.def.radius * 0.75,
+    from: g.position.clone(), dir: new THREE.Vector3(dx, 0, dz),
+    mats: [...(z.parts.flashMats || []), m.material] });
+}
+function updateAgentCorpses(dt) {
+  const fall = JA.corpseFall, end = fall + JA.corpseHold + JA.corpseSink;
+  for (let i = agentCorpses.length - 1; i >= 0; i--) {
+    const c = agentCorpses[i], g = c.g;
+    c.t += dt;
+    for (const mat of c.mats) mat.emissive?.multiplyScalar(Math.exp(-dt * 8));
+    const f = Math.min(1, c.t / fall), b = Math.max(0, (c.t - fall) / 0.35);
+    // ease-in topple (gravity), then a damped rebound off the ground
+    const ang = 1.5 * f * f - (b > 0 && b < 1 ? Math.sin(b * Math.PI) * 0.16 * (1 - b * 0.5) : 0);
+    g.rotation.x = ang; g.rotation.z = c.twist * f;
+    const slide = JA.corpseSlide * (1 - (1 - f) ** 2);   // knocked back, easing out as it hits the ground
+    g.position.x = c.from.x + c.dir.x * slide; g.position.z = c.from.z + c.dir.z * slide;
+    const sink = Math.max(0, c.t - fall - JA.corpseHold) / JA.corpseSink;
+    g.position.y = heightAt(g.position.x, g.position.z) + c.lift * Math.sin(Math.min(ang, 1.5)) - sink * sink * c.lift * 3;
+    if (!c.landed && f >= 1) {
+      c.landed = true;
+      SFX.play('slam', g.position, 0.5);
+      const fwd = new THREE.Vector3(Math.sin(g.rotation.y), 0, Math.cos(g.rotation.y)).multiplyScalar(c.z.def.height * 0.6);
+      for (let k = 0; k < 9; k++) spawnParticle('puff', 0xb7a27a, g.position.clone().add(fwd).add(rand3(1).setY(0.2)), rand3(2.2, 1), { life: 0.8, gravity: -0.5, grow: 2.2, drag: 3 });
+    }
+    if (sink > 0.6) g.scale.setScalar(Math.max(0.01, 1 - (sink - 0.6) / 0.4));
+    if (c.t >= end) { scene.remove(g); c.finish(); agentCorpses.splice(i, 1); }
+  }
+}
+function clearAgentCorpses() {
+  for (const c of agentCorpses) { scene.remove(c.g); c.finish(); }
+  agentCorpses = [];
+}
+
 // Hit flash beats glow (bomber beeps, wind-ups); attack swing is a quick squash
 function updateZombieLook(z, dt) {
   z.flash = Math.max(0, z.flash - dt);
@@ -15006,7 +16285,8 @@ function updateZombieLook(z, dt) {
   if (z.parts.animate) z.parts.animate(z, dt);
   const sw = z.ai.swing = Math.max(0, (z.ai.swing || 0) - dt);
   const k = z.def.sizeMult || 1;
-  z.mesh.scale.set(k * (1 + sw * 0.8), k * (1 - sw * 0.8), k * (1 + sw * 0.8));
+  if (z.horde) z.mesh.scale.setScalar(k);   // horde bodies animate their attacks instead of squashing
+  else z.mesh.scale.set(k * (1 + sw * 0.8), k * (1 - sw * 0.8), k * (1 + sw * 0.8));
   if (z.parts.core && z.parts.core.visible) z.parts.core.scale.setScalar(1 + Math.sin(state.time * 8) * 0.12);
 }
 
@@ -15030,6 +16310,7 @@ function updateZombies(dt) {
 
   for (const z of zombies) {
     if (z.dead) continue;
+    unJuiceAgent(z);
     const pos = z.mesh.position;
     z.wantsMove = false;
     z.attackTimer -= dt; z.retargetTimer -= dt; z.reaggroTimer -= dt;
@@ -15064,6 +16345,7 @@ function updateZombies(dt) {
     BEHAVIORS[z.def.behavior](z, target, dt);
     checkStuck(z, dt);
   }
+  for (const z of zombies) if (!z.dead && isAgent(z)) juiceAgent(z, dt);
   removeDeadZombies();
 
   // Hard separation so bodies never overlap (soft spacing is in the steering)
@@ -15091,12 +16373,17 @@ function removeDeadZombies() {
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     if (!z.dead) continue;
+    if (z.horde && z.hp <= 0) hordeKill(z);   // killed (not exploded): its body falls as a corpse
     releaseSlot(z);
     if (z.imp?.call) scene.remove(z.imp.call.rig.root, z.imp.call.marker, z.imp.call.beam);
-    if (z.rig) { disposeRigMats(z.rig.mats); if (z.imp.mech) disposeRigMats(z.imp.mech.rig.mats); }
-    scene.remove(z.mesh);
-    z.mesh.material.dispose();
-    z.parts.dispose?.();
+    const finish = () => {
+      if (z.rig) { disposeRigMats(z.rig.mats); if (z.imp.mech) disposeRigMats(z.imp.mech.rig.mats); }
+      scene.remove(z.mesh);
+      z.mesh.material.dispose();
+      z.parts.dispose?.();
+    };
+    // Killed agents topple over (section "Animation juice"); the All-Star has its own corpse, despawns just vanish
+    if (isAgent(z) && z.hp <= 0 && z.type !== 'allStar' && !z.buried && !z.imp?.mech) agentCorpse(z, finish); else finish();
     zombies.splice(i, 1);
   }
 }
@@ -15136,6 +16423,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   amount = Math.max(1, Math.round(amount * (z.dmgTaken ?? 1)));   // dmgTaken: Turbo Twister
   z.hp -= amount;
   z.flash = 0.08;
+  agentFlinch(z, at, amount);
   spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a');
   if (mine) state.hitmarker = z.hp <= 0 ? -0.25 : 0.12;   // negative = kill marker (red)
   if (mine) SFX.play(z.hp <= 0 ? 'vanquish' : 'hitmarker');
@@ -16404,13 +17692,14 @@ function loop() {
     updateScientistWorld(dt);
     updateEngineerWorld(dt);
     updateAllStarWorld(dt);
+    updateAgentCorpses(dt);
     updateCactusWorld(dt);
     updateEffects(dt);
     updateSkulls(dt, state.time);
     animateMarkers(state.time);
     updateParticles(dt);
     updateWaves(dt);
-    for (const h of heroes) if (h.active) h.plant.animate(h, dt);
+    for (const h of heroes) if (h.active) { h.plant.animate(h, dt); heroJuice(h, dt); }
     muzzleLight.intensity *= Math.exp(-dt * 30);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
     if (state.statueHp <= 0) endGame(false);
@@ -16425,7 +17714,7 @@ function loop() {
   updateSunflowerHud();
   updateRevivePrompt();
   mateDebug.draw();
-  updateZombieBatches();
+  updateZombieBatches(playing ? dt : 0);
   updateParticleBatches();
   updateShaderGuard();
   renderer.render(scene, camera);
