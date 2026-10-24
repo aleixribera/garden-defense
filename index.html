@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.14.1';
+const VERSION = 'v1.15.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -925,6 +925,7 @@ const CONFIG = {
       routes: { A: { label: 'west ramp',       via: [[-30, 70], [-30, 36]] },
                 B: { label: 'east ramp',       via: [[55, 70], [55, 36]] } } },
   },
+  randomPackSpawns: true,      // every pack picks a random spawn point + route (no fixed order); false = wave data
   routeCycle: ['A', 'B', 'split'],  // auto route choice for packs without one: cycles per wave + pack index
   packSpread: 4,                // random scatter around the spawn point
   spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
@@ -3701,11 +3702,11 @@ const displayName = type => ZT[type].name || type[0].toUpperCase() + type.slice(
 //   route - pack.route, else CONFIG.routeCycle rotated by wave + pack index (A / B / split)
 function resolvePacks(index) {
   const wave = WAVES[index], lanes = wave.lanes || Object.keys(CONFIG.SPAWN_POINTS), cyc = CONFIG.routeCycle;
-  return wave.packs.map((p, i) => ({
-    ...p,
-    spawn: p.spawn || lanes[(i + index) % lanes.length],
-    route: p.route || cyc[(index + i) % cyc.length],
-  }));
+  // randomPackSpawns: every pack rolls its own spawn point and route (the wave data's spawn/route/lanes are ignored)
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+  return wave.packs.map((p, i) => CONFIG.randomPackSpawns
+    ? { ...p, spawn: randomLane(), route: pick(cyc) }
+    : { ...p, spawn: p.spawn || lanes[(i + index) % lanes.length], route: p.route || cyc[(index + i) % cyc.length] });
 }
 
 // Zombie counts scale with the number of active heroes (bosses stay single)

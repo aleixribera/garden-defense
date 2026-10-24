@@ -6,7 +6,7 @@
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.14.1)
+## Current state (v1.15.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -28,7 +28,8 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   `CONFIG.AGENTS` (`damageMult`, lively escort roaming in `escort`). Bosses (Gargantuar wave 5, Mecha Gargantuar wave 10)
   spawn at a random lane and prefer plants (`heroFirst`). Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
 - Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static Float64 flow fields per route
-  waypoint, A* for AI plants. Spawns/routes in `CONFIG.SPAWN_POINTS`; waves are data in `CONFIG.WAVES`.
+  waypoint, A* for AI plants. Spawns/routes in `CONFIG.SPAWN_POINTS`; waves are data in `CONFIG.WAVES`;
+  every pack rolls a random spawn + route (`CONFIG.randomPackSpawns`).
 - Camera (`CONFIG.camera`): plant sits low-left (`shoulder`, `lift`); `clearZone` slides the shoulder out if the
   plant's silhouette reaches the crosshair.
 - Debug: F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses, M map, K stress horde.
