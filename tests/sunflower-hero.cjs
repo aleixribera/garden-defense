@@ -130,7 +130,11 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       results.staysNearHealthyTeammate = medic.sun.support === h && ['escort', 'support'].includes(medic.brain.state);
       // An ally far from the garden remains an escort goal; there is no garden leash.
       setup(); ally.mesh.position.set(70, g.heightAt(70, 5) + ally.centerY, 5); ally.hp = 50;
-      t.driveSunflower(medic, 1 / 60); results.followsBeyondGarden = medic.sun.support === ally && medic.brain.state === 'support' && medic.brain.goal.x === 70;
+      t.driveSunflower(medic, 1 / 60);
+      // Follow the ally's escort spot, leaving room beside / behind their camera.
+      results.followsBeyondGarden = medic.sun.support === ally && medic.brain.state === 'support'
+        && Math.hypot(medic.brain.goal.x, medic.brain.goal.z) > 60
+        && medic.brain.goal.distanceTo(ally.mesh.position) < medic.abilities.shuckShot.range;
       setup(); g.damageHero(ally, 10000); h.mesh.position.copy(ally.mesh.position).add(new V(1, 0, 0)); h.input.interact = true;
       for (let i = 0; i < 185 && ally.downed; i++) t.updateDowned(ally, 1 / 60);
       results.fasterRevive = !ally.dead && ally.hp === Math.round(ally.stats.hp * g.CONFIG.TEAMMATE_AI.revive.hpFraction);

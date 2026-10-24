@@ -89,6 +89,35 @@
   #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
              background: radial-gradient(ellipse at center, rgba(10,20,12,0.55), rgba(0,0,0,0.85)); text-align: center; cursor: pointer; z-index: 10; }
   #overlayTitle { font-size: 44px; font-weight: 800; letter-spacing: 6px; }
+  /* Menu + loading screen (before the 3D garden exists): a painted garden in pure CSS, no assets, shows instantly */
+  body.preMatch #overlay { background:
+      radial-gradient(ellipse 120% 70% at 50% 45%, transparent 35%, rgba(4,14,6,0.55) 100%),
+      radial-gradient(circle at 80% 18%, rgba(255,246,196,0.95) 0 4%, rgba(255,226,140,0.45) 7%, transparent 22%),
+      radial-gradient(ellipse 60% 22% at 12% 100%, #3f7d22 0 60%, transparent 61%),
+      radial-gradient(ellipse 70% 26% at 88% 104%, #4a8c28 0 60%, transparent 61%),
+      radial-gradient(ellipse 90% 30% at 45% 112%, #5aa032 0 60%, transparent 61%),
+      radial-gradient(ellipse 80% 24% at 70% 86%, #7ab84a 0 58%, transparent 59%),
+      radial-gradient(ellipse 70% 20% at 20% 84%, #8cc456 0 58%, transparent 59%),
+      linear-gradient(#5fb2e4 0%, #9fd6f0 48%, #e6f2d8 72%, #8cc456 72.2%); }
+  body.preMatch #overlay::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+    background: radial-gradient(ellipse 9% 3.2% at 18% 22%, rgba(255,255,255,0.9) 60%, transparent 62%),
+      radial-gradient(ellipse 6% 2.6% at 23% 20%, rgba(255,255,255,0.9) 60%, transparent 62%),
+      radial-gradient(ellipse 8% 2.8% at 60% 12%, rgba(255,255,255,0.8) 60%, transparent 62%),
+      radial-gradient(ellipse 5% 2.2% at 64% 10.5%, rgba(255,255,255,0.8) 60%, transparent 62%);
+    animation: cloudDrift 60s linear infinite alternate; }
+  @keyframes cloudDrift { to { transform: translateX(6vw); } }
+  body.preMatch #overlayTitle { font-size: 56px; font-weight: 900; color: #fff7d6; letter-spacing: 8px;
+    text-shadow: 0 3px 0 #6a4a12, 0 6px 0 #3d2a08, 0 10px 24px rgba(0,0,0,0.45); }
+  @media (max-width: 700px) { body.preMatch #overlayTitle { font-size: 32px; letter-spacing: 4px; } }
+  #overlay small { text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+  body.preMatch #overlay small { color: #f0f6e8; }
+  /* Loading bar: a transform-only animation keeps moving even while the main thread builds the world */
+  #loadBar { display: none; width: min(420px, 80vw); height: 8px; margin: 18px 0 4px; border-radius: 6px; overflow: hidden;
+    background: rgba(0,0,0,0.35); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
+  #loadBar i { display: block; width: 35%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8fd14f, var(--accent));
+    animation: loadSweep 1.1s ease-in-out infinite; }
+  @keyframes loadSweep { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
+  body.loading #loadBar { display: block; }
   #overlay small { font-size: 14px; margin-top: 18px; color: var(--dim); line-height: 1.9; max-width: 640px; }
   #overlay small b { color: var(--accent); }
   #overlay { cursor: default; padding: 24px; box-sizing: border-box; overflow-y: auto; justify-content: safe center; }
@@ -110,13 +139,18 @@
   .ghostButton { font: inherit; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.06); color: var(--text);
     cursor: pointer; font-size: 13px; font-weight: 700; padding: 10px 18px; letter-spacing: 1px; }
   .ghostButton:hover { background: rgba(255,255,255,0.14); }
-  #matchButton { font: inherit; border: 0; border-radius: 8px; background: var(--accent); color: #182314; cursor: pointer; font-size: 15px; font-weight: 800; padding: 14px 32px; }
+  #matchButton { font: inherit; border: 0; border-radius: 10px; background: linear-gradient(#ffe36e, var(--accent)); color: #182314; cursor: pointer;
+    font-size: 15px; font-weight: 800; letter-spacing: 1px; padding: 14px 34px; box-shadow: 0 4px 0 #b08a14, 0 8px 18px rgba(0,0,0,0.35);
+    transition: transform 0.08s, box-shadow 0.08s, filter 0.15s; }
+  #matchButton:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
+  #matchButton:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #b08a14, 0 4px 10px rgba(0,0,0,0.35); }
+  #matchButton:disabled { cursor: progress; filter: saturate(0.6) brightness(0.92); }
   #difficultyPick { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; font-size: 12px;
     color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
   #overlay select { font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 8px; font-size: 13px; }
   /* Settings (menu + Esc pause) */
-  #settingsPanel { width: min(760px, 94vw); margin: 0 0 20px; padding: 14px 20px; box-sizing: border-box; border: 1px solid var(--line);
-    border-radius: 14px; background: rgba(12,25,16,.92); display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; text-align: left; }
+  #settingsPanel { width: min(900px, 94vw); margin: 0 0 20px; padding: 14px 20px; box-sizing: border-box; border: 1px solid var(--line);
+    border-radius: 14px; background: rgba(12,25,16,.92); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; text-align: left; }
   #settingsPanel h3 { grid-column: 1 / -1; margin: 0; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
   #settingsPanel label { display: grid; gap: 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
   #settingsPanel output { color: var(--accent); font-weight: 800; margin-left: 4px; }
@@ -135,13 +169,26 @@
   #waveSummary:empty { display: none; }
   #waveSummary .head { font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); }
   #waveSummary .mvp { color: var(--accent); font-weight: 800; }
+  @media (max-width: 1000px) { #settingsPanel { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 700px) { #settingsPanel { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 700px) { #squadSlots { grid-template-columns: repeat(2, 1fr); } #overlayTitle { font-size: 28px; } }
   body.preMatch #hud, body.preMatch #abilities, body.preMatch #ammo, body.preMatch #banner,
-  body.preMatch #laneArrow, body.preMatch #crosshair { visibility: hidden; }
-  #banner { position: fixed; top: 22%; width: 100%; text-align: center; pointer-events: none; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+  body.preMatch #laneArrow, body.preMatch #crosshair, body.preMatch #callout { visibility: hidden; }
+  #banner { position: fixed; top: 22%; width: 100%; text-align: center; pointer-events: none;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.35), 0 2px 12px rgba(0,0,0,0.7); }
   #banner .title { font-size: 48px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; }
-  #banner .sub { font-size: 15px; margin-top: 6px; color: var(--dim); }
+  #banner .title.pop { animation: bannerPop 0.55s cubic-bezier(.2,1.6,.4,1); }
+  #banner .sub { font-size: 15px; margin-top: 6px; color: #eef4e6; text-shadow: 0 1px 2px #000, 0 0 10px rgba(0,0,0,0.8); }
+  @keyframes bannerPop { from { transform: scale(1.6); opacity: 0; letter-spacing: 18px; } to { transform: scale(1); opacity: 1; } }
+  /* Wave start / clear call-out ("HERE THEY COME!", "WAVE 3 CLEARED") */
+  #callout { position: fixed; top: 20%; left: 0; right: 0; padding: 10px 0 12px; text-align: center; pointer-events: none; font-size: 38px;
+    font-weight: 900; letter-spacing: 5px; text-transform: uppercase; color: #fff; opacity: 0; z-index: 1;
+    background: linear-gradient(90deg, transparent 10%, rgba(0,0,0,0.5) 35%, rgba(0,0,0,0.5) 65%, transparent 90%);
+    text-shadow: 0 3px 0 rgba(0,0,0,0.35), 0 0 24px var(--glow, rgba(255,90,60,0.8)); }
+  #callout.show { animation: calloutIn 1.9s ease-out forwards; }
+  #callout small { display: block; font-size: 14px; letter-spacing: 3px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+  @keyframes calloutIn { 0% { opacity: 0; transform: scale(0.6); } 12% { opacity: 1; transform: scale(1.08); } 22% { transform: scale(1); }
+                         75% { opacity: 1; } 100% { opacity: 0; transform: scale(1.04) translateY(-14px); } }
   /* Boss slot machine (waves 5 and 10): a reel under the countdown */
   #bossSlot { display: none; margin: 12px auto 0; width: fit-content; padding: 6px 22px; border: 2px solid var(--boss); border-radius: 10px;
     background: rgba(40,8,6,0.7); font-size: 22px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #ffd0c8; }
@@ -174,8 +221,10 @@
   #hurtTint { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: #ff1a10; mix-blend-mode: multiply; }
   #speedFx { position: fixed; inset: 0; pointer-events: none; opacity: 0;
     background: radial-gradient(ellipse at center, transparent 60%, rgba(10,14,8,0.55) 100%); }
-  #popups .pop { position: fixed; font-weight: 800; font-size: 16px; pointer-events: none; transform: translate(-50%, -50%);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+  #popups .pop { position: fixed; font-weight: 900; font-size: 19px; pointer-events: none; transform: translate(-50%, -50%);
+    text-shadow: 0 1px 0 #000, 0 2px 4px rgba(0,0,0,0.9); -webkit-text-stroke: 0.5px rgba(0,0,0,0.6); }
+  #popups .pop.minor { font-size: 12px; font-weight: 700; filter: saturate(0.5); -webkit-text-stroke: 0; }
+  #popups .pop.kill { font-size: 25px; }
 
   /* Ability bar (bottom center) */
   #abilities { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); display: flex; gap: 22px; pointer-events: none; }
@@ -188,7 +237,12 @@
   .ab .key { position: absolute; top: 3px; left: 6px; font-size: 10px; font-weight: 800; color: var(--dim); z-index: 1; }
   .ab .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); border-radius: inherit; }
   .ab .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; }
+  .ab:not(.ready):not(.active) .icon { opacity: 0.4; filter: grayscale(0.7); }   /* cooling down: the timer reads clearly */
+  .ab .cdt.charges { inset: auto 3px 3px auto; padding: 0 4px; border-radius: 6px; font-size: 11px; line-height: 15px;
+    background: rgba(0,0,0,0.6); }                                                  /* Cactus charge counter: corner badge */
   .ab.ready { box-shadow: inset 0 0 0 2px var(--accent); }
+  .ab.ready.flash { animation: abReady 0.5s ease-out; }
+  @keyframes abReady { 0% { transform: scale(1.25); box-shadow: inset 0 0 0 2px #fff, 0 0 22px var(--accent); } 100% { transform: scale(1); } }
   .ab.ready .key { color: var(--accent); }
   .ab.active { box-shadow: inset 0 0 0 2px #fff, 0 0 16px rgba(255,255,255,0.5); transform: translateY(-3px); }
   /* Ammo (bottom right) */
@@ -300,6 +354,7 @@
 <div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div><div id="bossSlot"></div><div id="waveSummary"></div></div>
 <div id="laneArrow"><div class="arrow">&#x2B06;</div><div class="label"></div></div>
 <div id="message"></div>
+<div id="callout"></div>
 <div id="shopPrompt"></div>
 <div id="sunflowerStatus" role="status"></div>
 <div id="cactusScope"></div><div id="droneHud"></div>
@@ -322,9 +377,12 @@
   <div id="settingsPanel"><h3>Settings</h3>
     <label>Mouse sensitivity <output id="setSensOut"></output><input type="range" id="setSens" step="0.05"></label>
     <label>Volume <output id="setVolOut"></output><input type="range" id="setVol" min="0" max="1" step="0.05"></label>
+    <label>Music <output id="setMusicOut"></output><input type="range" id="setMusic" min="0" max="1" step="0.05"></label>
     <label>Field of view <output id="setFovOut"></output><input type="range" id="setFov" step="1"></label>
     <label>Quality <select id="setQuality" aria-label="Quality"></select></label>
+    <label>Camera motion <output id="setMotionOut"></output><input type="range" id="setMotion" min="0" max="1" step="0.1"></label>
   </div>
+  <div id="loadBar"><i></i></div>
   <button id="matchButton">DEFEND THE GARDEN</button>
   <div id="pauseActions"><button class="ghostButton" id="abandonButton">ABANDON MATCH</button></div>
   <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · 1–4 or Tab switch plants · Hold X near a downed ally to revive · H help · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
@@ -339,7 +397,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.22.1';
+const VERSION = 'v1.23.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -446,11 +504,11 @@ const CONFIG = {
       mineRange: 9, mineSpacing: 3.5, mineEvery: 2.5, stuckJump: 0.65,
       gardenWeight: 1, distanceWeight: 0.2, postHeightWeight: 0.8, postMoveWeight: 0.15,
       retreatSamples: 12, retreatStep: 4, guardMargin: 1,
-      // Fortify: between fights (no target closer than busyRange) the AI walks to a ring around the statue, faces
+      // Fortify: between clear shots, with no close threat and inside the guard radius, walk to a ring, face
       // outward and plants a Potato Mine or Tallnut Battlement where its defenses are thinnest (toward the horde).
       fortify: { every: 3, busyRange: 26, mineRing: [9, 15], wallRing: [11, 17], angles: 16, wallChance: 0.45,
         timeout: 10, alignCone: 0.12, hordeWeight: 1.2 },
-      // Garlic Drone: launched when a target sits beyond droneRange and nothing is within droneSafe of the Cactus
+      // Garlic Drone: seek a new angle on a blocked distant target, with nothing inside droneSafe of the body
       droneRange: 24, droneSafe: 14 },
   },
   SUNFLOWER: {
@@ -533,6 +591,7 @@ const CONFIG = {
   // Procedural sound (section "Audio"): mix levels, 3D falloff, ambient timing
   audio: {
     master: 0.8, sfx: 1, ui: 0.75, ambience: 0.3,   // bus gains
+    music: 0.5,                                       // music bus at 100 % on the Music slider (section "Music")
     reverb: 0.55, reverbTime: 1.9, reverbSend: 0.12, // outdoor tail; send grows with distance
     refDistance: 6, rolloff: 0.75, maxDistance: 95,  // 3D: full volume inside refDistance, silent past maxDistance
     airAbsorb: 45,                                    // m: distant sounds lose their highs
@@ -589,6 +648,8 @@ const CONFIG = {
     hurtRoll: 0.05, hurtFov: -3,      // flinch when hit: roll kick + quick FOV punch-in
     shakeRot: 0.022, shakePos: 0.12,  // trauma shake amplitude (rad / m) at full trauma
     lowHp: 0.35,                      // below this hp fraction the screen edges pulse red
+    // Allies standing between the camera and your plant (or right on the lens) hide until they step aside
+    allyBlock: { pad: 0.45, near: 1.6, hold: 0.25 },   // m added to their radius, m from the lens, s before reappearing
   },
   // Zombie roster. Shared fields:
   //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (hero chase hysteresis),
@@ -1017,10 +1078,12 @@ const CONFIG = {
     hard:   { name: 'Hard',   zombieHp: 1.3, zombieDamage: 1.3, statueDamage: 1.25, count: 1.2 },
     crazy:  { name: 'Crazy',  zombieHp: 1.7, zombieDamage: 1.7, statueDamage: 1.5, count: 1.45 },
   },
+  // Human jump timing: accept a slightly early landing press or a slightly late ledge press.
+  movement: { jumpBuffer: 0.14, coyoteTime: 0.12 },
   // Player settings (menu / Esc pause screen), saved in localStorage. Quality: shadows, pixel ratio cap, particle cap
   settings: {
     storageKey: 'gardenDefense.settings',
-    defaults: { sensitivity: 1, volume: 0.8, fov: 70, quality: 'high', difficulty: 'normal' },
+    defaults: { sensitivity: 1, volume: 0.8, music: 0.6, motion: 1, fov: 70, quality: 'high', difficulty: 'normal' },
     sensitivity: [0.3, 3], fov: [55, 95],
     QUALITY: {
       low:  { name: 'Low',  shadows: false, shadowMap: 1024, pixelRatio: 0.75, particles: 150 },
@@ -1172,6 +1235,24 @@ const CONFIG = {
   // Situational awareness HUD (section "Situational awareness"): radar, hit arcs, garden alert, straggler pips
   // One-time onboarding tips (section "Situational awareness"): seen keys persist in localStorage
   tips: { storageKey: 'gardenDefense.tipsSeen', time: 8, gap: 2.5, abilitiesAt: 25, squadAt: 50 },
+  feedback: { popupCap: 48, allyPopupRange: 45, clearBannerDelay: 1.7 },
+  // Adaptive procedural score (section "Music"): one 16-step sequencer, layers fade in/out with the match state.
+  // calm = countdown / shop, combat = wave running, boss = a boss alive or the extraction finale. Notes are MIDI.
+  music: {
+    bpm: 112, lookahead: 0.2, fade: 1.4, reverb: 0.22,
+    heatRange: 45, heatFull: 5,                 // zombies within heatRange m of you; at heatFull the full drum kit plays
+    chords: {                                   // 4 chords per loop; [root, ...chord tones]
+      major: [[48, 60, 64, 67], [45, 57, 60, 64], [41, 57, 60, 65], [43, 55, 59, 62]],   // C · Am · F · G
+      minor: [[45, 57, 60, 64], [41, 57, 60, 65], [38, 57, 62, 65], [40, 56, 59, 64]],   // Am · F · Dm · E
+    },
+    barsPerChord: { calm: 2, combat: 1, boss: 1 },
+    layers: {                                   // layer gains per mode (0 = silent)
+      calm:   { pad: 0.55, pluck: 0.5,  bass: 0,    drums: 0,    brass: 0 },
+      combat: { pad: 0,    pluck: 0.5,  bass: 0.55, drums: 0.5,  brass: 0 },
+      boss:   { pad: 0.3,  pluck: 0.4,  bass: 0.6,  drums: 0.6,  brass: 0.32 },
+      off:    { pad: 0,    pluck: 0,    bass: 0,    drums: 0,    brass: 0 },
+    },
+  },
   hudAware: { radarRange: 90, radarHz: 15, hitTime: 1.1, hitGuessRange: 40, gardenAlertTime: 2.5, gardenArrowDist: 22, gardenRadius: 7,
     stragglers: 6 },
   // Pacing: zombies far from the garden AND from every plant walk faster (no dead time while they cross the map);
@@ -1465,6 +1546,8 @@ const SETTINGS = (() => {
   s.sensitivity = clamp(s.sensitivity, S.sensitivity, S.defaults.sensitivity);
   s.fov = clamp(s.fov, S.fov, S.defaults.fov);
   s.volume = clamp(s.volume, [0, 1], S.defaults.volume);
+  s.music = clamp(s.music, [0, 1], S.defaults.music);
+  s.motion = clamp(s.motion, [0, 1], S.defaults.motion);
   if (!S.QUALITY[s.quality]) s.quality = S.defaults.quality;
   if (!CONFIG.DIFFICULTY[s.difficulty]) s.difficulty = S.defaults.difficulty;
   return s;
@@ -1482,6 +1565,8 @@ function showSettings() {
   const $ = id => document.getElementById(id);
   $('setSens').value = SETTINGS.sensitivity; $('setSensOut').textContent = `${SETTINGS.sensitivity.toFixed(2)}×`;
   $('setVol').value = SETTINGS.volume; $('setVolOut').textContent = `${Math.round(SETTINGS.volume * 100)}%`;
+  $('setMusic').value = SETTINGS.music; $('setMusicOut').textContent = `${Math.round(SETTINGS.music * 100)}%`;
+  $('setMotion').value = SETTINGS.motion; $('setMotionOut').textContent = `${Math.round(SETTINGS.motion * 100)}%`;
   $('setFov').value = SETTINGS.fov; $('setFovOut').textContent = `${SETTINGS.fov}°`;
   $('setQuality').value = SETTINGS.quality; $('setDifficulty').value = SETTINGS.difficulty;
 }
@@ -1492,6 +1577,8 @@ function showSettings() {
   for (const [key, d] of Object.entries(CONFIG.DIFFICULTY)) $('setDifficulty').add(new Option(d.name, key));
   $('setSens').addEventListener('input', e => changeSetting('sensitivity', +e.target.value));
   $('setVol').addEventListener('input', e => changeSetting('volume', +e.target.value));
+  $('setMusic').addEventListener('input', e => changeSetting('music', +e.target.value));
+  $('setMotion').addEventListener('input', e => changeSetting('motion', +e.target.value));
   $('setFov').addEventListener('input', e => changeSetting('fov', +e.target.value));
   $('setQuality').addEventListener('change', e => changeSetting('quality', e.target.value));
   $('setDifficulty').addEventListener('change', e => changeSetting('difficulty', e.target.value));
@@ -1504,6 +1591,7 @@ const bootSelection = SKIP_MENU ? null : await new Promise(resolve =>
   document.getElementById('squadPicker').style.display = 'none';
   document.getElementById('overlayTitle').textContent = 'LOADING THE GARDEN…';
   button.disabled = true; button.textContent = 'LOADING…';
+  document.body.classList.add('loading');
   await new Promise(resolve => { requestAnimationFrame(() => setTimeout(resolve, 0)); setTimeout(resolve, 120); });   // paint the loading screen first (timer: hidden tabs get no frames)
 }
 const THREE = await import('three');
@@ -2986,7 +3074,8 @@ function driveCactus(h, dt) {
   }
   const t = validTarget(b.target) ? b.target : null, seen = !!t && losClear(eyeOf(h, new THREE.Vector3()), t.mesh.position);
   const distance = t ? flatDist(pos, t.mesh.position) : Infinity, homeDistance = Math.hypot(pos.x, pos.z);
-  const F = C.fortify, busy = distance < F.busyRange;
+  // Keep a useful firing position while sniping; displaced guards return home before building defenses.
+  const F = C.fortify, busy = distance < F.busyRange || !!(t && seen && b.clearShot) || homeDistance > C.guardRadius;
   ai.fortT -= dt;
   if (busy || h.cactus.drone || ai.fort && ai.fortT < -F.timeout) ai.fort = null;   // fight first; give up stale spots
   else if (!ai.fort && ai.fortT <= 0) ai.fort = cactusFortifySpot(h);
@@ -3055,8 +3144,8 @@ function driveCactus(h, dt) {
     if (ai.fort.kind === 'wall') inp.butter = ai.fort.stand; else inp.shuck = true;
     ai.fort = null; ai.fortT = F.every; inp.fire = false;
   }
-  // Garlic Drone: a far target and no zombie close to the body (the aiRooted watchdog brings it home)
-  if (!ai.fort && !h.cactus.drone && h.cd.huskHop <= 0 && h.onGround && t && distance > C.droneRange &&
+  // Keep the rifle on clear shots; use a drone to reach distant targets the body cannot shoot.
+  if (!ai.fort && !h.cactus.drone && h.cd.huskHop <= 0 && h.onGround && t && (!seen || !b.clearShot) && distance > C.droneRange &&
       !zombies.some(z => validTarget(z) && flatDist(z.mesh.position, pos) < C.droneSafe)) inp.hop = true;
 }
 // Where the AI Cactus should plant next: a ring spot around the statue whose angle is far from its existing
@@ -3199,10 +3288,14 @@ function updateCactusHud() {
   const scoped = isCactus && !c?.drone && !h.dead && h.zoom > 0.1;
   document.getElementById('cactusScope').style.opacity = scoped ? h.zoom : 0;
   document.getElementById('droneHud').style.display = c?.drone ? 'block' : 'none';
-  if (!isCactus || !c) return;
+  if (!isCactus || !c) {
+    for (const el of document.querySelectorAll('#abilities .cdt.charges')) el.classList.remove('charges');
+    return;
+  }
   for (const key of ['shuckShot', 'butterBarrage']) {
-    const el = hud(`ab-${key}`), A = h.abilities[key];
-    el.querySelector('.cdt').textContent = c.charges[key] > 0 ? `${c.charges[key]} / ${A.maxCharges}` : `${Math.ceil(c.recharge[key])}s`;
+    const el = hud(`ab-${key}`), A = h.abilities[key], cdt = el.querySelector('.cdt'), charged = c.charges[key] > 0 && !c.drone;
+    if (cdt.classList.contains('charges') !== charged) cdt.classList.toggle('charges', charged);
+    setText(cdt, c.charges[key] > 0 ? `${c.charges[key]}/${A.maxCharges}` : `${Math.ceil(c.recharge[key])}s`);
     el.title = c.charges[key] < A.maxCharges ? `Next charge in ${Math.ceil(c.recharge[key])}s` : 'Fully charged';
   }
   const drone = c.drone, droneAbility = hud('ab-huskHop');
@@ -5807,7 +5900,7 @@ function resetGame() {
   zombies.forEach(z => { z.dead = true; z.parts.dispose?.(); });   // release each rig's own resources
   [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects]
     .forEach(o => scene.remove(o.mesh));
-  popups.forEach(p => p.el.remove());
+  popups.forEach(p => { p.el.style.display = "none"; popupPool.push(p.el); });
   skulls.forEach(s => s.life = 0);   // removed on the next updateSkulls
   zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
   hordeCorpses = [];
@@ -5837,6 +5930,7 @@ function resetGame() {
     shopChoice: 0,                      // POTS type offered on an empty pot spot (Z cycles)
   };
   document.getElementById('waveSummary').replaceChildren();
+  document.getElementById('callout').classList.remove('show');
   document.getElementById('matchStats').style.display = 'none';
   showExtractZone(null);
   for (const h of heroes) {
@@ -5864,6 +5958,7 @@ function respawnHero(h) {
   h.ammo = W.clip; h.reloading = false; h.reloadT = 0; h.fireTimer = 0; h.bloom = 0;
   h.respawnTimer = 0; h.downT = 0; h.jam = 0; h.reviveT = 0; h.reviveNear = false;
   h.shuckQueue = 0; h.onGround = true; h.input = newInput(); h.regen = false;
+  h.jumpQueuedUntil = h.lastGroundT = -Infinity;
   h.mesh.visible = true;
   if (state?.time > 0) SFX.play('respawn', h.isAI ? h.mesh.position : null);
   h.corn.root.rotation.x = 0;
@@ -6077,7 +6172,9 @@ function beginCountdown(index) {
   state.waveTimer = index > 0 ? CONFIG.economy.shopTime : CONFIG.waveCountdown;   // shop between waves
   state.packs = resolvePacks(index);
   showSpawnMarkers(state.packs);
-  document.getElementById('bannerTitle').textContent = `Wave ${index + 1}`;
+  const title = document.getElementById('bannerTitle');
+  title.textContent = index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1}`;
+  title.classList.remove('pop'); void title.offsetWidth; title.classList.add('pop');
   document.getElementById('bannerSub').textContent = `Incoming: ${incomingPreview(WAVES[index])}`;
   rollBossSlot(index);
 }
@@ -6132,6 +6229,7 @@ function startWave(index) {
   setBanner(false);
   SFX.play('tick', true);
   SFX.play('waveHorn');
+  callout('Here they come!', index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1} of ${WAVES.length}`);
   showSpawnMarkers([]);
   // Each pack starts `delay` seconds after the previous one (hidden from the player), scaled down on later waves
   const tighten = Math.max(CONFIG.packDelayMin, 1 - CONFIG.packDelayTighten * index);
@@ -6160,6 +6258,13 @@ function startWave(index) {
   // (Future: apply WAVES[index].modifiers here for special waves.)
 }
 
+// Big center call-out that pops in and fades by itself (CSS animation): wave start / clear, boss arrival
+function callout(text, sub = '', glow = 'rgba(255,90,60,0.8)') {
+  const el = document.getElementById('callout');
+  el.innerHTML = `${text}${sub ? `<small>${sub}</small>` : ''}`;
+  el.style.setProperty('--glow', glow);
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
 function setBanner(visible) {
   document.getElementById('banner').style.display = visible ? 'block' : 'none';
   if (!visible) document.getElementById('laneArrow').style.display = 'none';
@@ -6278,7 +6383,12 @@ document.addEventListener('pointerlockchange', () => {
     document.getElementById('matchButton').textContent = 'RESUME';
   }
 });
-addEventListener('blur', clearHumanInput);
+function pauseOnFocusLoss() {
+  clearHumanInput();
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+addEventListener('blur', pauseOnFocusLoss);
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseOnFocusLoss(); });
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement !== renderer.domElement) return;
   const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity * (player.type === 'cactus' ? THREE.MathUtils.lerp(1, CONFIG.cactus.camera.sensitivity, player.zoom) : 1 - 0.35 * player.zoom);
@@ -6331,29 +6441,35 @@ function endGame(won) {
   overlay.style.display = 'flex';
 }
 
-// Floating damage number at a world position
-function spawnPopup(pos, amount, color) {
-  const el = document.createElement('div');
-  el.className = 'pop';
+// Floating damage number at a world position. style: '' (yours), 'minor' (allies / pots: small and dim, culled
+// when far away) or 'kill' (your finishing blow: bigger). Elements are pooled and the count is capped.
+const popupPool = [], POPUP_CAP = CONFIG.feedback.popupCap, POPUP_MINOR_RANGE = CONFIG.feedback.allyPopupRange;
+function spawnPopup(pos, amount, color, style = '') {
+  if (style === 'minor' && pos.distanceTo(camera.position) > POPUP_MINOR_RANGE) return;
+  if (popups.length >= POPUP_CAP) { const old = popups.shift(); old.el.style.display = 'none'; popupPool.push(old.el); }
+  let el = popupPool.pop();
+  if (!el) { el = document.createElement('div'); document.getElementById('popups').appendChild(el); }
+  el.className = style ? `pop ${style}` : 'pop';
   el.textContent = amount;
   el.style.color = color;
-  document.getElementById('popups').appendChild(el);
-  popups.push({ el, pos: pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4, (Math.random() - 0.5) * 0.6)), t: 0 });
+  popups.push({ el, pos: pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4, (Math.random() - 0.5) * 0.6)), t: 0,
+    vx: (Math.random() - 0.5) * 0.9, alpha: style === 'minor' ? 0.65 : 1 });
 }
 function updatePopups(dt) {
   const v = new THREE.Vector3();
   for (let i = popups.length - 1; i >= 0; i--) {
     const p = popups[i];
     p.t += dt;
-    p.pos.y += dt * 1.6;
+    p.pos.y += dt * 2.6 * Math.max(0.15, 1 - p.t * 1.6);   // pops up fast, then hangs
     v.copy(p.pos).project(camera);
-    const k = p.t / 0.7;
-    if (k >= 1) { p.el.remove(); popups.splice(i, 1); continue; }
+    const k = p.t / 0.75;
+    if (k >= 1) { p.el.style.display = 'none'; popupPool.push(p.el); popups.splice(i, 1); continue; }
     p.el.style.display = v.z < 1 ? 'block' : 'none';
-    p.el.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
+    // screen-space drift sideways so a stream of hits fans out instead of stacking
+    p.el.style.left = `${(v.x * 0.5 + 0.5) * innerWidth + p.vx * p.t * 40}px`;
     p.el.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
-    p.el.style.opacity = 1 - k * k;
-    p.el.style.transform = `translate(-50%,-50%) scale(${1 + 0.5 * Math.max(0, 1 - p.t * 8)})`;
+    p.el.style.opacity = p.alpha * (1 - k * k * k);
+    p.el.style.transform = `translate(-50%,-50%) scale(${1 + 0.6 * Math.max(0, 1 - p.t * 7)})`;
   }
 }
 
@@ -6442,7 +6558,7 @@ function spawnRing(pos, radius, color, duration = 0.4) {
   const mesh = new THREE.Mesh(EFFECT_GEO.ring,
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(pos.x, 0.08, pos.z);
+  mesh.position.set(pos.x, heightAt(pos.x, pos.z) + 0.08, pos.z);   // on the terrain (mid / high tiers too)
   scene.add(mesh);
   effects.push({ mesh, t: 0, duration, radius, kind: 'ring' });
 }
@@ -6450,7 +6566,7 @@ function spawnDecal(pos, radius, color, duration) {
   const mesh = new THREE.Mesh(EFFECT_GEO.decal,
     new THREE.MeshStandardMaterial({ color, roughness: 0.2, transparent: true, opacity: 0.85, depthWrite: false }));
   mesh.rotation.x = -Math.PI / 2; mesh.scale.setScalar(radius);
-  mesh.position.set(pos.x, 0.03 + Math.random() * 0.01, pos.z);
+  mesh.position.set(pos.x, heightAt(pos.x, pos.z) + 0.03 + Math.random() * 0.01, pos.z);
   mesh.receiveShadow = true;
   scene.add(mesh);
   effects.push({ mesh, t: 0, duration, radius, kind: 'decal' });
@@ -6590,9 +6706,18 @@ function updateHero(h, dt) {
     v.z += (wish.z * speed * floatK - v.z) * k;
   }
 
+  // Human presses survive a short landing / ledge timing error. Consume once, so holding Space never bunny-hops.
+  if (!h.isAI) {
+    if (h.onGround) h.lastGroundT = state.time;
+    if (inp.jump) h.jumpQueuedUntil = state.time + CONFIG.movement.jumpBuffer;
+    if (rooted || floating || h.hopping) h.jumpQueuedUntil = h.lastGroundT = -Infinity;
+  }
+  const jump = h.isAI ? inp.jump && h.onGround
+    : state.time <= (h.jumpQueuedUntil ?? -Infinity) && (h.onGround || state.time - (h.lastGroundT ?? -Infinity) <= CONFIG.movement.coyoteTime);
   // Jump / gravity / glide (hold jump while falling after a Husk Hop)
-  if (inp.jump && h.onGround) {
+  if (jump) {
     v.y = P.jumpSpeed * (hyper ? AB.butterBarrage.jumpMult : 1); h.onGround = false;
+    h.jumpQueuedUntil = h.lastGroundT = -Infinity;
     SFX.play('jump', pos, h.isAI);
     burstLeaves(pos, 4);
   }
@@ -8347,6 +8472,7 @@ const SFX = (() => {
     verb.connect(gainTo(master, AU.reverb));
     noiseBuf = makeNoise(false); brownBuf = makeNoise(true);
     startLoops();
+    setupMusic();
   }
   function gainTo(dest, v) { const g = ctx.createGain(); g.gain.value = v; g.connect(dest); return g; }
   // 3 s of white (or brown = integrated, rumbly) noise, looped by every noise source at a random offset
@@ -9562,6 +9688,82 @@ const SFX = (() => {
     [ambWind, ambFilter] = mk(ambBus, 'lowpass', 420, 0.5);
   }
 
+  // ---- Music: adaptive procedural score (tuning CONFIG.music) ----
+  // A 16th-note sequencer scheduled a little ahead on the audio clock. Five layers (pad, marimba pluck, bass,
+  // drums, brass stabs) each have their own gain; the match state picks a mode and its layers fade in or out.
+  let musicBus = null, musicLevel = 1, mus = null;
+  const MU = CONFIG.music;
+  function setupMusic() {
+    musicBus = gainTo(master, AU.music * musicLevel);
+    musicBus.connect(gainTo(verb, MU.reverb));
+    mus = { t: 0, step: 0, mode: 'off', layers: {} };
+    for (const k of Object.keys(MU.layers.off)) mus.layers[k] = gainTo(musicBus, 0);
+  }
+  function musicMode() {
+    if (!matchStarted || state.over) return 'off';
+    if (state.phase === 'extract' || zombies.some(z => z.def.boss && !z.dead)) return 'boss';
+    return state.phase === 'active' ? 'combat' : 'calm';
+  }
+  const on = k => mus.layers[k].gain.value > 0.01 || MU.layers[mus.mode][k] > 0;   // still audible or fading in
+  function musicStep(t) {
+    const st = mus.step % 16, sixteenth = 60 / MU.bpm / 4;
+    if (st % 4 === 0) {   // re-read the match state every beat
+      const mode = musicMode();
+      if (mode !== mus.mode) {
+        mus.mode = mode;
+        for (const [k, g] of Object.entries(MU.layers[mode])) mus.layers[k].gain.setTargetAtTime(g, t, MU.fade / 3);
+      }
+    }
+    if (mus.mode === 'off' && !on('pluck') && !on('bass') && !on('pad')) return;
+    const m = mus.mode === 'off' ? 'calm' : mus.mode, bar = Math.floor(mus.step / 16);
+    const per = MU.barsPerChord[m], chordIx = Math.floor(bar / per) % 4;
+    const [root, ...tones] = MU.chords[m === 'boss' ? 'minor' : 'major'][chordIx];
+    const L = mus.layers, v = out => ({ t, out });
+    // Pad: the chord, swelling in at each chord change
+    if (on('pad') && st === 0 && bar % per === 0) {
+      for (const n of tones) tone(v(L.pad), { type: 'triangle', f0: note(n), dur: sixteenth * 16 * per * 1.05, vol: 0.07, attack: 0.6 });
+    }
+    // Marimba pluck: arpeggio (calm: lazy syncopation, combat: driving 8ths, boss: restless 16ths)
+    const arp = { calm: [0, 3, 6, 8, 11, 14], combat: [0, 2, 4, 6, 8, 10, 12, 14], boss: [0, 2, 3, 6, 8, 10, 11, 14] }[m];
+    if (on('pluck') && arp.includes(st)) {
+      const order = [0, 1, 2, 1, 2, 0, 1, 2], i = arp.indexOf(st), n = tones[order[i % order.length]] + 12 + (i === arp.length - 1 && m !== 'calm' ? 12 : 0);
+      const vol = (st % 4 === 0 ? 0.32 : 0.22) * (m === 'calm' ? 0.9 : 1);
+      tone(v(L.pluck), { f0: note(n), dur: 0.42, vol, attack: 0.004 });
+      tone(v(L.pluck), { f0: note(n) * 4, dur: 0.05, vol: vol * 0.25, attack: 0.002 });   // mallet click
+    }
+    // Bass: bouncy root / fifth (boss: straight 8ths on the root)
+    const bassSteps = m === 'boss' ? { 0: 0, 2: 0, 4: 0, 6: 0, 8: 0, 10: 0, 12: 0, 14: 7 } : { 0: 0, 6: 0, 8: 7, 12: 12 };
+    if (on('bass') && st in bassSteps) {
+      const f = note(root + bassSteps[st]);
+      tone(v(L.bass), { type: 'triangle', f0: f, dur: sixteenth * 1.8, vol: 0.55, attack: 0.006 });
+      tone(v(L.bass), { f0: f * 0.5, dur: sixteenth * 1.6, vol: 0.35, attack: 0.006 });
+    }
+    // Drums: a light march far from the horde, the full kit when zombies are close (boss: four on the floor)
+    if (on('drums')) {
+      if (st === 0) {
+        let near = 0;
+        for (const z of zombies) if (!z.dead && z.mesh.position.distanceTo(lis) < MU.heatRange) near++;
+        mus.heat = Math.min(1, near / MU.heatFull);
+      }
+      const full = m === 'boss' || (mus.heat ?? 0) >= 1, kick = m === 'boss' ? st % 4 === 0 : st === 0 || st === 8 || (full && st === 10);
+      if (kick) tone(v(L.drums), { f0: 140, f1: 44, sweep: 0.09, dur: 0.16, vol: 0.9, attack: 0.002 });
+      if (st === 4 || st === 12) {
+        hiss(v(L.drums), { dur: full ? 0.14 : 0.08, vol: full ? 0.4 : 0.18, f0: 2200, q: 0.8 });
+        tone(v(L.drums), { type: 'triangle', f0: 210, f1: 160, dur: 0.07, vol: 0.22 });
+      }
+      if (st % 2 === 0 || full) hiss(v(L.drums), { dur: 0.035, vol: st % 4 === 2 ? 0.13 : 0.08, type: 'highpass', f0: 7500, q: 0.7 });
+      if (m === 'boss' && bar % 4 === 3 && st >= 12) tone(v(L.drums), { f0: [180, 150, 125, 100][st - 12], f1: 70, dur: 0.14, vol: 0.5 });   // tom fill
+    }
+    // Brass stabs on the boss downbeats
+    if (on('brass') && (st === 0 || (st === 10 && bar % 2 === 1))) for (const n of tones) brass(v(L.brass), note(n), 0, 0.18, 0.06);
+  }
+  function updateMusic(now) {
+    if (!mus) return;
+    if (mus.t < now - 0.1) mus.t = now + 0.05;   // after a hitch or a pause: resync instead of a burst of notes
+    const sixteenth = 60 / MU.bpm / 4;
+    while (mus.t < now + MU.lookahead) { musicStep(mus.t); mus.t += sixteenth; mus.step++; }
+  }
+
   // ---- per-frame upkeep ----
   const tr = { moanT: 1, birdT: 3, beatT: 0, digT: 0, gust: 0, gustT: 0, cds: {}, hero: null, tick: 99 };
   const heroSteps = new WeakMap();
@@ -9592,6 +9794,7 @@ const SFX = (() => {
     if ((tr.gustT -= dt) <= 0) { tr.gustT = rr(2, 5); tr.gust = rr(0.15, 0.45); }
     ambWind.gain.setTargetAtTime(tr.gust, now, 1.2);
     ambFilter.frequency.setTargetAtTime(300 + tr.gust * 600, now, 1.5);
+    updateMusic(now);
     if (state.over) return;
     // Low-hp heartbeat
     const hpK = player.hp / player.stats.hp;
@@ -9642,10 +9845,12 @@ const SFX = (() => {
     play(name, ...args) { if (ctx && S[name]) S[name](...args); },
     toggleMute() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : AU.master, ctx.currentTime, 0.05); return muted; },
     setVolume(v) { AU.master = v; if (master && !muted) master.gain.setTargetAtTime(v, ctx.currentTime, 0.05); },
+    setMusic(v) { musicLevel = v; if (musicBus) musicBus.gain.setTargetAtTime(AU.music * v, ctx.currentTime, 0.05); },
+    get musicMode() { return mus?.mode ?? 'off'; },
     get ctx() { return ctx; },
   };
 })();
-onSettings(s => SFX.setVolume(s.volume));
+onSettings(s => { SFX.setVolume(s.volume); SFX.setMusic(s.music); });
 
 // Sprint the statue field, glowing and beeping faster as it closes in; blow up on contact (Bomber).
 // Killing it first means no explosion.
@@ -13667,7 +13872,7 @@ function damageZMech(z, amount, at, mine) {
   amount = Math.max(1, Math.round(amount));
   mm.hp -= amount;
   z.flash = 0.06;
-  spawnPopup(at, amount, '#ffb070');
+  spawnPopup(at, amount, '#ffb070', mine ? '' : 'minor');
   if (mine) { state.hitmarker = 0.12; SFX.play('hitmarker'); }
   SFX.play('armorClank', at);
   if (Math.random() < 0.3) spawnParticle('spark', 0xffe0a0, at, rand3(6, 2), { life: 0.25, size: 1.2, additive: true });
@@ -17725,7 +17930,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
     if (heavy) {
       z.ai.armor -= amount;
       SFX.play('armorClank', at);
-      spawnPopup(at, Math.round(amount), '#8ab4d8');
+      spawnPopup(at, Math.round(amount), '#8ab4d8', mine ? '' : 'minor');
       if (z.ai.armor <= 0) {
         z.parts.shell.visible = false;
         SFX.play('shatter', z.mesh.position);
@@ -17734,7 +17939,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
         for (let i = 0; i < 20; i++) spawnParticle('chip', 0x8aa0b8, z.mesh.position.clone().add(rand3(def.radius)), rand3(10, 6), { life: 1, size: 1.6 });
         addShake(0.4, z.mesh.position);
       }
-    } else { spawnPopup(at, 0, '#8a96a0'); SFX.play('hit', at, true); }
+    } else { spawnPopup(at, 0, '#8a96a0', mine ? '' : 'minor'); SFX.play('hit', at, true); }
     z.flash = 0.05;
     if (mine) state.hitmarker = 0.08;
     return;
@@ -17746,7 +17951,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
   if (hpBefore > 0 && z.hp <= 0) recordStat(owner, 'kills', 1);
   z.flash = 0.08;
   agentFlinch(z, at, amount);
-  spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a');
+  spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a', !mine ? 'minor' : z.hp <= 0 ? 'kill' : '');
   if (mine) state.hitmarker = z.hp <= 0 ? -0.25 : 0.12;   // negative = kill marker (red)
   if (mine) SFX.play(z.hp <= 0 ? 'vanquish' : 'hitmarker');
   // Plated: plate pieces fall off at hp thresholds; the last one exposes the weak-point core
@@ -19026,9 +19231,10 @@ function updateFinaleArrow() {
 function updateWaves(dt) {
   if (state.phase === 'countdown') {
     state.waveTimer -= dt;
-    setBanner(true);
+    const bannerReady = state.time >= (state.bannerAt ?? 0);
+    setBanner(bannerReady);   // held back while the "wave cleared" call-out plays
     document.getElementById('bannerCount').textContent = `${shopOpen() ? 'Shop open · ' : ''}Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
-    updateLaneArrow();
+    if (bannerReady) updateLaneArrow();
     updateBossSlot(dt);
     if (state.waveTimer <= 0) startWave(state.waveIndex);
     return;
@@ -19045,14 +19251,20 @@ function updateWaves(dt) {
         spawnSkull(p);
         SFX.play('skull', new THREE.Vector3(p.x, heightAt(p.x, p.z) + 3, p.z));
       }
-      if (ZT[s.type].boss) SFX.play('bossArrive');
+      if (ZT[s.type].boss) { SFX.play('bossArrive'); callout(ZT[s.type].name, 'Boss incoming'); }
     }
   }
   state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {
-    if (state.waveIndex === WAVES.length - 1) { SFX.play('waveClear'); sweepCoins(); startFinale(); }
-    else { SFX.play('waveClear'); sweepCoins(); showWaveSummary(state.waveIndex); beginCountdown(state.waveIndex + 1); }
+    const glow = 'rgba(120,230,90,0.85)';
+    if (state.waveIndex === WAVES.length - 1) { SFX.play('waveClear'); sweepCoins(); callout('Garden held!', 'Get to the landing zone', glow); startFinale(); }
+    else {
+      SFX.play('waveClear'); sweepCoins(); showWaveSummary(state.waveIndex);
+      callout(`Wave ${state.waveIndex + 1} cleared`, 'Shop open', glow);
+      state.bannerAt = state.time + CONFIG.feedback.clearBannerDelay;
+      beginCountdown(state.waveIndex + 1);
+    }
   }
 }
 
@@ -19066,8 +19278,8 @@ function addCameraRecoil(kick) {
 }
 function updateCamera(dt) {
   state.cam.recoilPitch *= Math.exp(-dt * CONFIG.camera.recoilRecovery);
-  if (player.cactus?.drone) { updateGarlicCamera(dt); return; }
-  const c = CONFIG.camera, cs = state.cam, h = player;
+  if (player.cactus?.drone) { updateGarlicCamera(dt); hideBlockingAllies(null, dt); return; }
+  const c = CONFIG.camera, cs = state.cam, h = player, motion = SETTINGS.motion;
   const pitch = THREE.MathUtils.clamp(state.pitch - cs.recoilPitch, -0.6, 1.2);
   const P = h.stats;
   const z = h.zoom, sp = h.sprint;
@@ -19075,9 +19287,9 @@ function updateCamera(dt) {
   const grounded = h.onGround && !h.dead;
 
   state.fovKick *= Math.exp(-dt * 4);
-  const fov = THREE.MathUtils.lerp(c.fov + c.speedFov * speedK + c.sprintFov * sp, h.type === 'cactus' ? CONFIG.cactus.camera.aimFov : c.aimFov, z) + state.fovKick;
+  const fov = THREE.MathUtils.lerp(c.fov + (c.speedFov * speedK + c.sprintFov * sp) * motion, h.type === 'cactus' ? CONFIG.cactus.camera.aimFov : c.aimFov, z) + state.fovKick * motion;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
-  const dist = THREE.MathUtils.lerp(c.distance + c.sprintDistance * sp, h.type === 'cactus' ? CONFIG.cactus.camera.aimDistance : c.aimDistance, z);
+  const dist = THREE.MathUtils.lerp(c.distance + c.sprintDistance * sp * motion, h.type === 'cactus' ? CONFIG.cactus.camera.aimDistance : c.aimDistance, z);
   const fwd = yawForward(), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
 
   // Smoothed pivot: snaps on (re)spawn / teleports, otherwise catches up (softer vertically)
@@ -19099,11 +19311,11 @@ function updateCamera(dt) {
   cs.bob += dt * hSpeed * 0.9;
   const bobAmp = grounded ? speedK * (1 + (c.sprintBob - 1) * sp) * (1 - 0.8 * z) : 0;
   cs.bobAmp = THREE.MathUtils.lerp(cs.bobAmp ?? 0, bobAmp, Math.min(1, dt * 8));
-  const bobY = Math.abs(Math.sin(cs.bob)) * c.bob * cs.bobAmp, bobX = Math.sin(cs.bob) * c.bobSide * cs.bobAmp;
+  const bobY = Math.abs(Math.sin(cs.bob)) * c.bob * cs.bobAmp * motion, bobX = Math.sin(cs.bob) * c.bobSide * cs.bobAmp * motion;
 
   const shoulder = h.type === 'sunflower' ? THREE.MathUtils.lerp(CONFIG.SUNFLOWER.camera.shoulder, CONFIG.SUNFLOWER.camera.aimShoulder, z) : c.shoulder;
   const target = cs.pivot.clone().addScaledVector(right, shoulder + (cs.clear || 0) + bobX);
-  target.y += bobY + cs.land + c.lift;
+  target.y += bobY + cs.land * motion + c.lift;
   const offset = new THREE.Vector3(
     Math.sin(state.yaw) * Math.cos(pitch) * dist,
     Math.sin(pitch) * dist,
@@ -19120,7 +19332,7 @@ function updateCamera(dt) {
 
   // Trauma shake (squared falloff): positional jitter + rotation, each axis a mix of two sines
   state.shake = Math.max(0, state.shake - dt * 1.8);
-  const t = state.shake * state.shake, now = performance.now() * 0.001;
+  const t = state.shake * state.shake * motion, now = performance.now() * 0.001;
   const n = (a, b, o) => (Math.sin(now * a + o) + Math.sin(now * b + o * 1.7) * 0.6) / 1.6;
   camera.position.addScaledVector(right, n(23, 41, 0.3) * c.shakePos * t);
   camera.position.y += n(29, 47, 2.1) * c.shakePos * t;
@@ -19132,7 +19344,7 @@ function updateCamera(dt) {
   cs.flinch *= Math.exp(-dt * 7);
   const wantRoll = -side * c.strafeRoll * (1 - 0.6 * z) + Math.sin(cs.bob) * 0.006 * sp;
   cs.roll += (wantRoll - cs.roll) * Math.min(1, dt * 6);
-  camera.rotateZ(cs.roll + cs.flinch * c.hurtRoll + n(37, 53, 4.2) * c.shakeRot * t);
+  camera.rotateZ((cs.roll + cs.flinch * c.hurtRoll) * motion + n(37, 53, 4.2) * c.shakeRot * t);
   camera.rotateX(n(43, 31, 1) * c.shakeRot * t);
   camera.rotateY(n(31, 59, 2) * c.shakeRot * t);
   // Crosshair zone check: project a few points of the plant's silhouette; if any lands in the zone,
@@ -19146,12 +19358,45 @@ function updateCamera(dt) {
     if (q.z < 1 && Math.abs(q.x) < Z.x && Math.abs(q.y) < Z.y) blocked = true;
   }
   cs.clear = THREE.MathUtils.clamp((cs.clear || 0) + (blocked ? Z.rate : -Z.rate * 0.4) * dt, 0, Z.max);
+  hideBlockingAllies(target, dt);
   // keep the sun's shadow frustum centered on the player
   sun.position.copy(playerMesh.position).add(SUN_OFFSET);
   sun.target.position.copy(playerMesh.position);
 }
 
+// AI plants following you tend to stand right in the camera's line of sight (a giant corn cob filling the view):
+// any ally whose body crosses the camera → crosshair or camera → your plant line, or sits on the lens, is hidden
+// (its health bar stays) and comes back a beat after it steps aside.
+const _seg = new THREE.Vector3(), _toAlly = new THREE.Vector3();
+// Is point p within `r` of the segment from the camera to `end` (and in front of `end`)?
+function nearCameraLine(p, end, r) {
+  const cam = camera.position;
+  _seg.copy(end).sub(cam);
+  const len2 = Math.max(1e-6, _seg.lengthSq());
+  _toAlly.copy(p).sub(cam);
+  const k = THREE.MathUtils.clamp(_toAlly.dot(_seg) / len2, 0, 1);
+  const off = _toAlly.addScaledVector(_seg, -k);
+  off.y *= 0.6;   // bodies are taller than wide: a vertical offset counts a bit less
+  return k < 0.97 && off.length() < r;
+}
+function hideBlockingAllies(target, dt) {
+  const B = CONFIG.camera.allyBlock, cam = camera.position;
+  if (!target) { for (const h of heroes) { h.corn.root.visible = true; h.camHidden = 0; } return; }   // drone view
+  for (const h of heroes) {
+    if (!h.active) continue;
+    const root = h.corn.root;
+    if (h === player) { root.visible = true; h.camHidden = 0; continue; }
+    const r = h.stats.radius + B.pad, p = h.mesh.position;
+    const blocks = p.distanceTo(cam) < B.near || nearCameraLine(p, target, r) || nearCameraLine(p, playerMesh.position, r);
+    h.camHidden = blocks ? B.hold : Math.max(0, (h.camHidden || 0) - dt);
+    root.visible = h.camHidden <= 0;
+  }
+}
+
 const hud = id => document.getElementById(id);
+// Per-frame HUD writes only touch the DOM when the value changed (rewriting text every frame forces style + layout work)
+const setText = (el, v) => { v = String(v); if (el.textContent !== v) el.textContent = v; };
+const setHtml = (el, v) => { if (el._html !== v) { el._html = v; el.innerHTML = v; } };
 const crossTicks = { t: document.querySelector('#crosshair .t'), b: document.querySelector('#crosshair .b'),
                      l: document.querySelector('#crosshair .l'), r: document.querySelector('#crosshair .r') };
 hud('version').textContent = VERSION;
@@ -19181,62 +19426,66 @@ function updateHud(dt) {
   const P = player.stats, W = player.weapon, AB = player.abilities;
   // FPS readout, refreshed a few times a second so it's readable
   const now = performance.now();
-  if (now - fpsShownAt > 250) { fpsShownAt = now; hud('fps').textContent = `${Math.round(fpsAvg)} FPS`; }
+  if (now - fpsShownAt > 250) { fpsShownAt = now; setText(hud('fps'), `${Math.round(fpsAvg)} FPS`); }
   const left = zombies.length + state.spawnQueue.length;
   const f = state.finale, clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-  hud('waveLine').innerHTML = state.phase === 'extract'
+  setHtml(hud('waveLine'), state.phase === 'extract'
     ? `<b>EXTRACTION</b> &nbsp;·&nbsp; zone <b>${Math.floor(f.charge * 100)}%</b>${f.inside ? ` (${f.inside} in)` : ''} &nbsp;·&nbsp; <b>${clock(Math.max(0, f.t))}</b>`
     : `Wave <b>${state.waveIndex + 1}</b> / ${WAVES.length}` +
-      (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'}` : '');
+      (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'}` : ''));
   const boss = zombies.find(z => z.def.boss);
   hud('bossHud').style.display = boss ? 'block' : 'none';
   if (boss) {
     const armored = boss.ai.armor > 0;
     const mecha = boss.def.behavior === 'mecha';
     const action = mecha ? ({smash:'ROBO-SMASH',chargeWind:'ROCKET CHARGE',charge:'ROCKET CHARGE',pulse:'PULSE BURST',bomb:'TIME BOMB',recover:'AIM FOR THE HEAD'})[boss.ai.mecha?.mode] : '';
-    hud('bossName').textContent = boss.def.name + (armored ? ' · Armored' : action ? ` · ${action}` : mecha ? ' · Armored body' : '');
+    setText(hud('bossName'), boss.def.name + (armored ? ' · Armored' : action ? ` · ${action}` : mecha ? ' · Armored body' : ''));
     hud('bossHud').style.setProperty('--c', armored ? 'var(--armor)' : 'var(--boss)');
     const r = armored ? boss.ai.armor / boss.def.armorHp : boss.hp / boss.def.hp;
     setHudBar('bossHud', r, dt, false);
-    hud('bossNum').textContent = `${Math.ceil(Math.max(0, r) * 100)}%`;
+    setText(hud('bossNum'), `${Math.ceil(Math.max(0, r) * 100)}%`);
   }
   setHudBar('gardenBox', state.statueHp / CONFIG.statue.hp, dt, false);
-  hud('gardenNum').textContent = `${Math.max(0, Math.ceil(state.statueHp))}`;
+  setText(hud('gardenNum'), `${Math.max(0, Math.ceil(state.statueHp))}`);
   setHudBar('playerBox', player.hp / P.hp, dt, (player.regen || player.healedUntil > state.time) && !player.dead);
-  hud('playerHpNum').innerHTML = `${Math.ceil(player.hp)}<small> / ${P.hp}</small>`;
-  hud('playerLabel').textContent = `${player.name} #${player.squadIndex + 1}`;
-  hud('weaponLabel').textContent = player.def.weaponName;
+  setHtml(hud('playerHpNum'), `${Math.ceil(player.hp)}<small> / ${P.hp}</small>`);
+  setText(hud('playerLabel'), `${player.name} #${player.squadIndex + 1}`);
+  setText(hud('weaponLabel'), player.def.weaponName);
   for (const h of heroes) {
     const id = `squad-${h.squadIndex}`, box = hud(id), fallen = h.dead || h.downed, left = respawnLeft(h);
     // Fallen: the bar becomes the respawn clock (drains to empty as the plant comes back)
     setHudBar(id, fallen ? left / CONFIG.squad.respawnDelay : h.hp / h.stats.hp, dt, (h.regen || h.healedUntil > state.time) && !fallen);
     box.classList.toggle('controlled', h === player);
     box.classList.toggle('fallen', fallen);
-    box.querySelector('.label').textContent = `${h.squadIndex + 1} · ${h.name}${h === player ? ' · YOU' : ''}`;
-    box.querySelector('.num').textContent = fallen ? `${h.downed ? 'DOWN' : 'RESPAWN'} ${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`;
+    setText(box.querySelector('.label'), `${h.squadIndex + 1} · ${h.name}${h === player ? ' · YOU' : ''}`);
+    setText(box.querySelector('.num'), fallen ? `${h.downed ? 'DOWN' : 'RESPAWN'} ${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`);
     updateFallenTag(h, fallen, left);
     h.bar.group.position.copy(h.mesh.position).setY(h.mesh.position.y + h.centerY + 0.4);
     h.bar.group.visible = h.active && h !== player && !h.dead && keepBarReadable(h.bar.group, 20, 3.5);
     h.bar.group.quaternion.copy(camera.quaternion); setWorldBar(h.bar, h.hp / h.stats.hp);
   }
-  hud('squadHint').textContent = heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help';
+  setText(hud('squadHint'), heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help');
   setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
   statueHpBar.group.visible = keepBarReadable(statueHpBar.group, 45, 7);
   statueHpBar.group.quaternion.copy(camera.quaternion);
 
   // Ammo + reload
-  hud('ammoN').textContent = player.reloading ? '—' : player.ammo;
+  setText(hud('ammoN'), player.reloading ? '—' : player.ammo);
   hud('ammoN').style.color = !player.reloading && player.ammo <= W.clip * 0.2 ? 'var(--danger)' : '';
-  hud('ammoMax').textContent = ` / ${W.clip}`;
+  setText(hud('ammoMax'), ` / ${W.clip}`);
   hud('reloadFill').style.width = player.reloading ? `${(1 - player.reloadT / W.reloadTime) * 100}%` : '0';
 
   // Abilities: cooldown sweep + seconds left
   for (const key of Object.keys(AB)) {
     const el = hud(`ab-${key}`), cd = player.cd[key], max = AB[key].cooldown;
-    el.querySelector('.name').textContent = player.def.abilityNames[key];
-    el.querySelector('.icon').textContent = player.def.abilityIcons[key];
+    setText(el.querySelector('.name'), player.def.abilityNames[key]);
+    setText(el.querySelector('.icon'), player.def.abilityIcons[key]);
     el.querySelector('.cd').style.height = `${max > 0 ? (cd / max) * 100 : 0}%`;
-    el.querySelector('.cdt').textContent = cd > 0 ? Math.ceil(cd) : '';
+    setText(el.querySelector('.cdt'), cd > 0 ? Math.ceil(cd) : '');
+    if (cd <= 0 && !el.classList.contains('ready') && el._owner === player) {   // just came off cooldown: pop the slot
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    }
+    el._owner = player;   // (switching plants doesn't count as "ready again")
     el.classList.toggle('ready', cd <= 0);
     el.classList.toggle('active', key === 'butterBarrage' && state.targeting);
   }
@@ -19245,8 +19494,8 @@ function updateHud(dt) {
   if (player.type === 'peashooter' && player.pea) {
     const p = player.pea, G = player.abilities.huskHop;
     if (p.gatling) {
-      hud('ammoN').textContent = p.gatlingAmmo; hud('ammoMax').textContent = ` / ${G.ammo}`;
-      hud('weaponLabel').textContent = p.deploy > 0 ? 'ROOTING…' : 'PEA GATLING · E TO UPROOT';
+      setText(hud('ammoN'), p.gatlingAmmo); setText(hud('ammoMax'), ` / ${G.ammo}`);
+      setText(hud('weaponLabel'), p.deploy > 0 ? 'ROOTING…' : 'PEA GATLING · E TO UPROOT');
       hud('reloadFill').style.width = `${Math.max(0, p.gatlingTime / G.duration) * 100}%`;
     }
     for (const [key, remaining, total] of [['huskHop', p.gatling ? p.gatlingTime : 0, G.duration],
@@ -19254,7 +19503,7 @@ function updateHud(dt) {
       if (remaining <= 0) continue;
       const el = hud(`ab-${key}`); el.classList.add('active'); el.classList.remove('ready');
       el.querySelector('.cd').style.height = `${(1 - remaining / total) * 100}%`;
-      el.querySelector('.cdt').textContent = `${Math.ceil(remaining)}s`;
+      setText(el.querySelector('.cdt'), `${Math.ceil(remaining)}s`);
     }
   }
 
@@ -19513,7 +19762,7 @@ function clearHumanInput(releaseKeys = true) {
   if (releaseKeys) for (const key of Object.keys(keys)) delete keys[key];
   for (const key of Object.keys(pressed)) pressed[key] = key === 'butter' ? null : false;
   mouseDown = rightDown = false;
-  if (player) player.input = newInput();
+  if (player) { player.input = newInput(); player.jumpQueuedUntil = player.lastGroundT = -Infinity; }
 }
 function takeControl(h) {
   const previous = player;
@@ -19599,7 +19848,7 @@ function loop() {
   if (AUTOPLAY) setTimeout(loop, 16); else requestAnimationFrame(loop);   // background panes may get no frames
   const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
   if (raw > 0) fpsAvg += (1 / raw - fpsAvg) * 0.05;
-  const playing = matchStarted && (document.pointerLockElement === renderer.domElement || AUTOPLAY) && !state.over;
+  const playing = matchStarted && (AUTOPLAY || (!document.hidden && document.hasFocus() && document.pointerLockElement === renderer.domElement)) && !state.over;
 
   if (playing) {
     state.time += dt;
@@ -19813,6 +20062,7 @@ prewarmAssets();
 {
   const button = document.getElementById('matchButton');
   button.disabled = false;
+  document.body.classList.remove('loading');
   if (bootSelection) {
     configureSquad(bootSelection);
     matchStarted = true;

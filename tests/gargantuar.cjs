@@ -82,7 +82,10 @@ const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/ht
       place(h,30,30);const hp=h.hp;step(350);check(h.hp===hp&&z.mesh.position.x<15,'charge commits to old position and can be dodged');
       ({z,h,ally,s}=setup());place(h,60,60);place(ally,65,60);z.heroTgt=null;z.mesh.position.set(0,z.def.radius+z.def.height/2,6);z.mesh.rotation.y=Math.PI;
       const garden=g.state.statueHp;g.gargantuarStartSlam(z);step(65);check(g.state.statueHp===garden-C.slam.statueDamage,'pole smash damages the garden once');
-      T.resetGame();const packs=T.resolvePacks(4);check(packs[2].zombies.miniBoss===1,'wave 5 retains boss in third pack');check(T.scaledCount('miniBoss',1)===1,'boss count does not scale with squad');
+      T.resetGame();const packs=T.resolvePacks(4);check(packs[2].bossSlot,'wave 5 retains boss roll in third pack');
+      g.beginCountdown(4);g.state.bossRoll.opt=g.CONFIG.BOSS_SLOT.options.find(o=>o.key==='gargantuar');g.startWave(4);
+      check(g.state.spawnQueue.filter(s=>s.type==='miniBoss').length===1,'Gargantuar roll queues one boss');
+      check(T.scaledCount('miniBoss',1)===1,'boss count does not scale with squad');T.resetGame();
       const a=g.spawnZombie('miniBoss'),b=g.spawnZombie('miniBoss');check(a.parts.flashMats[0]!==b.parts.flashMats[0],'boss instances own hit flash materials');
       T.launchGargantuarImp(a,g.player.mesh.position);check(T.gargantuarImps.length===1,'projectile created');
       const warning=a.parts.warning;T.damageZombie(a,100000,a.mesh.position);T.removeDeadZombies();check(!warning.parent&&T.gargantuarCorpses.length===1,'death removes warning and starts collapse');

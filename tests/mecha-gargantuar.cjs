@@ -60,8 +60,9 @@ const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/
       const before=h.hp;for(let i=0;i<239;i++)T.updateMechaWorld(dt);const beforeFuse=T.bombs.length;
       for(let i=0;i<2;i++)T.updateMechaWorld(dt);const afterFuse=T.bombs.length,bombDamage=before-h.hp;
       T.mechaThrowBomb(q,h.mesh.position);T.clear();const reset={bombs:T.bombs.length,shots:T.shots.length,zombies:g.zombies.length};
-      // The final wave's existing pack schedule must spawn the new boss.
-      T.beginCountdown(9);T.startWave(9);const waveBoss=g.state.spawnQueue.find(s=>s.type==='finalBoss');
+      // Force the Mecha reel outcome, then exercise the final wave's real pack schedule.
+      T.beginCountdown(9);g.state.bossRoll.opt=g.CONFIG.BOSS_SLOT.options.find(o=>o.key==='mecha');
+      T.startWave(9);const waveBoss=g.state.spawnQueue.find(s=>s.type==='finalBoss');
       return {armor,head,heavy,seen:[...seen],hurt,pulseCount,beforeFuse,afterFuse,bombDamage,reset,waveBoss:!!waveBoss};
     });
     console.log(JSON.stringify(result,null,2));

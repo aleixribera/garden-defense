@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
   page.on('pageerror', e => { errors.push(e.message); console.log('BROWSER ERROR:', e.message); });
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load', timeout: 60000 });
-    await page.waitForFunction(() => window.__sciTest, { timeout: 45000 });
+    await page.waitForFunction(() => window.__sciTest, null, { timeout: 45000 });
     const r = await page.evaluate(() => {
       const g = window.__game, T = window.__sciTest, dt = 1 / 60, out = {};
       g.configureSquad(['corn']);

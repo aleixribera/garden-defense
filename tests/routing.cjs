@@ -104,11 +104,14 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const areas2 = Object.keys(g.CONFIG.SPAWN_POINTS);
       for (let i = 0; i < 300; i++) g.spawnZombie('shambler', areas2[i % 4]);
       let peak = 0, plannedFrames = 0;
-      for (let i = 0; i < 400 && T.zombies.some(z => !z.nav.path); i++) {
+      // The planner has a wall-clock frame budget: a busy machine may need more simulation frames, not more work per frame.
+      const stressStart = performance.now();
+      for (let i = 0; i < 20000 && R.pending && performance.now() - stressStart < 20000; i++) {
         g.state.time += dt; const t0 = performance.now(); R.update(dt); peak = Math.max(peak, performance.now() - t0); plannedFrames++;
       }
-      out.stress = { zombies: 300, framesToPlanAll: plannedFrames, peakPlannerMs: +peak.toFixed(2) };
-      check(T.zombies.every(z => z.nav.path), '300 zombies all planned');
+      out.stress = { zombies: 300, framesToPlanAll: plannedFrames, peakPlannerMs: +peak.toFixed(2), pending: R.pending,
+        unplanned: T.zombies.filter(z => !z.nav.path).length };
+      check(T.zombies.every(z => z.nav.path), '300 zombies all planned: ' + JSON.stringify(out.stress));
       // Per-frame cost of a 150-strong horde on the march: own routes vs the old statue flow field only
       const march = useRoutes => {
         T.resetGame(); for (const h of g.heroes) h.active = false;

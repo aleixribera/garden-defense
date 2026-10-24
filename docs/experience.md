@@ -39,3 +39,26 @@ Test: `tests/experience.cjs` (renders `docs/experience.png` and `docs/world-cour
   switching, garden attack, revive, downed, shop, boss, extraction) remembered in localStorage.
 - **HUD/flow**: world bars keep a steady screen size and hide beside the camera; pause menu "Abandon match"; after
   loading the button reads "Click to start"; the menu scrolls instead of clipping.
+
+## Polish pass (v1.23.0)
+
+A second audit, played in autoplay with the camera following an AI-driven plant. Test: `tests/polish.cjs`.
+Menu preview: [polish-menu.png](polish-menu.png).
+
+| Area | Problem found | Change |
+| --- | --- | --- |
+| Camera | AI companions follow you and often stand between the camera and your plant: a corn cob or sunflower petals filled half the screen. | Allies crossing the camera → crosshair or camera → plant line (or on the lens) hide until they step aside; their health bar stays (`hideBlockingAllies`, `CONFIG.camera.allyBlock`). |
+| Audio | No music at all: long shop breaks and big fights had the same sound bed. | Adaptive procedural score (section "Music", `CONFIG.music`): calm marimba + pad in the countdown/shop, bass + drums in a wave (full kit when zombies are near you), minor key + brass + toms for bosses and the extraction. New **Music** volume setting. |
+| Feedback | Every hit by every plant spawned a full-size number (DOM node created and destroyed per hit): AI hits cluttered the view. | Your numbers are bigger and pop/drift, kills are biggest, allies' hits are small and dim (culled past 45 m); nodes are pooled and capped at 48. |
+| Pacing beats | Wave start and wave clear were a horn and a banner that just vanished. | "HERE THEY COME!" / "WAVE N CLEARED" / boss-name call-outs on a dark band; the next-wave banner waits for the clear call-out; the banner title pops in. |
+| HUD | Cooldown numbers sat on a full-brightness emoji; Cactus charges ("3 / 3") covered its icons. Every HUD label was rewritten every frame. | Cooling icons dim; Cactus charges are a corner badge; a slot pops when it comes off cooldown. HUD text/HTML only touches the DOM when the value changes. |
+| Readability | Wave banner subtitle ("Incoming…") was dim text on bright sky. | Stronger shadow and brighter text. |
+| Menu | Plain black menu and loading screen, no sign of progress while the world builds. | Painted CSS garden backdrop (sky, sun, hills, drifting clouds; no assets, still instant), chunky title and button, compositor-animated loading bar. |
+| Effects | Shockwave rings and splat decals were placed at y = 0, so on the mid (3 m) and high tiers they were buried. | They sit on the terrain (`heightAt`). |
+| Movement | A jump pressed just before landing or just after leaving a ledge was discarded. | Human-only 140 ms landing buffer and 120 ms ledge grace (`CONFIG.movement`). Each press is consumed once; rooted, floating and Husk Hop states cancel it. |
+| Comfort | Continuous bob, roll, shake and movement FOV changes could be uncomfortable. | Saved **Camera motion** slider: zero removes these effects while preserving aim zoom and weapon recoil. |
+| Interruptions | Focus loss cleared input but relied on the browser to release pointer lock. | Explicitly release it on blur / hidden-tab events and stop normal gameplay while unfocused. Pending jumps are cleared too. |
+| Cactus AI | Fortification or drone deployment could interrupt a clear rifle shot; construction could delay a displaced guard's return home. | Keep the rifle on clear shots, reserve drones for blocked distant targets, and return inside the guard radius before choosing a construction spot. Idle fortification remains active. |
+
+Control regression coverage: `tests/controls.cjs` exercises all four plants, expired presses, double-jump prevention,
+focus loss, saved settings, and a stable camera with motion disabled.

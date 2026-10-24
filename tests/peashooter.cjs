@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
   page.on('requestfailed', r => console.log('REQUEST FAILED:', r.url()));
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load', timeout: 60000 });
-    await page.waitForFunction(() => window.__peaTest, { timeout: 45000 });
+    await page.waitForFunction(() => window.__peaTest, null, { timeout: 45000 });
     const result = await page.evaluate(() => {
       const g = window.__game, T = window.__peaTest, V = T.THREE.Vector3, dt = 1 / 60;
       g.configureSquad(['peashooter', 'corn', 'peashooter']);
@@ -45,7 +45,8 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const direct = zombie(12, -4), neighbor = zombie(13.6, -4), far = zombie(18, -4);
       h.aimPoint.copy(direct.mesh.position); T.firePea(h);
       advance(45, () => T.updateProjectiles(dt));
-      report.splash = { direct: 50-direct.hp, neighbor:50-neighbor.hp, far:50-far.hp, remaining:T.shots.length };
+      report.splash = { direct: direct.def.hp-direct.hp, neighbor:neighbor.def.hp-neighbor.hp, far:far.def.hp-far.hp,
+        directDamage:h.weapon.damage, splashDamage:h.weapon.splashDamage, remaining:T.shots.length };
       setup(); h.input.move.set(0,0,-1); h.input.yaw=0; T.useHyper(h);
       advance(60, () => { T.updateHero(h,dt); T.animatePeashooter(h,dt); });
       const speed = Math.hypot(h.vel.x,h.vel.z), hyperRemaining=h.pea.hyper;
@@ -93,8 +94,8 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     console.log(JSON.stringify(result, null, 2));
     assert.deepEqual(errors, []);
     assert.equal(result.roster.initialized,true);
-    assert.ok(result.splash.direct >= 30 && result.splash.direct <= 35.1);
-    assert.ok(result.splash.neighbor > 0 && result.splash.neighbor <= 10); assert.equal(result.splash.far,0);
+    assert.ok(result.splash.direct > result.splash.directDamage && result.splash.direct <= result.splash.directDamage + result.splash.splashDamage);
+    assert.ok(result.splash.neighbor > 0 && result.splash.neighbor <= result.splash.splashDamage); assert.equal(result.splash.far,0);
     assert.ok(result.hyper.speed > 17); assert.ok(result.hyper.jump > 16);
     assert.ok(result.gatling.moved < 0.001); assert.ok(result.gatling.rounds < 90);
     assert.equal(result.gatling.primaryAmmo,result.gatling.originalAmmo); assert.equal(result.gatling.cancelCooldown,30);

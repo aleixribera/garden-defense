@@ -7,7 +7,9 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
-const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
+// Keep the scheduled loop alive, but freeze its work during captures so software rendering cannot starve screenshots.
+const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8')
+  .replace('const raw = clock.getDelta()', 'if (window.__captureFrame) return; const raw = clock.getDelta()');
 const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
 const SHOTS = path.resolve(__dirname, '..', 'docs');
 
@@ -34,7 +36,7 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
     await page.waitForFunction(() => window.__game?.matchStarted && __game.state?.time > 0.2, null, { timeout: 90000 });
 
     // --- Onboarding: the first countdown queues the start tip (remembered); H shows the controlled plant's kit
-    await page.waitForFunction(() => __game.tipsSeen.has('start'), null, { timeout: 10000 });
+    await page.waitForFunction(() => __game.tipsSeen.has('start'), null, { timeout: 30000 });
     let r = await page.evaluate(() => {
       const g = __game; g.toggleHelp(true);
       const el = document.getElementById('helpPanel'), out = { shown: getComputedStyle(el).display, text: el.textContent, name: g.player.def.name,
@@ -114,10 +116,14 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
     await page.waitForTimeout(4000);
     await page.evaluate(() => { const g = __game, P = g.player; P.mesh.position.set(-6, g.heightAt(-6, -24) + P.centerY, -24); g.state.yaw = 0.4; g.state.pitch = 0.18; });
     await page.waitForTimeout(600);
+    await page.evaluate(() => { window.__captureFrame = true; });
     await page.screenshot({ path: path.join(SHOTS, 'experience.png') });
+    await page.evaluate(() => { window.__captureFrame = false; });
     await page.evaluate(() => { const g = __game, P = g.player; P.mesh.position.set(-3, P.centerY, 13); g.state.yaw = 0.15; g.state.pitch = 0.05; });
     await page.waitForTimeout(600);
+    await page.evaluate(() => { window.__captureFrame = true; });
     await page.screenshot({ path: path.join(SHOTS, 'world-court.png') });
+    await page.evaluate(() => { window.__captureFrame = false; });
     console.log('PASS: screenshots docs/experience.png, docs/world-court.png');
 
     // --- Abandon match from the pause menu: a defeat screen with stats

@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.22.1)
+## Current state (v1.23.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -64,13 +64,18 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   tips (localStorage), H help panel from `PLANTS[type].info`. Pacing: `CONFIG.hurry` (far horde zombies walk faster).
   Audit + rationale: docs/experience.md. Test: `tests/experience.cjs`.
 - Camera (`CONFIG.camera`): plant sits low-left (`shoulder`, `lift`); `clearZone` slides the shoulder out if the
-  plant's silhouette reaches the crosshair.
+  plant's silhouette reaches the crosshair; allies blocking the camera hide (`hideBlockingAllies`, `allyBlock`).
+  Human jumps have landing buffering / ledge grace (`CONFIG.movement`). Test: `tests/controls.cjs`.
+- Music (section "Music" inside the audio module, `CONFIG.music`): procedural 16-step sequencer; mode calm / combat /
+  boss / off from match state fades layer gains. Music volume setting. Feedback: `callout()` for wave start / clear /
+  boss, pooled damage numbers (`spawnPopup` style: yours / 'minor' allies / 'kill'). HUD writes go through
+  `setText` / `setHtml` (DOM only on change). Polish audit: docs/experience.md. Test: `tests/polish.cjs`.
 - Match flow: `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
   between-waves summary (`showWaveSummary`, under the countdown banner) and end-of-match table (`showMatchStats`).
 - Difficulty presets `CONFIG.DIFFICULTY` (`DIFF()`, locked per match in `state.difficulty`): zombieHp (scales hits in
   `damageZombie`), zombieDamage (`damageHero`), statueDamage (per-frame statue loss in `loop`), count (`scaledCount`).
-- Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, FOV, quality; menu + Esc pause
-  panel; systems register appliers with `onSettings()`.
+- Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, music, camera motion, FOV, quality;
+  menu + Esc pause panel; systems register appliers with `onSettings()`. Focus loss pauses and clears input.
 - Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses,
   M map, K stress horde, J coins. Normal play: 1–4 take a plant, H help.
   `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright); `npm test` runs all,

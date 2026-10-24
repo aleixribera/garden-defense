@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html'); res.end(source);
 });
 (async () => {
-  const syntaxFile = path.join(require('node:os').tmpdir(), 'garden-cactus-check.mjs');
+  const syntaxFile = path.join(require('node:os').tmpdir(), `garden-cactus-check-${process.pid}.mjs`);
   fs.writeFileSync(syntaxFile, fs.readFileSync(path.join(root, 'index.html'), 'utf8').match(/<script type="module">([\s\S]*?)<\/script>/)[1]);
   cp.execFileSync(process.execPath, ['--check', syntaxFile]); fs.unlinkSync(syntaxFile);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -34,10 +34,10 @@ const server = http.createServer((req, res) => {
     const errors = []; page.on('pageerror', error => errors.push(error.stack));
     page.on('console', msg => { if (msg.type() === 'error') { errors.push(msg.text()); console.log('Browser:', msg.text()); } });
     await page.goto(`http://127.0.0.1:${server.address().port}/deterministic`);
-    await page.waitForFunction(() => window.__cactusTest, { timeout: 60000 });
+    await page.waitForFunction(() => window.__cactusTest, null, { timeout: 60000 });
     const report = await page.evaluate(() => {
       const g = window.__game, T = window.__cactusTest, V = T.THREE.Vector3, checks = [];
-      const check = (test, label) => { if (!test) throw new Error(label); checks.push(label); };
+      const check = (test, label, detail) => { if (!test) throw new Error(label + (detail ? ': ' + JSON.stringify(detail) : '')); checks.push(label); };
       check(g.configureSquad(['cactus', 'corn', 'peashooter', 'sunflower']), 'Mixed four-plant squad');
       const h = g.player, original = h;
       const setup = () => {
@@ -119,9 +119,11 @@ const server = http.createServer((req, res) => {
       setup(); const distant = zombie(12, -30, 'shambler'); distant.hp = 10000;
       const guardStart = h.mesh.position.clone();
       for (let i = 0; i < 100; i++) { T.driveCactus(h, 1 / 60); step(); }
-      check(h.brain.target === distant && h.input.zoom && h.ammo < 12, 'Companion acquires and snipes a distant visible threat');
+      check(h.brain.target === distant && h.input.zoom && h.ammo < 12, 'Companion acquires and snipes a distant visible threat',
+        { target: h.brain.target === distant, zoom: h.input.zoom, ammo: h.ammo, state: h.brain.state,
+          clear: h.brain.clearShot, muzzle: h.brain.muzzleClear, aim: h.brain.aimOk, pos: h.mesh.position.toArray() });
       check(h.mesh.position.distanceTo(guardStart) < 0.1, 'Sniper holds its defensive firing position');
-      check(!h.cactus.drone && T.cactusWalls.length === 0 && h.cd.huskHop === 0, 'AI does not invent drone or battlement use');
+      check(!h.cactus.drone && T.cactusWalls.length === 0 && h.cd.huskHop === 0, 'Visible in-range threat keeps Cactus on its rifle');
       setup(); const approaching = zombie(12, 7, 'shambler'); T.driveCactus(h, 1 / 60);
       const toward = approaching.mesh.position.clone().sub(h.mesh.position).setY(0).normalize();
       check(h.brain.state === 'retreat' && h.input.move.dot(toward) < 0, 'Approaching enemy makes Cactus back away');
@@ -134,6 +136,7 @@ const server = http.createServer((req, res) => {
       check(!h.input.fire, 'Sniper cannot fire through the Tool Shed');
       setup(); for (let i = 0; i < 900; i++) { T.driveCactus(h, 1 / 60); step(); }
       check(Math.hypot(h.mesh.position.x, h.mesh.position.z) < g.CONFIG.cactus.ai.guardRadius + 1, 'Idle guard patrol stays near the garden');
+      check(T.cactusWalls.length + T.cactusMines.length > 0, 'Idle Cactus still fortifies the garden between fights');
       setup(); T.fireCactusSpike(h); T.plantPotatoMine(h); T.plantTallnut(h); T.toggleGarlicDrone(h); T.resetGame();
       check([T.cactusMines, T.cactusWalls, T.cactusDrones, T.cactusShots, T.cactusStrikes, T.cactusTrails].every(a => a.length === 0), 'Match reset removes every Cactus object including smoke');
       h.hp = 73; h.ammo = 5; h.cactus.charges.shuckShot = 1; T.takeControl(g.heroes[1]); T.takeControl(original);
@@ -181,7 +184,7 @@ const server = http.createServer((req, res) => {
       await page.screenshot({ path: path.join(dir, 'cactus-model.png') });
     }
     await page.goto(`http://127.0.0.1:${server.address().port}/live?autoplay`);
-    await page.waitForFunction(() => window.__cactusTest);
+    await page.waitForFunction(() => window.__cactusTest, null, { timeout: 60000 });
     await page.evaluate(() => { const g = window.__game; g.state.over = true; g.configureSquad(['cactus', 'corn', 'sunflower', 'peashooter']); });
     await page.keyboard.press('f');
     await page.waitForFunction(() => window.__cactusTest.cactusWalls.length === 1);

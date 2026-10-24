@@ -30,7 +30,7 @@ const server = http.createServer((req, res) => {
     const errors = [];
     page.on('pageerror', error => errors.push(error.stack));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
-    await page.waitForFunction(() => window.__recoilTest, { timeout: 60000 });
+    await page.waitForFunction(() => window.__recoilTest, null, { timeout: 60000 });
     const checks = await page.evaluate(() => {
       const g = window.__game, T = window.__recoilTest, checks = [];
       const check = (ok, label) => { if (!ok) throw new Error(label); checks.push(label); };
