@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.11.1)
+## Current state (v1.11.2)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -109,6 +109,14 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   retreat or leash. Spawning: `queueEscorts` gives each wave pack a chance (`AGENTS.escort`) to bring 1–2 agents
   `escort.delay` s after its burst, same spawn/route, capped by `WAVES[i].agentCap`; they 'guard' (trail the pack) until a
   plant nears the pack or hits them, or the pack dies. Weapon damage × `AGENTS.damageMult`. Debug key 0 spawns one of each.
+- Scientist agent (section "Scientist", tuning `ZOMBIE_TYPES.scientist.agent/kit`, `healStation`): procedural rig
+  (`buildScientistTemplate` built once, cloned per spawn with own materials via `attachAgentRig` → parts.animate /
+  flashMats / dispose): wild white hair locks, riveted goggles with magnified eyes, open toothy mouth, stained lab coat,
+  striped tie, rubber gloves, bare foot + boot, goo tank with antenna dish, triple-barrel Goo Blaster. `animateScientist`:
+  shamble gait, aim/recoil/reload pump, throw, hair spring, eye darts, warp spin-shrink. Goo Blaster = pellet shotgun
+  (`gooPellets`, distance falloff). `scientistBehave`: Warp behind a plant (commit, plant opening or long stalk) or away
+  when low; Sticky Explody Ball (`stickyBalls`, sticks to plants, beeps, AoE); Heal Station = a destructible zombie
+  (`healStation` behavior) healing zombies in its aura; holds there until healed. Tests: `tests/scientist.cjs`.
 - Bosses: `miniBoss` Brute (`brute`: closest target, never gives up, telegraphed charge → dazed if dodged);
   `finalBoss` Zombie King (`overlord`: phases at 66/33% change targeting + call reinforcements; phase 2 armor
   only heavy hits break, hp locked; phase 3 enraged + charges). HUD boss bar shows armor.
