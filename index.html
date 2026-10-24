@@ -132,6 +132,13 @@
   #banner { position: fixed; top: 22%; width: 100%; text-align: center; pointer-events: none; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
   #banner .title { font-size: 48px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; }
   #banner .sub { font-size: 15px; margin-top: 6px; color: var(--dim); }
+  /* Boss slot machine (waves 5 and 10): a reel under the countdown */
+  #bossSlot { display: none; margin: 12px auto 0; width: fit-content; padding: 6px 22px; border: 2px solid var(--boss); border-radius: 10px;
+    background: rgba(40,8,6,0.7); font-size: 22px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #ffd0c8; }
+  #bossSlot.spin { animation: slotShake 0.12s linear infinite; }
+  #bossSlot.landed { color: var(--boss); box-shadow: 0 0 22px rgba(255,90,74,0.6); }
+  #bossSlot small { display: block; font-size: 10px; letter-spacing: 3px; color: var(--dim); }
+  @keyframes slotShake { 50% { transform: translateY(1px); } }
   #bannerCount { color: var(--accent) !important; font-weight: 700; letter-spacing: 1px; }
   #laneArrow { position: fixed; top: 120px; left: 50%; transform: translateX(-50%); text-align: center; color: var(--accent);
                text-shadow: 0 1px 6px rgba(0,0,0,0.7); pointer-events: none; display: none; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
@@ -240,7 +247,7 @@
 <div id="ammo" class="panel"><span class="n" id="ammoN">0</span><span class="max" id="ammoMax"></span>
   <div id="reloadBar"><div id="reloadFill"></div></div><div class="label" id="weaponLabel">COB BUSTERS</div></div>
 <div id="targetHint">BUTTER BARRAGE — Left click to call the strike · Right click to cancel</div>
-<div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div><div id="waveSummary"></div></div>
+<div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div><div id="bossSlot"></div><div id="waveSummary"></div></div>
 <div id="laneArrow"><div class="arrow">&#x2B06;</div><div class="label"></div></div>
 <div id="message"></div>
 <div id="shopPrompt"></div>
@@ -274,7 +281,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.20.0';
+const VERSION = 'v1.21.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -1097,6 +1104,34 @@ const CONFIG = {
   //   packs     — spawn in order; `delay` = hidden seconds after the previous pack (shrunk by packDelayTighten)
   //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
   // Lanes rotate between waves so no single spot covers everything.
+  // Boss slot machine: on these waves the pack marked `bossSlot: true` gets a rolled boss encounter.
+  // The reel spins during the countdown and lands `spin` s in. weight = [first slot wave, second slot wave].
+  //   zombies - added to the pack (scaled like the pack; bosses stay single)
+  //   agents  - this many random unlocked tactical agents join the pack ([min, max])
+  BOSS_SLOT: {
+    waves: [4, 9], spin: 4, ticks: 0.07,
+    options: [
+      { key: 'gargantuar', label: 'Gargantuar',       weight: [3, 2], zombies: { miniBoss: 1 } },
+      { key: 'mecha',      label: 'Mecha Gargantuar', weight: [1, 3], zombies: { finalBoss: 1 } },
+      { key: 'agents',     label: 'Agent Squad',      weight: [2, 2], agents: [4, 6] },
+      { key: 'mixed',      label: 'Mixed Pack',       weight: [2, 2], zombies: { plated: 3, bomber: 2, howler: 1, banner: 1 }, agents: [2, 3] },
+    ],
+  },
+  // Extraction finale after the last wave: a landing zone opens out in the map; the squad runs there and holds it
+  // under a final horde. The zone charges while a living plant stands inside (faster with more plants).
+  FINALE: {
+    distance: [70, 115],     // m from the statue (a random reachable nav cell)
+    radius: 9,               // m: the landing zone
+    hold: 30,                // s of one plant inside to fill the charge...
+    perExtraPlant: 0.35,     // ...each extra plant inside adds this much speed
+    timeLimit: 180,          // s: the rescue leaves without you (defeat)
+    interval: 3.2,           // s between horde groups
+    group: [4, 7],           // zombies per group
+    maxAlive: 70,            // no new groups above this many living zombies
+    agentChance: 0.18,       // per group: one tactical agent comes along
+    mix: ['shambler', 'shambler', 'shambler', 'sprinter', 'sprinter', 'plated', 'spitter', 'bomber', 'climber', 'howler', 'banner'],
+    aggroRange: 120,         // the finale horde hunts plants (no sight needed) instead of the statue
+  },
   WAVES: [
     // Pacing: packs every ~6 s in waves 1–2, ~7–8 s in 3–4, ~10–13 s after; one longer lull (~22–28 s) mid-wave before a heavy pack.
     // 1 — tutorial: shamblers, Orchard Road both routes (4 packs)
@@ -1135,11 +1170,11 @@ const CONFIG = {
       { spawn: 'longRoad', delay: 7, zombies: { shambler: 6, spitter: 2 } },
       { spawn: 'climb', delay: 8, zombies: { shambler: 6, climber: 2, plated: 1 } },
     ] },
-    // 5 — the Brute leads the third pack so later enemies can catch up (10)
+    // 5 — the boss slot (BOSS_SLOT) rides with the third pack so later enemies can catch up (10)
     { agentCap: 2, packs: [
       { spawn: 'flank', zombies: { shambler: 5, sprinter: 2 } },
       { spawn: 'longRoad', delay: 9, zombies: { shambler: 6 } },
-      { spawn: 'longRoad', delay: 9, zombies: { miniBoss: 1, shambler: 6 } },
+      { spawn: 'longRoad', delay: 9, bossSlot: true, zombies: { shambler: 6 } },
       { spawn: 'climb', delay: 9, zombies: { shambler: 4, spitter: 2 } },
       { spawn: 'choke', delay: 14, zombies: { shambler: 5, plated: 1 } },
       { spawn: 'flank', delay: 11, zombies: { sprinter: 4 } },
@@ -1217,7 +1252,7 @@ const CONFIG = {
       { spawn: 'choke', delay: 11, zombies: { spitter: 3, bomber: 2 } },
       { spawn: 'longRoad', delay: 14, zombies: { shambler: 9, plated: 3, sprinter: 3, banner: 1 } },
     ] },
-    // 10 — finale: the Zombie King leads pack nine, with his court following after a breather (20)
+    // 10 — the second boss slot leads pack nine, a court follows after a breather (20); extraction (FINALE) after
     { agentCap: 4, packs: [
       { spawn: 'longRoad', zombies: { shambler: 7 } },
       { spawn: 'flank', delay: 12, zombies: { sprinter: 5 } },
@@ -1227,7 +1262,7 @@ const CONFIG = {
       { spawn: 'flank', delay: 11, zombies: { shambler: 4, banner: 1, howler: 1 } },
       { spawn: 'choke', delay: 11, zombies: { shambler: 6 } },
       { spawn: 'climb', delay: 11, zombies: { climber: 3, shambler: 3 } },
-      { spawn: 'longRoad', delay: 12, zombies: { finalBoss: 1, shambler: 8, plated: 2 } },
+      { spawn: 'longRoad', delay: 12, bossSlot: true, zombies: { shambler: 8, plated: 2 } },
       { spawn: 'flank', delay: 11, zombies: { sprinter: 5, bomber: 1 } },
       { spawn: 'choke', delay: 11, zombies: { shambler: 5, spitter: 2 } },
       { spawn: 'longRoad', delay: 28, zombies: { shambler: 7, plated: 2, banner: 1 } },
@@ -4479,6 +4514,24 @@ for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
   scene.add(ring, beacon);
   spawnMarkers[name] = { ring, beacon, on: false };
 }
+// Extraction landing zone (finale): ring rebuilt on the terrain where it opens, beacon reused (materials match the
+// spawn markers', so no new shader program mid-match)
+const extractZone = {
+  ring: new THREE.Mesh(new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({ color: 0x7dff6a, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide })),
+  beacon: new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 60, 12),
+    new THREE.MeshBasicMaterial({ color: 0x7dff6a, transparent: true, opacity: 0.45, depthWrite: false })),
+};
+extractZone.ring.visible = extractZone.beacon.visible = false;
+scene.add(extractZone.ring, extractZone.beacon);
+function showExtractZone(pos) {
+  const Z = extractZone;
+  Z.ring.visible = Z.beacon.visible = !!pos;
+  if (!pos) return;
+  Z.ring.geometry.dispose();
+  Z.ring.geometry = areaRingGeometry({ x: pos.x, z: pos.z, r: CONFIG.FINALE.radius });
+  Z.beacon.position.set(pos.x, heightAt(pos.x, pos.z) + 30, pos.z);
+}
 // Countdown markers for a wave's resolved packs
 function showSpawnMarkers(packs) {
   for (const [name, m] of Object.entries(spawnMarkers)) {
@@ -5168,7 +5221,9 @@ function resetGame() {
     statueHp: CONFIG.statue.hp,
     gardenAlert: null,   // { z, t } while a zombie is hitting the garden (hidden AI alert)
     waveIndex: 0,
-    phase: 'countdown', // 'countdown' | 'active'
+    phase: 'countdown', // 'countdown' | 'active' | 'extract' (finale)
+    bossRoll: null,     // boss slot machine result for this wave ({ opt, t, landed... })
+    finale: null,       // extraction finale ({ pos, charge, t, inside... })
     waveTimer: 0,
     spawnQueue: [],     // pending staggered spawns: { t, type, spawn, anchor, skull }
     distractions: [],   // { pos, time, radius } — zombies inside drop everything and go there
@@ -5188,6 +5243,7 @@ function resetGame() {
   };
   document.getElementById('waveSummary').replaceChildren();
   document.getElementById('matchStats').style.display = 'none';
+  showExtractZone(null);
   for (const h of heroes) {
     h.cd.shuckShot = h.cd.huskHop = h.cd.butterBarrage = 0;
     h.shuckQueue = 0;
@@ -5428,6 +5484,51 @@ function beginCountdown(index) {
   showSpawnMarkers(state.packs);
   document.getElementById('bannerTitle').textContent = `Wave ${index + 1}`;
   document.getElementById('bannerSub').textContent = `Incoming: ${incomingPreview(WAVES[index])}`;
+  rollBossSlot(index);
+}
+
+// ---- Boss slot machine (CONFIG.BOSS_SLOT) ----
+// The result is rolled when the countdown starts; the reel only shows it (spins, slows down, lands).
+function rollBossSlot(index) {
+  const B = CONFIG.BOSS_SLOT, slot = B.waves.indexOf(index), el = document.getElementById('bossSlot');
+  state.bossRoll = null;
+  el.style.display = 'none';
+  if (slot < 0) return;
+  const total = B.options.reduce((a, o) => a + o.weight[slot], 0);
+  let r = Math.random() * total, pick = B.options[0];
+  for (const o of B.options) if ((r -= o.weight[slot]) < 0) { pick = o; break; }
+  state.bossRoll = { opt: pick, t: 0, next: 0, face: 0, landed: false };
+  el.style.display = 'block';
+  el.className = 'spin';
+}
+function updateBossSlot(dt) {
+  const R = state.bossRoll, B = CONFIG.BOSS_SLOT;
+  if (!R || R.landed) return;
+  R.t += dt;
+  if (R.t >= B.spin) { landBossSlot(); return; }
+  if ((R.next -= dt) > 0) return;
+  const k = R.t / B.spin;
+  R.next = B.ticks * (1 + 6 * k * k);   // the reel slows down
+  R.face = (R.face + 1) % B.options.length;
+  document.getElementById('bossSlot').innerHTML = `<small>Boss roll</small>${B.options[R.face].label}`;
+  SFX.play('tick', true);
+}
+function landBossSlot() {
+  const R = state.bossRoll;
+  if (!R || R.landed) return;
+  R.landed = true;
+  const el = document.getElementById('bossSlot');
+  el.className = 'landed';
+  el.innerHTML = `<small>Boss roll</small>${R.opt.label}`;
+  SFX.play('bossArrive');
+  setMessage(`Boss roll: ${R.opt.label}!`, 3);
+}
+// Rolled agents for the slot pack: random tactical agents unlocked by this wave
+function bossSlotAgents(R, index) {
+  if (!R.opt.agents) return [];
+  const pool = Object.keys(ZT).filter(k => ZT[k].agent && ZT[k].agent.unlockWave <= index);
+  const n = Math.round(randRange(R.opt.agents));
+  return Array.from({ length: n }, () => pool[Math.floor(Math.random() * pool.length)]);
 }
 
 // Queue every pack of the wave; each pack's zombies are spread (shuffled) over CONFIG.spawnBurst seconds
@@ -5444,7 +5545,10 @@ function startWave(index) {
   for (const pack of state.packs) {
     packStart += (pack.delay || 0) * tighten;
     const list = [];
-    for (const [type, n] of Object.entries(pack.zombies)) for (let i = 0; i < scaledCount(type, n); i++) list.push(type);
+    // The boss slot pack also gets the rolled encounter: its zombie types join the list, its agents follow the burst
+    const R = pack.bossSlot && state.bossRoll, zs = { ...pack.zombies };
+    if (R) for (const [t, n] of Object.entries(R.opt.zombies || {})) zs[t] = (zs[t] || 0) + n;
+    for (const [type, n] of Object.entries(zs)) for (let i = 0; i < scaledCount(type, n); i++) list.push(type);
     list.sort(() => Math.random() - 0.5);
     // Part of the pack gathers around a shared anchor, the rest appears anywhere in the area; the first drops the skull.
     // Bosses ignore the pack's area: they arrive at a random one
@@ -5453,8 +5557,11 @@ function startWave(index) {
       ? { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: randomLane(), skull: true }
       : { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn, skull: i === 0,
           anchor: Math.random() < CONFIG.packCluster ? pack.anchor : null, pack: packId }));
+    if (R) bossSlotAgents(R, index).forEach((type, i) => state.spawnQueue.push({
+      t: packStart + CONFIG.spawnBurst + 1 + i * 0.6, type, spawn: pack.spawn, anchor: pack.anchor, pack: packId, skull: i === 0 }));
     queueEscorts(index, pack, packStart + CONFIG.spawnBurst, packId++, escorts);
   }
+  if (state.bossRoll) { landBossSlot(); document.getElementById('bossSlot').style.display = 'none'; }
   // (Future: apply WAVES[index].modifiers here for special waves.)
 }
 
@@ -5500,12 +5607,13 @@ addEventListener('keydown', e => {
   }
   // Debug: P = drop Captain Deadbeard at the spawn nearest the squad
   if (e.code === 'KeyP') { spawnAgent('pirate'); setMessage('[debug] spawned Captain Deadbeard', 1.5); }
-  // Debug: N = skip to the next wave's countdown (clears current zombies); B = spawn the mini-boss (Brute)
-  if (e.code === 'KeyN') {
+  // Debug: N = skip to the next wave's countdown (clears current zombies; after the last wave: the finale);
+  // B = spawn the Gargantuar
+  if (e.code === 'KeyN' && state.phase !== 'extract') {
     zombies.forEach(z => { z.dead = true; scene.remove(z.mesh); });
     zombies = []; state.spawnQueue = [];
-    if (state.waveIndex < WAVES.length - 1) { beginCountdown(state.waveIndex + 1); setBanner(true); }
-    setMessage(`[debug] skipped to wave ${state.waveIndex + 1}`, 1.5);
+    if (state.waveIndex < WAVES.length - 1) { beginCountdown(state.waveIndex + 1); setBanner(true); setMessage(`[debug] skipped to wave ${state.waveIndex + 1}`, 1.5); }
+    else { setBanner(false); startFinale(); }
   }
   if (e.code === 'KeyB') spawnZombie('miniBoss');
   // Debug: V = spawn the final boss; G = drop a test distraction (future Chili Bean Bomb) at the aim point
@@ -5606,7 +5714,11 @@ function endGame(won) {
   SFX.play(won ? 'victory' : 'defeat');
   document.exitPointerLock();
   document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
-  document.getElementById('overlaySub').innerHTML = (won ? 'The garden is safe.' : 'The statue fell.') + '<br><b>Click to restart</b>';
+  const why = won ? (state.finale ? 'The squad got out. The garden is safe.' : 'The garden is safe.')
+    : state.finale?.timeUp ? 'The rescue left without you.' : 'The statue fell.';
+  showExtractZone(null);
+  document.getElementById('laneArrow').style.display = 'none';
+  document.getElementById('overlaySub').innerHTML = why + '<br><b>Click to restart</b>';
   showMatchStats(won);
   document.getElementById('squadPicker').style.display = 'block';
   document.getElementById('matchButton').textContent = 'DEFEND AGAIN';
@@ -18215,15 +18327,93 @@ function updateRevivePrompt() {
   reviveEl.classList.toggle('near', h.reviveNear);
 }
 
+// ---- Extraction finale (CONFIG.FINALE) ----
+// After the last wave: a landing zone opens out in the map, a final horde streams in and hunts the plants,
+// and the squad wins by holding the zone until it is fully charged (before the time limit).
+function startFinale() {
+  const F = CONFIG.FINALE;
+  let pos = null;
+  for (let tries = 0; tries < 40 && !pos; tries++) {
+    const a = Math.random() * Math.PI * 2, d = randRange(F.distance);
+    const k = nearestNavCell(Math.cos(a) * d, Math.sin(a) * d);
+    if (k < 0) continue;
+    const x = NAV.cx(k % NAV.N), z = NAV.cx(Math.floor(k / NAV.N));
+    if (Math.hypot(x, z) >= F.distance[0] * 0.8) pos = new THREE.Vector3(x, heightAt(x, z), z);
+  }
+  pos ||= new THREE.Vector3(CONFIG.SPAWN_POINTS.flank.x, 0, CONFIG.SPAWN_POINTS.flank.z);   // fallback: a known open area
+  state.phase = 'extract';
+  state.spawnQueue = [];
+  state.finale = { pos, charge: 0, t: F.timeLimit, next: 1, inside: 0, timeUp: false };
+  showExtractZone(pos);
+  showSpawnMarkers([]);
+  SFX.play('waveHorn');
+  setMessage('EXTRACTION! Get to the landing zone and hold it!', 4);
+}
+// The spawn areas farthest from the landing zone feed the horde, so it arrives while the squad is holding
+function finaleLane(pos) {
+  const lanes = Object.entries(CONFIG.SPAWN_POINTS).sort((a, b) =>
+    Math.hypot(b[1].x - pos.x, b[1].z - pos.z) - Math.hypot(a[1].x - pos.x, a[1].z - pos.z));
+  return lanes[Math.floor(Math.random() * Math.min(3, lanes.length))][0];
+}
+function spawnFinaleGroup() {
+  const F = CONFIG.FINALE, f = state.finale, lane = finaleLane(f.pos), anchor = packAnchor(lane);
+  const n = Math.max(1, Math.round(randRange(F.group) * DIFF().count));
+  for (let i = 0; i < n; i++) {
+    const z = spawnZombie(F.mix[Math.floor(Math.random() * F.mix.length)], lane, Math.random() < 0.6 ? anchor : null);
+    // This horde hunts plants: a per-zombie copy of the type's def with long, sightless aggro
+    z.def = { ...z.def, aggroRange: F.aggroRange, deaggroRange: F.aggroRange * 1.2, noLos: true, ignoreLeash: true };
+    z.pref = 'heroFirst';
+    if (i === 0) spawnSkull(z.mesh.position);
+  }
+  if (Math.random() < F.agentChance) {
+    const pool = Object.keys(ZT).filter(k => ZT[k].agent && ZT[k].agent.unlockWave <= WAVES.length - 1);
+    spawnAgent(pool[Math.floor(Math.random() * pool.length)], lane, anchor);
+  }
+}
+function updateFinale(dt) {
+  const F = CONFIG.FINALE, f = state.finale;
+  f.t -= dt;
+  if ((f.next -= dt) <= 0) { f.next = F.interval; if (zombies.length < F.maxAlive) spawnFinaleGroup(); }
+  f.inside = heroes.filter(h => h.active && targetable(h) && flatDist(h.mesh.position, f.pos) <= F.radius).length;
+  if (f.inside) f.charge = Math.min(1, f.charge + dt / F.hold * (1 + F.perExtraPlant * (f.inside - 1)));
+  extractZone.ring.material.color.set(f.inside ? 0x7dff6a : 0xffd84a);
+  extractZone.ring.material.opacity = 0.5 + 0.35 * Math.sin(state.time * 5);
+  updateFinaleArrow();
+  if (f.charge >= 1) { endGame(true); return; }
+  if (f.t <= 0) { f.timeUp = true; endGame(false); }
+}
+// AI plants run for the zone (own A* path, sprinting) while outside it; their aim and fire stay their own
+function finaleSteer(h, dt) {
+  const f = state.finale;
+  if (state.phase !== 'extract' || !f || !targetable(h)) return;
+  const pos = h.mesh.position, d = flatDist(pos, f.pos);
+  if (d < CONFIG.FINALE.radius * 0.6) { h.extractPath = null; return; }
+  if (!h.extractPath || (h.extractPathT -= dt) <= 0) { h.extractPath = findPath(pos, f.pos) || []; h.extractPathT = 1.5; }
+  while (h.extractPath.length && flatDist(pos, h.extractPath[0]) < 1.5) h.extractPath.shift();
+  h.input.move.copy(h.extractPath[0] || f.pos).sub(pos).setY(0).normalize();
+  h.input.sprint = d > 15;
+}
+// HUD arrow points at the landing zone while the controlled plant is outside it
+function updateFinaleArrow() {
+  const el = document.getElementById('laneArrow'), f = state.finale, fw = yawForward(), p = playerMesh.position;
+  const dx = f.pos.x - p.x, dz = f.pos.z - p.z, d = Math.hypot(dx, dz);
+  el.style.display = d > CONFIG.FINALE.radius ? 'block' : 'none';
+  el.querySelector('.arrow').style.transform = `rotate(${Math.atan2(dx * -fw.z + dz * fw.x, dx * fw.x + dz * fw.z)}rad)`;
+  el.querySelector('.arrow').style.color = '#7dff6a';
+  el.querySelector('.label').textContent = `Landing zone · ${Math.round(d)} m`;
+}
+
 function updateWaves(dt) {
   if (state.phase === 'countdown') {
     state.waveTimer -= dt;
     setBanner(true);
     document.getElementById('bannerCount').textContent = `${shopOpen() ? 'Shop open · ' : ''}Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
     updateLaneArrow();
+    updateBossSlot(dt);
     if (state.waveTimer <= 0) startWave(state.waveIndex);
     return;
   }
+  if (state.phase === 'extract') { updateFinale(dt); return; }
   // Active: release queued spawns whose time has come
   for (const s of state.spawnQueue) {
     s.t -= dt;
@@ -18241,7 +18431,7 @@ function updateWaves(dt) {
   state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {
-    if (state.waveIndex === WAVES.length - 1) endGame(true);
+    if (state.waveIndex === WAVES.length - 1) { SFX.play('waveClear'); sweepCoins(); startFinale(); }
     else { SFX.play('waveClear'); sweepCoins(); showWaveSummary(state.waveIndex); beginCountdown(state.waveIndex + 1); }
   }
 }
@@ -18373,8 +18563,11 @@ function updateHud(dt) {
   const now = performance.now();
   if (now - fpsShownAt > 250) { fpsShownAt = now; hud('fps').textContent = `${Math.round(fpsAvg)} FPS`; }
   const left = zombies.length + state.spawnQueue.length;
-  hud('waveLine').innerHTML = `Wave <b>${state.waveIndex + 1}</b> / ${WAVES.length}` +
-    (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'}` : '');
+  const f = state.finale, clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  hud('waveLine').innerHTML = state.phase === 'extract'
+    ? `<b>EXTRACTION</b> &nbsp;·&nbsp; zone <b>${Math.floor(f.charge * 100)}%</b>${f.inside ? ` (${f.inside} in)` : ''} &nbsp;·&nbsp; <b>${clock(Math.max(0, f.t))}</b>`
+    : `Wave <b>${state.waveIndex + 1}</b> / ${WAVES.length}` +
+      (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'}` : '');
   const boss = zombies.find(z => z.def.boss);
   hud('bossHud').style.display = boss ? 'block' : 'none';
   if (boss) {
@@ -18578,7 +18771,7 @@ function loop() {
     state.time += dt;
     readPlayerInput(player);
     updateGardenAlert(dt);
-    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
+    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
     for (const h of heroes) updateHero(h, dt);
     updateZombies(dt);
     updateProjectiles(dt);
@@ -18645,6 +18838,8 @@ Object.assign(window.__game, { get engineerShells() { return engineerShells; }, 
 Object.assign(window.__game, { gargantuarState, gargantuarStartSlam, launchGargantuarImp });
 // Match flow hooks (smoke tests): stats, settings, difficulty
 Object.assign(window.__game, { damageZombie, endGame, SETTINGS, changeSetting, DIFF, sun });
+// Boss slot + extraction finale hooks (tests/boss-finale.cjs)
+Object.assign(window.__game, { beginCountdown, startWave, startFinale, extractZone });
 Object.defineProperty(window.__game, 'particleCap', { get: () => particleCap });
 // Imp inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { THREE, renderer, buildImp, buildZMech, callZMech, throwGravityGrenade, ejectZMech });

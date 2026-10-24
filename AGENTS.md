@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.20.0)
+## Current state (v1.21.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -34,8 +34,11 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Renders: `tests/horde-models.cjs` → `docs/horde-*.png`.
 - Zombies: `CONFIG.ZOMBIE_TYPES` (behavior key → `BEHAVIORS`), shared brain `CONFIG.AI`. Tactical agents (Imp, Foot
   Soldier, All-Star, Captain Deadbeard, Super Brainz, Engineer, Scientist) use `thinkAgent` + own kits, tuning
-  `CONFIG.AGENTS` (`damageMult`, `sizeMult` 2× size: hitbox scaled in `scaleAgentDef`, models built at base size then mesh-scaled; local rig offsets use `rigHalf`). Bosses (Gargantuar wave 5, Mecha Gargantuar wave 10)
-  spawn at a random lane and prefer plants (`heroFirst`). Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
+  `CONFIG.AGENTS` (`damageMult`, `sizeMult` 2× size: hitbox scaled in `scaleAgentDef`, models built at base size then mesh-scaled; local rig offsets use `rigHalf`). Bosses spawn at a random lane and prefer plants
+  (`heroFirst`). Boss slot machine (`CONFIG.BOSS_SLOT`): waves 5 and 10 roll Gargantuar / Mecha / agent squad / mixed
+  pack for the pack marked `bossSlot` (reel in the countdown banner). After wave 10 the extraction finale
+  (`CONFIG.FINALE`, phase `'extract'`): hold a random landing zone until charged under a plant-hunting horde, before
+  the time limit; AI plants path there (`finaleSteer`). Test: `tests/boss-finale.cjs`. Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
 - Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static statue flow fields, A* for AI plants.
   Spawn areas (`CONFIG.SPAWN_POINTS`: center, `r`, `minStatue`) — zombies appear anywhere inside; packs roll a random
   area (`randomPackSpawns`), part of a pack clusters on an anchor. Waves are data in `CONFIG.WAVES`.

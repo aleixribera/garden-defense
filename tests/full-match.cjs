@@ -74,6 +74,7 @@ const SQUAD = ['corn', 'peashooter', 'sunflower', 'cactus'];
           st.waveTimer = Math.min(st.waveTimer, 0.01);
           return { wave: st.waveIndex, text };
         }
+        if (st.phase === 'extract') { st.finale.charge = 1; return { wave: st.waveIndex, active: true }; }   // finale: zone held
         for (const s of st.spawnQueue) s.t = 0;
         for (const z of g.zombies) if (!z.dead) g.damageZombie(z, 1e7, z.mesh.position.clone(), false, true, owner);
         st.statueHp = Math.max(st.statueHp, 400); st.statueSeen = st.statueHp;   // keep the AI-only fight from losing
