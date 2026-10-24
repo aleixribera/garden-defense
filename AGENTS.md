@@ -6,13 +6,17 @@
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.15.0)
+## Current state (v1.15.1)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
   compiles) runs after the squad is chosen, behind the loading screen (section "Main menu + boot"). Anything built
   lazily must be prewarmed in `prewarmAssets()`; per-spawn procedural rigs come from `RIG_POOL` via `takeRig()`.
   `?autoplay` and automated browsers skip the menu gate.
+- **No-stutter rules:** never add/remove lights mid-match (borrow `takeFxLight()`); shader programs are pinned and new
+  variants compile in parallel behind `updateShaderGuard`; agent rigs are baked (`bakeRig`) templates cloned by
+  `cloneRig` (~1 ms); plain zombie bodies and particles draw instanced (`ZOMBIE_BATCH`, `PARTICLE_BATCH`); share
+  geometry for per-shot/per-effect meshes instead of building it each spawn.
 - Squad: picker = your plant + 0–3 AI companions (Corn, Peashooter, Sunflower, Cactus; default shuffled). `makeHero`
   gives each hero its own stats/weapon/abilities/brain; every hero is driven by `h.input` (human: `readPlayerInput`,
   AI: `PLANT_TYPES[type].drive`). Tab / [ ] switch control. Down → respawn after `CONFIG.squad.respawnDelay` (20 s),

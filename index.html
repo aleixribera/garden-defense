@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.15.0';
+const VERSION = 'v1.15.1';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -938,6 +938,7 @@ const CONFIG = {
   maxParticles: 450,
   render: {
     minShadowCaster: 0.03,     // m: baked rig parts smaller than this skip the shadow pass (under a shadow texel)
+    zombieBatch: 400,          // instanced capsule bodies per zombie type (overflow draws individually)
   },
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
@@ -2954,6 +2955,41 @@ for (const [name, def] of Object.entries(ZT)) {
     mat: new THREE.MeshLambertMaterial({ color: def.color }),
   };
 }
+// Horde bodies are drawn instanced: every plain capsule of one type is one draw (+ one shadow draw) instead of one
+// each. A zombie keeps its own hidden mesh + material (logic, hit-flash state); updateZombieBatches copies its
+// transform and emissive into the type's InstancedMesh right before rendering.
+const ZOMBIE_BATCH = {};
+for (const [name, a] of Object.entries(zombieAssets)) {
+  const geo = a.geo.clone(), cap = CONFIG.render.zombieBatch;
+  const emissive = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+  emissive.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('instEmissive', emissive);
+  const mat = a.mat.clone();
+  mat.onBeforeCompile = sh => {
+    sh.vertexShader = 'attribute vec3 instEmissive;\nvarying vec3 vInstEmissive;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vInstEmissive = instEmissive;');
+    sh.fragmentShader = 'varying vec3 vInstEmissive;\n' +
+      sh.fragmentShader.replace('vec3 totalEmissiveRadiance = emissive;', 'vec3 totalEmissiveRadiance = emissive + vInstEmissive;');
+  };
+  mat.customProgramCacheKey = () => 'zombie-batch';
+  const mesh = new THREE.InstancedMesh(geo, mat, cap);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0;
+  scene.add(mesh);
+  ZOMBIE_BATCH[name] = { mesh, emissive };
+}
+function updateZombieBatches() {
+  for (const b of Object.values(ZOMBIE_BATCH)) b.mesh.count = 0;
+  for (const z of zombies) {
+    if (!z.batched || !z.mesh.parent || !z.mesh.visible) continue;
+    const b = ZOMBIE_BATCH[z.type], i = b.mesh.count;
+    if (i >= CONFIG.render.zombieBatch) { z.batched = false; z.mesh.material.visible = true; continue; }   // full: draw alone
+    z.mesh.updateMatrix();
+    b.mesh.setMatrixAt(i, z.mesh.matrix);   // zombie meshes are scene children: local = world
+    const e = z.mesh.material.emissive; b.emissive.setXYZ(i, e.r, e.g, e.b);
+    b.mesh.count++;
+  }
+  for (const b of Object.values(ZOMBIE_BATCH)) if (b.mesh.count) { b.mesh.instanceMatrix.needsUpdate = true; b.emissive.needsUpdate = true; }
+}
 const spitGeo = new THREE.SphereGeometry(ZT.spitter.projectileRadius, 8, 8);
 const spitMat = new THREE.MeshBasicMaterial({ color: 0xb060ff });
 const kernelShotGeo = new THREE.SphereGeometry(1, 8, 6);
@@ -3488,7 +3524,6 @@ function resetGame() {
   zombies.forEach(z => { z.dead = true; z.parts.dispose?.(); });   // release each rig's own resources
   [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects]
     .forEach(o => scene.remove(o.mesh));
-  particles.forEach(p => freeParticle(p.mesh));
   popups.forEach(p => p.el.remove());
   skulls.forEach(s => s.life = 0);   // removed on the next updateSkulls
   zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
@@ -3689,6 +3724,8 @@ function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
   };
   zombies.push(zombie);
   if (type === 'imp') setupImp(zombie);
+  // A plain visible capsule joins its type's instanced batch; its own mesh stays as the hidden logic/flash body
+  if (mesh.material.visible && mesh.material.colorWrite) { zombie.batched = true; mesh.material.visible = false; }
   return zombie;
 }
 
@@ -3944,39 +3981,65 @@ const PARTICLE_GEO = {
   puff: new THREE.SphereGeometry(0.3, 8, 6),
   leaf: new THREE.PlaneGeometry(0.22, 0.1),
 };
-// Particle meshes are recycled (no per-particle material/mesh allocation, no GC churn). A recycled mesh has been
-// drawn already, so it skips the shader guard (`prewarmed`).
-const particlePool = [];
-function freeParticle(m) { scene.remove(m); m.prewarmed = true; particlePool.push(m); }
-function spawnParticle(kind, color, pos, vel, { life = 0.6, gravity = 18, grow = 0, size = 1, additive = false, drag = 0 } = {}) {
-  let mesh = particlePool.pop();
-  if (mesh) { mesh.geometry = PARTICLE_GEO[kind]; mesh.material.color.set(color); mesh.material.opacity = 1; }
-  else mesh = new THREE.Mesh(PARTICLE_GEO[kind], new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }));
-  mesh.material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
-  mesh.position.copy(pos);
-  mesh.scale.setScalar(size);
-  mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+// Particles are drawn instanced: one InstancedMesh per shape and blend mode (8 draws however many particles fly),
+// with per-instance color and fade (instAlpha). updateParticleBatches writes them right before rendering.
+const PARTICLE_BATCH = {};
+for (const kind of Object.keys(PARTICLE_GEO)) for (const additive of [false, true]) {
+  const geo = PARTICLE_GEO[kind].clone(), cap = CONFIG.maxParticles;
+  const alpha = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1);
+  alpha.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('instAlpha', alpha);
+  const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
+    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+  mat.onBeforeCompile = sh => {
+    sh.vertexShader = 'attribute float instAlpha;\nvarying float vInstAlpha;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vInstAlpha = instAlpha;');
+    sh.fragmentShader = 'varying float vInstAlpha;\n' +
+      sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity * vInstAlpha );');
+  };
+  mat.customProgramCacheKey = () => 'particle-batch';
+  const mesh = new THREE.InstancedMesh(geo, mat, cap);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.setColorAt(0, new THREE.Color()); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false; mesh.count = 0;
   scene.add(mesh);
-  particles.push({ mesh, vel, life, maxLife: life, gravity, grow, size, drag,
+  PARTICLE_BATCH[kind + (additive ? '+' : '')] = { mesh, alpha };
+}
+function spawnParticle(kind, color, pos, vel, { life = 0.6, gravity = 18, grow = 0, size = 1, additive = false, drag = 0 } = {}) {
+  particles.push({ batch: PARTICLE_BATCH[kind + (additive ? '+' : '')], color: new THREE.Color(color), pos: pos.clone(),
+    rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), scale: size, alpha: 1,
+    vel, life, maxLife: life, gravity, grow, size, drag,
     spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14) });
-  if (particles.length > CONFIG.maxParticles) freeParticle(particles.shift().mesh);
+  if (particles.length > CONFIG.maxParticles) particles.shift();
 }
 const rand3 = (s, up = 0) => new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s + up, (Math.random() - 0.5) * s);
 
 function updateParticles(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i], m = p.mesh;
+    const p = particles[i], pos = p.pos;
     p.life -= dt;
-    if (p.life <= 0) { freeParticle(m); particles.splice(i, 1); continue; }
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
     p.vel.y -= p.gravity * dt;
     if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
-    m.position.addScaledVector(p.vel, dt);
-    const fy = heightAt(m.position.x, m.position.z) + 0.04;
-    if (m.position.y < fy) { m.position.y = fy; p.vel.multiplyScalar(0.4); p.vel.y = Math.abs(p.vel.y) * 0.3; }
-    m.rotation.x += p.spin.x * dt; m.rotation.y += p.spin.y * dt;
+    pos.addScaledVector(p.vel, dt);
+    const fy = heightAt(pos.x, pos.z) + 0.04;
+    if (pos.y < fy) { pos.y = fy; p.vel.multiplyScalar(0.4); p.vel.y = Math.abs(p.vel.y) * 0.3; }
+    p.rot.x += p.spin.x * dt; p.rot.y += p.spin.y * dt;
     const k = 1 - p.life / p.maxLife;
-    m.scale.setScalar(p.size * (1 + p.grow * k));
-    m.material.opacity = Math.min(1, (1 - k) * 2);
+    p.scale = p.size * (1 + p.grow * k);
+    p.alpha = Math.min(1, (1 - k) * 2);
+  }
+}
+const _pq = new THREE.Quaternion(), _ps = new THREE.Vector3(), _pm = new THREE.Matrix4();
+function updateParticleBatches() {
+  for (const b of Object.values(PARTICLE_BATCH)) b.mesh.count = 0;
+  for (const p of particles) {
+    const b = p.batch, i = b.mesh.count++;
+    b.mesh.setMatrixAt(i, _pm.compose(p.pos, _pq.setFromEuler(p.rot), _ps.setScalar(p.scale)));
+    b.mesh.setColorAt(i, p.color);
+    b.alpha.setX(i, p.alpha);
+  }
+  for (const b of Object.values(PARTICLE_BATCH)) if (b.mesh.count) {
+    b.mesh.instanceMatrix.needsUpdate = b.mesh.instanceColor.needsUpdate = b.alpha.needsUpdate = true;
   }
 }
 
@@ -16338,6 +16401,8 @@ function loop() {
   updateSunflowerHud();
   updateRevivePrompt();
   mateDebug.draw();
+  updateZombieBatches();
+  updateParticleBatches();
   updateShaderGuard();
   renderer.render(scene, camera);
   debugMap.draw();
