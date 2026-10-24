@@ -47,6 +47,14 @@
   #gardenBox .hbar { height: 12px; --c: var(--garden); }
   #waveLine { margin-top: 7px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #waveLine b { color: var(--text); font-weight: 700; }
+  #coinLine { margin-top: 4px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #coinLine b { color: #ffd84a; font-weight: 800; }
+  #shopPrompt { position: fixed; bottom: 30%; width: 100%; text-align: center; pointer-events: none; font-size: 16px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8); color: #fff3c4; }
+  #shopPrompt kbd { display: inline-block; min-width: 18px; padding: 1px 6px; margin: 0 3px; border-radius: 4px;
+    background: rgba(0,0,0,0.55); border: 1px solid #c8a83a; font: inherit; font-weight: 800; color: #ffd84a; }
+  #shopPrompt .poor { color: #ff8a6a; }
+  body.preMatch #shopPrompt { visibility: hidden; }
   #bossHud { margin-top: 14px; display: none; }
   #bossHud .hbar { height: 8px; --c: var(--boss); }
   #bossName { color: var(--boss); }
@@ -203,6 +211,7 @@
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
     </div>
     <div id="waveLine"></div>
+    <div id="coinLine">🪙 <b id="coinNum">0</b> coins</div>
     <div class="hbox" id="bossHud">
       <div class="row"><span class="label" id="bossName">Boss</span><span class="num" id="bossNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
@@ -234,6 +243,7 @@
 <div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div><div id="waveSummary"></div></div>
 <div id="laneArrow"><div class="arrow">&#x2B06;</div><div class="label"></div></div>
 <div id="message"></div>
+<div id="shopPrompt"></div>
 <div id="sunflowerStatus" role="status"></div>
 <div id="cactusScope"></div><div id="droneHud"></div>
 <div id="fps"></div>
@@ -264,7 +274,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.19.0';
+const VERSION = 'v1.20.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -1049,6 +1059,38 @@ const CONFIG = {
   },
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
+
+  // Garden Ops economy (section "Garden Ops economy"): zombies drop coins, the squad shares one wallet,
+  // and between waves the human spends it on potted plants (POTS) and statue repair.
+  economy: {
+    startCoins: 0,
+    coinValue: { zombie: 5, agent: 20, boss: 150 },   // total value a kill drops (per-type override: ZOMBIE_TYPES[t].coins)
+    coinPiece: 5,              // value of one coin pickup; a drop splits into ceil(value / coinPiece) coins (max 8)
+    maxCoins: 300,             // instanced coin pickups alive at once (oldest are auto-collected past this)
+    coinLife: 30,              // s before an uncollected coin is auto-collected anyway
+    magnetRadius: 7, magnetSpeed: 22, pickupRadius: 1.2,   // any hero standing nearby pulls coins in
+    shopTime: 30,              // s of shopping between waves (Enter starts the wave early)
+    readyTime: 3,              // s left on the clock after Enter
+    reach: 2.6,                // m from a pot spot to plant there
+    statueReach: 3.5,          // m from the statue face to repair it
+    repair: { hp: 150, cost: 75 },
+  },
+  // Potted plants: stationary, invulnerable turrets bought on pot spots around the statue. Peashooter and Kernel pots
+  // fire the hero weapons (PLANTS.peashooter.weapon / CONFIG.weapon) with pot overrides; Snapdragon breathes a fire
+  // cone, Chomper swallows the nearest zombie whole and chews for a while (bosses take a big bite instead).
+  POTS: {
+    spots: { count: 8, radius: 11, angle: Math.PI / 8 },   // ring of pot spots around the statue
+    muzzleY: 1.35,             // m above the ground the pot shoots from
+    turnSpeed: 8,              // rad/s the head turns toward its target
+    types: {
+      peashooter: { name: 'Peashooter Pot', cost: 100, range: 38, weapon: 'peashooter',
+        override: { fireRate: 0.9, damage: 30, splashDamage: 15 } },
+      kernel: { name: 'Kernel Pot', cost: 125, range: 42, weapon: 'corn',
+        override: { fireRate: 0.16, damage: 11, spread: 0.03 } },
+      snapdragon: { name: 'Snapdragon Pot', cost: 150, range: 10, cone: 0.55, tick: 0.2, damage: 14 },
+      chomper: { name: 'Chomper Pot', cost: 175, range: 4.5, damage: 2000, bossDamage: 250, chew: 9, biteTime: 0.35 },
+    },
+  },
 
   // Waves as data. Each wave: { lanes?, packs: [{ spawn?, delay, zombies: { type: count } }], modifiers: [] }
   //   lanes     — optional: spawns this wave may use; packs without `spawn` take them in turn
@@ -5121,6 +5163,7 @@ function resetGame() {
   skulls.forEach(s => s.life = 0);   // removed on the next updateSkulls
   zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
   hordeCorpses = [];
+  clearEconomy();
   state = {
     statueHp: CONFIG.statue.hp,
     gardenAlert: null,   // { z, t } while a zombie is hitting the garden (hidden AI alert)
@@ -5140,6 +5183,8 @@ function resetGame() {
     difficulty: SETTINGS.difficulty,   // preset key, locked for the match
     statueSeen: CONFIG.statue.hp,      // statue hp after last frame's difficulty scaling
     stats: newMatchStats(),
+    coins: CONFIG.economy.startCoins,   // shared squad wallet (section "Garden Ops economy")
+    shopChoice: 0,                      // POTS type offered on an empty pot spot (Z cycles)
   };
   document.getElementById('waveSummary').replaceChildren();
   document.getElementById('matchStats').style.display = 'none';
@@ -5378,7 +5423,7 @@ function incomingPreview(wave) {
 function beginCountdown(index) {
   state.waveIndex = index;
   state.phase = 'countdown';
-  state.waveTimer = CONFIG.waveCountdown;
+  state.waveTimer = index > 0 ? CONFIG.economy.shopTime : CONFIG.waveCountdown;   // shop between waves
   state.packs = resolvePacks(index);
   showSpawnMarkers(state.packs);
   document.getElementById('bannerTitle').textContent = `Wave ${index + 1}`;
@@ -5490,6 +5535,12 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ') pressed.shuck = true;
   if (e.code === 'KeyE') pressed.hop = true;
   if (e.code === 'KeyF') toggleButterTargeting();
+  // Garden Ops shop (between waves): C buy / repair, Z next pot type, Enter start the wave early
+  if (e.code === 'KeyC') shopBuy();
+  if (e.code === 'KeyZ') shopCycle(e.shiftKey ? -1 : 1);
+  if (e.code === 'Enter') shopReady();
+  // Debug: J = +500 coins
+  if (e.code === 'KeyJ') { state.coins += 500; setMessage('[debug] +500 coins', 1.5); }
 });
 addEventListener('keyup', e => keys[e.code] = false);
 let mouseDown = false, rightDown = false;
@@ -16908,6 +16959,7 @@ function removeDeadZombies() {
     const z = zombies[i];
     if (!z.dead) continue;
     if (z.horde && z.hp <= 0) hordeKill(z);   // killed (not exploded): its body falls as a corpse
+    if (z.hp <= 0 && !z.buried) dropCoins(z);   // Garden Ops economy
     releaseSlot(z);
     if (z.imp?.call) scene.remove(z.imp.call.rig.root, z.imp.call.marker, z.imp.call.beam);
     const finish = () => {
@@ -17837,6 +17889,317 @@ function updateFallenTag(h, fallen, left) {
   tag.textContent = `${PLANT_ICONS[h.type] || ''} ${h.name} · ${Math.ceil(left)}s`;
 }
 // Revive prompt + progress ring, projected over the downed teammate
+// =====================================================================
+// Garden Ops economy — coin drops, pot spots + potted plants, between-wave shop and statue repair
+// =====================================================================
+const EC = CONFIG.economy, PT = CONFIG.POTS;
+const POT_KEYS = Object.keys(PT.types);
+// Coins: one instanced mesh for every pickup (no per-coin meshes, no mid-match shader work)
+const coinMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.24, 0.24, 0.07, 16).rotateX(Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: 0xffc83a, metalness: 0.7, roughness: 0.3, emissive: 0x6a4400 }), EC.maxCoins);
+coinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+coinMesh.count = 0; coinMesh.frustumCulled = false; coinMesh.castShadow = true;
+scene.add(coinMesh);
+let coins = [];   // { pos, vel, value, life, spin }
+const coinDummy = new THREE.Object3D(), potMuzzle = new THREE.Vector3();
+
+// Pot spots: a ring around the statue; a glowing ring marks each empty one while the shop is open
+const potSpots = [];
+{
+  const ringGeo = new THREE.RingGeometry(0.75, 0.95, 28).rotateX(-Math.PI / 2);
+  for (let i = 0; i < PT.spots.count; i++) {
+    const a = PT.spots.angle + i / PT.spots.count * Math.PI * 2;
+    const x = Math.cos(a) * PT.spots.radius, z = Math.sin(a) * PT.spots.radius;
+    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x9cff6a, transparent: true, opacity: 0.6, depthWrite: false }));
+    ring.position.set(x, heightAt(x, z) + 0.05, z);
+    scene.add(ring);
+    potSpots.push({ pos: new THREE.Vector3(x, heightAt(x, z), z), ring, pot: null });
+  }
+}
+
+// Potted plant models: built once per type at load, cloned (shared geometry + materials) on purchase
+const POT_MAT = {
+  clay: new THREE.MeshLambertMaterial({ color: 0xb8643a }), soil: new THREE.MeshLambertMaterial({ color: 0x4a3020 }),
+  leaf: new THREE.MeshLambertMaterial({ color: 0x3f8f2e }), pea: new THREE.MeshLambertMaterial({ color: 0x8cd23a }),
+  corn: new THREE.MeshLambertMaterial({ color: 0xffd23a }), husk: new THREE.MeshLambertMaterial({ color: 0x7fb842 }),
+  snap: new THREE.MeshLambertMaterial({ color: 0xd8402a }), snapLip: new THREE.MeshLambertMaterial({ color: 0xffa23a }),
+  chomp: new THREE.MeshLambertMaterial({ color: 0x8a3fb0 }), tooth: new THREE.MeshLambertMaterial({ color: 0xf4f0e0 }),
+  dark: new THREE.MeshLambertMaterial({ color: 0x1a1210 }),
+};
+function buildPotModel(type) {
+  const root = new THREE.Group(), head = new THREE.Group();
+  const add = (parent, geo, mat, x = 0, y = 0, z = 0) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m;
+  };
+  add(root, new THREE.CylinderGeometry(0.55, 0.4, 0.7, 14), POT_MAT.clay, 0, 0.35, 0);
+  add(root, new THREE.CylinderGeometry(0.6, 0.6, 0.12, 14), POT_MAT.clay, 0, 0.7, 0);
+  add(root, new THREE.CylinderGeometry(0.5, 0.5, 0.04, 14), POT_MAT.soil, 0, 0.75, 0);
+  add(root, new THREE.CylinderGeometry(0.06, 0.08, 0.6, 6), POT_MAT.leaf, 0, 1.0, 0);
+  head.position.y = PT.muzzleY; root.add(head);
+  let jaw = null;
+  if (type === 'peashooter') {
+    add(head, new THREE.SphereGeometry(0.38, 14, 10), POT_MAT.pea);
+    add(head, new THREE.CylinderGeometry(0.13, 0.16, 0.45, 12).rotateX(Math.PI / 2), POT_MAT.pea, 0, 0, 0.42);
+    add(head, new THREE.CircleGeometry(0.1, 12), POT_MAT.dark, 0, 0, 0.651);
+    add(head, new THREE.ConeGeometry(0.12, 0.35, 6).rotateX(-Math.PI / 2.4), POT_MAT.leaf, 0, 0.2, -0.38);
+  } else if (type === 'kernel') {
+    add(head, new THREE.CapsuleGeometry(0.24, 0.45, 6, 12), POT_MAT.corn, 0, 0.05, 0);
+    for (const s of [-1, 1]) add(head, new THREE.ConeGeometry(0.16, 0.7, 6).rotateZ(s * 0.5), POT_MAT.husk, s * 0.24, -0.15, 0);
+    add(head, new THREE.CylinderGeometry(0.08, 0.1, 0.3, 10).rotateX(Math.PI / 2), POT_MAT.husk, 0, 0, 0.32);
+  } else if (type === 'snapdragon') {
+    add(head, new THREE.ConeGeometry(0.3, 0.9, 12).rotateX(Math.PI / 2), POT_MAT.snap, 0, 0, 0.2);
+    add(head, new THREE.TorusGeometry(0.16, 0.05, 6, 14), POT_MAT.snapLip, 0, 0, 0.62);
+    for (const s of [-1, 1]) add(head, new THREE.ConeGeometry(0.08, 0.35, 6).rotateX(-0.9), POT_MAT.snap, s * 0.14, 0.28, -0.1);
+  } else {   // chomper
+    add(head, new THREE.SphereGeometry(0.45, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), POT_MAT.chomp);
+    jaw = new THREE.Group(); head.add(jaw);
+    add(jaw, new THREE.SphereGeometry(0.45, 14, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), POT_MAT.chomp);
+    for (let i = 0; i < 6; i++) {
+      const a = -0.9 + i * 0.36;
+      add(head, new THREE.ConeGeometry(0.05, 0.14, 4).rotateX(Math.PI), POT_MAT.tooth, Math.sin(a) * 0.38, -0.05, Math.cos(a) * 0.38);
+      add(jaw, new THREE.ConeGeometry(0.05, 0.14, 4), POT_MAT.tooth, Math.sin(a) * 0.38, 0.05, Math.cos(a) * 0.38);
+    }
+  }
+  return root;
+}
+const POT_TEMPLATES = Object.fromEntries(POT_KEYS.map(k => [k, buildPotModel(k)]));
+function clonePotModel(type) {
+  const root = POT_TEMPLATES[type].clone();
+  // userData is copied by reference; find this clone's own head / jaw by path
+  const head = root.children[root.children.length - 1];
+  return { root, head, jaw: type === 'chomper' ? head.children[1] : null };
+}
+// The weapon a pot fires: its hero's weapon plus the pot's overrides
+function potWeapon(def) {
+  if (!def.weapon) return null;
+  const base = def.weapon === 'corn' ? CONFIG.weapon : CONFIG.PLANTS[def.weapon].weapon;
+  return { ...base, ...def.override };
+}
+
+// ---- Coins ----
+function coinValueOf(z) {
+  const def = z.def;
+  if (def.coins !== undefined) return def.coins;
+  return def.boss ? EC.coinValue.boss : isAgent(z) ? EC.coinValue.agent : EC.coinValue.zombie;
+}
+// Called when a zombie is killed (removeDeadZombies): scatter its value as coin pickups
+function dropCoins(z) {
+  const value = coinValueOf(z);
+  if (!value) return;
+  const n = Math.min(8, Math.ceil(value / EC.coinPiece)), at = z.mesh.position;
+  for (let i = 0; i < n; i++) {
+    if (coins.length >= EC.maxCoins) collectCoin(coins.shift(), false);   // full: the oldest one pays out
+    const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 2.5;
+    coins.push({ pos: new THREE.Vector3(at.x, Math.max(at.y, heightAt(at.x, at.z) + 0.6), at.z),
+      vel: new THREE.Vector3(Math.cos(a) * s, 6 + Math.random() * 3, Math.sin(a) * s),
+      value: value / n, life: EC.coinLife, spin: Math.random() * 6, magnet: null });
+  }
+}
+function collectCoin(c, sound = true, h = null) {
+  state.coins += c.value;
+  if (sound) SFX.play('sunPickup', !h || h === player ? null : c.pos);
+}
+function sweepCoins() {   // wave cleared: everything still on the ground is collected
+  let sum = 0;
+  for (const c of coins) { sum += c.value; collectCoin(c, false); }
+  coins = [];
+  if (sum >= 1) setMessage(`+${Math.round(sum)} coins swept up`, 2);
+}
+function updateCoins(dt) {
+  for (let i = coins.length - 1; i >= 0; i--) {
+    const c = coins[i], p = c.pos;
+    c.life -= dt; c.spin += dt * 5;
+    if (c.life <= 0) { collectCoin(c, false); coins.splice(i, 1); continue; }
+    // Magnet: the nearest standing hero in range pulls the coin in
+    if (!c.magnet || !targetable(c.magnet)) {
+      c.magnet = null;
+      let best = EC.magnetRadius ** 2;
+      for (const h of heroes) if (h.active && targetable(h)) {
+        const d = h.mesh.position.distanceToSquared(p);
+        if (d < best) { best = d; c.magnet = h; }
+      }
+    }
+    if (c.magnet) {
+      const to = tmP.copy(c.magnet.mesh.position).sub(p), d = to.length();
+      if (d < EC.pickupRadius) { collectCoin(c, true, c.magnet); coins.splice(i, 1); continue; }
+      c.vel.copy(to.multiplyScalar(EC.magnetSpeed / Math.max(d, 0.01)));
+    } else {
+      c.vel.y -= 22 * dt;
+      c.vel.x *= Math.exp(-dt * 1.5); c.vel.z *= Math.exp(-dt * 1.5);
+    }
+    p.addScaledVector(c.vel, dt);
+    const g = heightAt(p.x, p.z) + 0.25;
+    if (!c.magnet && p.y < g) { p.y = g; c.vel.y = Math.abs(c.vel.y) > 2 ? -c.vel.y * 0.35 : 0; }
+  }
+}
+function drawCoins() {
+  coinMesh.count = coins.length;
+  for (let i = 0; i < coins.length; i++) {
+    const c = coins[i];
+    coinDummy.position.copy(c.pos);
+    coinDummy.position.y += Math.sin(c.spin * 0.8) * 0.06;
+    coinDummy.rotation.set(0, c.spin, 0);
+    coinDummy.scale.setScalar(c.life < 3 ? Math.max(0.2, c.life / 3) : 1);
+    coinDummy.updateMatrix();
+    coinMesh.setMatrixAt(i, coinDummy.matrix);
+  }
+  coinMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ---- Potted plants ----
+function plantPot(spot, type) {
+  const def = PT.types[type], model = clonePotModel(type);
+  model.root.position.copy(spot.pos);
+  model.root.rotation.y = Math.atan2(spot.pos.x, spot.pos.z);   // face outward
+  scene.add(model.root);
+  spot.pot = { type, def, weapon: potWeapon(def), ...model, spot, cool: 0.5, chew: 0, bite: 0, recoil: 0,
+    yaw: model.root.rotation.y, target: null, scan: 0 };
+  spot.ring.visible = false;
+  spawnRing(spot.pos.clone().setY(spot.pos.y + 0.1), 1.6, 0x9cff6a, 0.5);
+  for (let i = 0; i < 10; i++) spawnParticle('puff', 0x6a4a2a, spot.pos.clone().setY(spot.pos.y + 0.5), rand3(3, 3), { life: 0.6, size: 1.2, grow: 1 });
+}
+function clearEconomy() {
+  coins = []; coinMesh.count = 0;
+  for (const s of potSpots) { if (s.pot) scene.remove(s.pot.root); s.pot = null; s.ring.visible = true; }
+}
+// Nearest zombie a pot can see within range (rescanned a few times per second)
+function potTarget(pot, muzzle) {
+  const r2 = pot.def.range ** 2;
+  let best = null, bd = r2;
+  for (const z of zombies) {
+    if (!validTarget(z)) continue;
+    const d = z.mesh.position.distanceToSquared(muzzle);
+    if (d < bd && losClear(muzzle, z.mesh.position)) { bd = d; best = z; }
+  }
+  return best;
+}
+function firePotShot(pot, muzzle, aim) {
+  const W = pot.weapon, pea = pot.def.weapon === 'peashooter';
+  const dir = aim.clone().sub(muzzle).normalize();
+  dir.x += (Math.random() - 0.5) * 2 * W.spread; dir.y += (Math.random() - 0.5) * 2 * W.spread; dir.z += (Math.random() - 0.5) * 2 * W.spread;
+  dir.normalize();
+  const mesh = new THREE.Mesh(pea ? peaShotGeo : kernelShotGeo, pea ? peaShotMat : kernelShotMat);
+  mesh.position.copy(muzzle).addScaledVector(dir, 0.6);
+  if (pea) mesh.scale.setScalar(W.kernelRadius);
+  else { mesh.scale.set(0.075, 0.075, 0.32); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); }
+  scene.add(mesh);
+  projectiles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: null, weapon: W,
+    pea, trailT: 0, gatling: false });
+  SFX.play(pea ? 'peaShot' : 'shot', muzzle, true, false);
+  pot.recoil = 1;
+}
+function updatePots(dt) {
+  for (const spot of potSpots) {
+    const pot = spot.pot;
+    if (!pot) continue;
+    const def = pot.def, muzzle = potMuzzle.copy(spot.pos).setY(spot.pos.y + PT.muzzleY);
+    pot.cool -= dt; pot.recoil *= Math.exp(-dt * 12);
+    if (pot.chew > 0) {   // Chomper: chewing, mouth closed and wobbling
+      pot.chew -= dt;
+      pot.head.scale.setScalar(1 + Math.sin(state.time * 14) * 0.06);
+      if (pot.jaw) pot.jaw.rotation.x = 0;
+      continue;
+    }
+    pot.head.scale.setScalar(1);
+    if ((pot.scan -= dt) <= 0 || !validTarget(pot.target)) { pot.scan = 0.25; pot.target = potTarget(pot, muzzle); }
+    const z = pot.target;
+    if (pot.jaw) pot.jaw.rotation.x = z ? 0.7 : 0.25 + Math.sin(state.time * 2) * 0.1;   // Chomper gapes at prey
+    if (!z) continue;
+    const aim = z.mesh.position;
+    // Turn the head toward the target (yaw on the root, pitch on the head)
+    const want = Math.atan2(aim.x - spot.pos.x, aim.z - spot.pos.z);
+    let dy = want - pot.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    pot.yaw += Math.sign(dy) * Math.min(Math.abs(dy), PT.turnSpeed * dt);
+    pot.root.rotation.y = pot.yaw;
+    pot.head.rotation.x = -Math.atan2(aim.y - muzzle.y, Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z)) * 0.6;
+    pot.head.position.z = -pot.recoil * 0.12;
+    if (Math.abs(dy) > 0.3 || pot.cool > 0) continue;
+    if (pot.weapon) { pot.cool = pot.weapon.fireRate; firePotShot(pot, muzzle, aim); }
+    else if (pot.type === 'snapdragon') snapdragonBreath(pot, muzzle);
+    else chomperBite(pot, z);
+  }
+}
+// Snapdragon: every tick, burn every zombie inside its fire cone
+function snapdragonBreath(pot, muzzle) {
+  const def = pot.def, fwd = new THREE.Vector3(Math.sin(pot.yaw), 0, Math.cos(pot.yaw));
+  pot.cool = def.tick;
+  for (const z of zombies) {
+    if (!validTarget(z)) continue;
+    const to = z.mesh.position.clone().sub(muzzle).setY(0), d = to.length();
+    if (d > def.range + z.def.radius || to.normalize().dot(fwd) < Math.cos(def.cone)) continue;
+    damageZombie(z, def.damage, z.mesh.position, false, false, null);
+  }
+  for (let i = 0; i < 6; i++) {
+    const v = fwd.clone().multiplyScalar(def.range * (1.2 + Math.random())).add(rand3(def.range * Math.sin(def.cone) * 0.8, 1));
+    spawnParticle('puff', i % 2 ? 0xff7a1a : 0xffc23a, muzzle.clone().addScaledVector(fwd, 0.6), v,
+      { life: 0.45, gravity: -2, grow: 2.5, size: 0.9, additive: true, drag: 2 });
+  }
+}
+// Chomper: swallow the target (bosses lose a chunk instead), then chew
+function chomperBite(pot, z) {
+  const def = pot.def, boss = z.def.boss;
+  if (z.mesh.position.distanceTo(pot.spot.pos) > def.range + z.def.radius) return;
+  damageZombie(z, boss ? def.bossDamage : def.damage, z.mesh.position, false, true, null);
+  pot.chew = boss ? def.chew * 0.5 : def.chew;
+  pot.cool = def.biteTime;
+  if (pot.jaw) pot.jaw.rotation.x = 0;
+  SFX.play('zombieDeath', z.mesh.position, z.type);
+  spawnPopup(pot.spot.pos.clone().setY(pot.spot.pos.y + 2.2), 'CHOMP!', '#d79cff');
+}
+
+// ---- Shop (between waves, human only) ----
+function shopOpen() { return state.phase === 'countdown' && state.waveIndex > 0 && !state.over; }
+// What the human could buy right here: an empty pot spot or the statue
+function shopOffer() {
+  if (!shopOpen() || !targetable(player)) return null;
+  const p = player.mesh.position;
+  let spot = null, bd = EC.reach;
+  for (const s of potSpots) { const d = Math.hypot(s.pos.x - p.x, s.pos.z - p.z); if (d < bd) { bd = d; spot = s; } }
+  if (spot && !spot.pot) { const type = POT_KEYS[state.shopChoice]; return { kind: 'pot', spot, type, cost: PT.types[type].cost }; }
+  if (spot) return { kind: 'owned', spot };
+  if (statueFaceDist(p) < EC.statueReach) {
+    if (state.statueHp >= CONFIG.statue.hp) return { kind: 'full' };
+    return { kind: 'repair', cost: EC.repair.cost };
+  }
+  return null;
+}
+function shopBuy() {
+  const o = shopOffer();
+  if (!o || !o.cost) return;
+  if (state.coins < o.cost) { SFX.play('tick', true); setMessage('Not enough coins', 1.2); return; }
+  state.coins -= o.cost;
+  if (o.kind === 'pot') { plantPot(o.spot, o.type); SFX.play('respawn', o.spot.pos); setMessage(`${PT.types[o.type].name} planted`, 1.5); }
+  else {
+    state.statueHp = Math.min(CONFIG.statue.hp, state.statueHp + EC.repair.hp); state.statueSeen = state.statueHp;
+    SFX.play('sunPickup', null);
+    spawnPopup(statueMesh.position.clone().setY(S + 1), `+${EC.repair.hp}`, '#9cff6a');
+  }
+}
+function shopCycle(step = 1) { state.shopChoice = (state.shopChoice + step + POT_KEYS.length) % POT_KEYS.length; SFX.play('tick', true); }
+function shopReady() { if (shopOpen() && state.waveTimer > EC.readyTime) state.waveTimer = EC.readyTime; }
+const shopPromptEl = document.getElementById('shopPrompt');
+let shopPromptHtml = '';
+function updateShopPrompt() {
+  const o = shopOffer(), open = shopOpen();
+  for (const s of potSpots) s.ring.visible = !s.pot && open;
+  let html = '';
+  if (o?.kind === 'pot') html = `<kbd>C</kbd> plant <b>${PT.types[o.type].name}</b> · <span class="${state.coins < o.cost ? 'poor' : ''}">${o.cost} coins</span> &nbsp; <kbd>Z</kbd> next pot`;
+  else if (o?.kind === 'repair') html = `<kbd>C</kbd> repair garden +${EC.repair.hp} · <span class="${state.coins < o.cost ? 'poor' : ''}">${o.cost} coins</span>`;
+  else if (o?.kind === 'owned') html = `${o.spot.pot.def.name}`;
+  else if (o?.kind === 'full') html = 'Garden at full health';
+  else if (open) html = 'Shop open: walk to a pot spot or the statue &nbsp; <kbd>Enter</kbd> start the wave';
+  if (html !== shopPromptHtml) { shopPromptHtml = html; shopPromptEl.innerHTML = html; }
+}
+function updateEconomy(dt) {
+  updateCoins(dt);
+  updatePots(dt);
+}
+function drawEconomy() {
+  drawCoins();
+  updateShopPrompt();
+  hud('coinNum').textContent = `${Math.floor(state.coins)}`;
+}
+
 const reviveEl = document.getElementById('revive'), reviveRing = document.getElementById('reviveRing');
 const RING_LEN = 2 * Math.PI * 26;
 function updateRevivePrompt() {
@@ -17856,7 +18219,7 @@ function updateWaves(dt) {
   if (state.phase === 'countdown') {
     state.waveTimer -= dt;
     setBanner(true);
-    document.getElementById('bannerCount').textContent = `Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
+    document.getElementById('bannerCount').textContent = `${shopOpen() ? 'Shop open · ' : ''}Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
     updateLaneArrow();
     if (state.waveTimer <= 0) startWave(state.waveIndex);
     return;
@@ -17879,7 +18242,7 @@ function updateWaves(dt) {
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {
     if (state.waveIndex === WAVES.length - 1) endGame(true);
-    else { SFX.play('waveClear'); showWaveSummary(state.waveIndex); beginCountdown(state.waveIndex + 1); }
+    else { SFX.play('waveClear'); sweepCoins(); showWaveSummary(state.waveIndex); beginCountdown(state.waveIndex + 1); }
   }
 }
 
@@ -18238,6 +18601,7 @@ function loop() {
     updateSkulls(dt, state.time);
     animateMarkers(state.time);
     updateParticles(dt);
+    updateEconomy(dt);
     updateWaves(dt);
     for (const h of heroes) if (h.active) { h.plant.animate(h, dt); heroJuice(h, dt); }
     muzzleLight.intensity *= Math.exp(-dt * 30);
@@ -18256,6 +18620,7 @@ function loop() {
   updateCactusHud();
   updateSunflowerHud();
   updateRevivePrompt();
+  drawEconomy();
   mateDebug.draw();
   updateZombieBatches(playing ? dt : 0);
   updateParticleBatches();
@@ -18271,6 +18636,8 @@ if (AUTOPLAY) { matchStarted = true; document.body.classList.remove('preMatch');
 window.__game = { CONFIG, PLANT_TYPES, get state() { return state; }, get corn() { return corn; }, camera, scene, spawnZombie, spawnAgent, explodeAt, get zombies() { return zombies; },
   heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, ZROUTE, distractAt, heroes, get player() { return player; }, get mate() { return mate; },
   get matchStarted() { return matchStarted; }, findPath, configureSquad, switchSquadMember, damageHero, SFX, get fps() { return fpsAvg; } };
+// Economy hooks (smoke tests)
+Object.assign(window.__game, { potSpots, plantPot, shopBuy, shopCycle, shopReady, shopOffer, dropCoins, get coins() { return coins; } });
 // Engineer inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { get engineerShells() { return engineerShells; }, get sonicGrenades() { return sonicGrenades; },
   engineerTemplate, turretTemplate, makeEngineerBody, throwSonicGrenade, spawnTurret });
@@ -18368,10 +18735,14 @@ function prewarmAssets() {
   try { AS_IMP ||= asImpTemplate(); AS_SHIELD ||= asShieldTemplate(); } catch (err) { console.warn('prewarm all-star', err); }
   for (const z of zombies) z.mesh.visible = true;
   spawnCactusTrail(new THREE.Vector3(0, 2, 0), new THREE.Vector3(0, 2, 6));
+  const potWarm = Object.values(POT_TEMPLATES);   // potted plants + coins compile now, never mid-match
+  potWarm.forEach((t, i) => { t.position.set(potSpots[i].pos.x, potSpots[i].pos.y, potSpots[i].pos.z); scene.add(t); });
+  coinMesh.count = 1;
   scene.traverse(singlePass);
   renderer.compile(scene, camera);
   fillRigPools();
   warmUpload();
+  potWarm.forEach(t => scene.remove(t)); coinMesh.count = 0;
   pinPrograms();   // keep every program alive past the reset below
   prewarmShadowVariants();
   resetGame();
