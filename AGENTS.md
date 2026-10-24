@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.18.1)
+## Current state (v1.19.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -50,8 +50,15 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   per-class `JA.deathPose` and flop on landing. Agent offsets are undone before behaviors (`unJuiceAgent`). Test: `tests/animation.cjs`.
 - Camera (`CONFIG.camera`): plant sits low-left (`shoulder`, `lift`); `clearZone` slides the shoulder out if the
   plant's silhouette reaches the crosshair.
+- Match flow: `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
+  between-waves summary (`showWaveSummary`, under the countdown banner) and end-of-match table (`showMatchStats`).
+- Difficulty presets `CONFIG.DIFFICULTY` (`DIFF()`, locked per match in `state.difficulty`): zombieHp (scales hits in
+  `damageZombie`), zombieDamage (`damageHero`), statueDamage (per-frame statue loss in `loop`), count (`scaledCount`).
+- Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, FOV, quality; menu + Esc pause
+  panel; systems register appliers with `onSettings()`.
 - Debug: F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses, M map, K stress horde.
-  `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright).
+  `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright); `npm test` runs all,
+  `npm run test:smoke` = full-match autoplay (`tests/full-match.cjs`).
 
 ## Code rules
 - All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.

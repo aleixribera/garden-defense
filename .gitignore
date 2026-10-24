@@ -1,3 +1,4 @@
 # Local editor launch settings and Chromium diagnostics
 .claude/
 debug.log
+node_modules/

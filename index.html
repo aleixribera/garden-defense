@@ -93,6 +93,31 @@
   #squadSlots select { width: 100%; font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 12px 7px; font-size: 13px; }
   #squadSummary { margin-top: 20px; font-size: 13px; color: var(--accent); }
   #matchButton { font: inherit; border: 0; border-radius: 8px; background: var(--accent); color: #182314; cursor: pointer; font-size: 15px; font-weight: 800; padding: 14px 32px; }
+  #difficultyPick { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; font-size: 12px;
+    color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  #overlay select { font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 8px; font-size: 13px; }
+  /* Settings (menu + Esc pause) */
+  #settingsPanel { width: min(760px, 94vw); margin: 0 0 20px; padding: 14px 20px; box-sizing: border-box; border: 1px solid var(--line);
+    border-radius: 14px; background: rgba(12,25,16,.92); display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; text-align: left; }
+  #settingsPanel h3 { grid-column: 1 / -1; margin: 0; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+  #settingsPanel label { display: grid; gap: 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  #settingsPanel output { color: var(--accent); font-weight: 800; margin-left: 4px; }
+  #settingsPanel input[type=range] { width: 100%; accent-color: var(--accent); }
+  /* End-of-match stats */
+  #matchStats { display: none; width: min(760px, 94vw); margin: 18px 0; padding: 16px 20px; box-sizing: border-box; border: 1px solid var(--line);
+    border-radius: 14px; background: rgba(12,25,16,.92); }
+  #matchStats .line { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
+  #matchStats table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  #matchStats th { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); padding: 4px 6px; text-align: right; }
+  #matchStats td { padding: 7px 6px; text-align: right; border-top: 1px solid rgba(255,255,255,0.08); font-variant-numeric: tabular-nums; }
+  #matchStats th:first-child, #matchStats td:first-child { text-align: left; }
+  #matchStats tr.mvp td:first-child::after { content: ' ★ MVP'; color: var(--accent); font-size: 11px; font-weight: 800; }
+  /* Between-waves summary (under the countdown banner) */
+  #waveSummary { margin: 14px auto 0; max-width: 560px; font-size: 14px; line-height: 1.7; color: #e8f4dc; }
+  #waveSummary:empty { display: none; }
+  #waveSummary .head { font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); }
+  #waveSummary .mvp { color: var(--accent); font-weight: 800; }
+  @media (max-width: 700px) { #settingsPanel { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 700px) { #squadSlots { grid-template-columns: repeat(2, 1fr); } #overlayTitle { font-size: 28px; } }
   body.preMatch #hud, body.preMatch #abilities, body.preMatch #ammo, body.preMatch #banner,
   body.preMatch #laneArrow, body.preMatch #crosshair { visibility: hidden; }
@@ -206,7 +231,7 @@
 <div id="ammo" class="panel"><span class="n" id="ammoN">0</span><span class="max" id="ammoMax"></span>
   <div id="reloadBar"><div id="reloadFill"></div></div><div class="label" id="weaponLabel">COB BUSTERS</div></div>
 <div id="targetHint">BUTTER BARRAGE — Left click to call the strike · Right click to cancel</div>
-<div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div></div>
+<div id="banner"><div class="title" id="bannerTitle"></div><div class="sub" id="bannerSub"></div><div class="sub" id="bannerCount"></div><div id="waveSummary"></div></div>
 <div id="laneArrow"><div class="arrow">&#x2B06;</div><div class="label"></div></div>
 <div id="message"></div>
 <div id="sunflowerStatus" role="status"></div>
@@ -217,9 +242,17 @@
   <div id="squadPicker"><h2>Choose your squad</h2>
     <p>Choose your plant and up to three autonomous companions. Duplicate plants are allowed.<br>Each plant keeps its health, ammo and cooldowns when you switch.</p>
     <div id="squadSlots"></div><div id="squadSummary"></div>
+    <label id="difficultyPick">Difficulty <select id="setDifficulty" aria-label="Difficulty"></select></label>
+  </div>
+  <div id="matchStats"></div>
+  <div id="settingsPanel"><h3>Settings</h3>
+    <label>Mouse sensitivity <output id="setSensOut"></output><input type="range" id="setSens" step="0.05"></label>
+    <label>Volume <output id="setVolOut"></output><input type="range" id="setVol" min="0" max="1" step="0.05"></label>
+    <label>Field of view <output id="setFovOut"></output><input type="range" id="setFov" step="1"></label>
+    <label>Quality <select id="setQuality" aria-label="Quality"></select></label>
   </div>
   <button id="matchButton">DEFEND THE GARDEN</button>
-  <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · Tab or [ / ] switch plants · Hold X near a downed ally to revive<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
+  <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · Tab or [ / ] switch plants · Hold X near a downed ally to revive · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
 
 <script type="importmap">
 { "imports": {
@@ -231,7 +264,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.18.1';
+const VERSION = 'v1.19.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -879,7 +912,26 @@ const CONFIG = {
       strafeWeight: 0.55, advanceWeight: 1.2, backoffWeight: 1.2, dodgeRadius: 5, dodgeWeight: 1.5 },
   },
   ZOMBIE_SCALE_PER_HERO: 0.6,   // each active hero beyond the first adds this fraction to every non-boss zombie count
-  debugPackSize: 4,             // zombies spawned per debug key press (keys 1–9)
+  // Difficulty presets (squad menu, locked for the match). Multipliers over the base tuning:
+  //   zombieHp - damage a zombie needs to die · zombieDamage - hits on plants · statueDamage - hits on the garden
+  //   count - non-boss zombies per pack (bosses stay single)
+  DIFFICULTY: {
+    casual: { name: 'Casual', zombieHp: 0.7, zombieDamage: 0.6, statueDamage: 0.6, count: 0.75 },
+    normal: { name: 'Normal', zombieHp: 1,   zombieDamage: 1,   statueDamage: 1,   count: 1 },
+    hard:   { name: 'Hard',   zombieHp: 1.3, zombieDamage: 1.3, statueDamage: 1.25, count: 1.2 },
+    crazy:  { name: 'Crazy',  zombieHp: 1.7, zombieDamage: 1.7, statueDamage: 1.5, count: 1.45 },
+  },
+  // Player settings (menu / Esc pause screen), saved in localStorage. Quality: shadows, pixel ratio cap, particle cap
+  settings: {
+    storageKey: 'gardenDefense.settings',
+    defaults: { sensitivity: 1, volume: 0.8, fov: 70, quality: 'high', difficulty: 'normal' },
+    sensitivity: [0.3, 3], fov: [55, 95],
+    QUALITY: {
+      low:  { name: 'Low',  shadows: false, shadowMap: 1024, pixelRatio: 0.75, particles: 150 },
+      med:  { name: 'Med',  shadows: true,  shadowMap: 1024, pixelRatio: 1,    particles: 300 },
+      high: { name: 'High', shadows: true,  shadowMap: 2048, pixelRatio: 2,    particles: 450 },
+    },
+  },  debugPackSize: 4,             // zombies spawned per debug key press (keys 1–9)
   // -------------------------------------------------------------------
   // THE MAP — grey-box layout. x = east, z = south (north is -z). Statue at the origin.
   // Sunken Statue Court (tier 0) → open mid ring (tier 3) walled by cliffs (tier 14), with four
@@ -1200,6 +1252,52 @@ function updateSquadSummary() {
   document.getElementById('squadSummary').textContent = companions ? `${count} plants · you + ${companions} AI companion${companions === 1 ? '' : 's'} · switch freely in combat` : '1 plant · solo defense';
 }
 updateSquadSummary();
+
+// ---------------------------------------------------------------------
+// Settings: loaded from localStorage, edited in the menu / Esc pause screen. Systems built after the boot
+// register an applier with onSettings(); every change re-runs all appliers and saves.
+// ---------------------------------------------------------------------
+const SETTINGS = (() => {
+  const S = CONFIG.settings;
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(S.storageKey)) || {}; } catch { saved = {}; }
+  const s = { ...S.defaults, ...saved };
+  const clamp = (v, [lo, hi], d) => Number.isFinite(+v) ? Math.min(hi, Math.max(lo, +v)) : d;
+  s.sensitivity = clamp(s.sensitivity, S.sensitivity, S.defaults.sensitivity);
+  s.fov = clamp(s.fov, S.fov, S.defaults.fov);
+  s.volume = clamp(s.volume, [0, 1], S.defaults.volume);
+  if (!S.QUALITY[s.quality]) s.quality = S.defaults.quality;
+  if (!CONFIG.DIFFICULTY[s.difficulty]) s.difficulty = S.defaults.difficulty;
+  return s;
+})();
+const settingsAppliers = [];
+function onSettings(apply) { settingsAppliers.push(apply); apply(SETTINGS); }
+function changeSetting(key, value) {
+  SETTINGS[key] = value;
+  try { localStorage.setItem(CONFIG.settings.storageKey, JSON.stringify(SETTINGS)); } catch { /* private mode: keep for this session */ }
+  for (const apply of settingsAppliers) apply(SETTINGS);
+  showSettings();
+}
+// Mirror SETTINGS into the controls
+function showSettings() {
+  const $ = id => document.getElementById(id);
+  $('setSens').value = SETTINGS.sensitivity; $('setSensOut').textContent = `${SETTINGS.sensitivity.toFixed(2)}×`;
+  $('setVol').value = SETTINGS.volume; $('setVolOut').textContent = `${Math.round(SETTINGS.volume * 100)}%`;
+  $('setFov').value = SETTINGS.fov; $('setFovOut').textContent = `${SETTINGS.fov}°`;
+  $('setQuality').value = SETTINGS.quality; $('setDifficulty').value = SETTINGS.difficulty;
+}
+{
+  const $ = id => document.getElementById(id), S = CONFIG.settings;
+  [$('setSens').min, $('setSens').max] = S.sensitivity; [$('setFov').min, $('setFov').max] = S.fov;
+  for (const [key, q] of Object.entries(S.QUALITY)) $('setQuality').add(new Option(q.name, key));
+  for (const [key, d] of Object.entries(CONFIG.DIFFICULTY)) $('setDifficulty').add(new Option(d.name, key));
+  $('setSens').addEventListener('input', e => changeSetting('sensitivity', +e.target.value));
+  $('setVol').addEventListener('input', e => changeSetting('volume', +e.target.value));
+  $('setFov').addEventListener('input', e => changeSetting('fov', +e.target.value));
+  $('setQuality').addEventListener('change', e => changeSetting('quality', e.target.value));
+  $('setDifficulty').addEventListener('change', e => changeSetting('difficulty', e.target.value));
+  showSettings();
+}
 const bootSelection = SKIP_MENU ? null : await new Promise(resolve =>
   document.getElementById('matchButton').addEventListener('click', () => resolve(readSquadSelection()), { once: true }));
 {
@@ -1245,6 +1343,18 @@ Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, n
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
+// Graphics settings: FOV (aim FOV keeps its offset), pixel ratio, sun shadows and the live particle cap
+const BASE_FOV = CONFIG.camera.fov, BASE_AIM_FOV = CONFIG.camera.aimFov;
+let particleCap = CONFIG.maxParticles;
+onSettings(s => {
+  const q = CONFIG.settings.QUALITY[s.quality];
+  CONFIG.camera.fov = s.fov; CONFIG.camera.aimFov = BASE_AIM_FOV + s.fov - BASE_FOV;
+  const ratio = Math.min(devicePixelRatio, q.pixelRatio);
+  if (renderer.getPixelRatio() !== ratio) { renderer.setPixelRatio(ratio); renderer.setSize(innerWidth, innerHeight); }
+  sun.castShadow = q.shadows;   // a change recompiles lit materials once (only from the menu / pause screen)
+  if (sun.shadow.mapSize.x !== q.shadowMap) { sun.shadow.mapSize.set(q.shadowMap, q.shadowMap); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+  particleCap = Math.min(q.particles, CONFIG.maxParticles);
+});
 const rimLight = new THREE.DirectionalLight(0xcfe6ff, 0.9);   // cool back light to pop silhouettes
 rimLight.position.set(-20, 15, -30);
 scene.add(rimLight);
@@ -4939,6 +5049,56 @@ let effects = [];            // short-lived visuals (explosions, rings, splats)
 let particles = [];          // chips, smoke, leaves
 let popups = [];             // floating damage numbers
 
+// Active difficulty preset (CONFIG.DIFFICULTY)
+const DIFF = () => CONFIG.DIFFICULTY[state?.difficulty] || CONFIG.DIFFICULTY.normal;
+
+// ---------------------------------------------------------------------
+// Match stats: one line per squad slot for the whole match and for the current wave.
+// Credit goes to the hero that owns the hit (owner); anything else (turrets, hazards) is ignored.
+// ---------------------------------------------------------------------
+const newStatLine = () => ({ kills: 0, damage: 0, taken: 0, downs: 0, revives: 0 });
+function newMatchStats() {
+  return { match: heroes.map(newStatLine), wave: heroes.map(newStatLine), waveStartHp: CONFIG.statue.hp, waveStartT: 0, waveKills: 0 };
+}
+function recordStat(h, key, n) {
+  const i = h ? heroes.indexOf(h) : -1, S = state?.stats;
+  if (i < 0 || !S || !n) return;
+  S.match[i][key] += n; S.wave[i][key] += n;
+}
+const fmtNum = n => n >= 10000 ? `${(n / 1000).toFixed(0)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+// Index of the line with the most kills (damage breaks ties), or -1 when nobody scored
+function mvpIndex(lines) {
+  let best = -1;
+  lines.forEach((l, i) => { if ((l.kills || l.damage) && (best < 0 || l.kills > lines[best].kills ||
+    (l.kills === lines[best].kills && l.damage > lines[best].damage))) best = i; });
+  return best;
+}
+// Between-waves summary under the next wave's countdown banner, then start a fresh wave line
+function showWaveSummary(index) {
+  const S = state.stats, el = document.getElementById('waveSummary');
+  const kills = S.wave.reduce((n, l) => n + l.kills, 0), lost = Math.max(0, S.waveStartHp - state.statueHp);
+  const mvp = mvpIndex(S.wave);
+  el.innerHTML = `<div class="head">Wave ${index + 1} cleared · ${fmtTime(state.time - S.waveStartT)}</div>` +
+    `<div>${kills} zombies vanquished · garden ${lost > 0 ? `−${Math.round(lost)}` : 'untouched'} (${Math.max(0, Math.ceil(state.statueHp))} / ${CONFIG.statue.hp})</div>` +
+    heroes.map((h, i) => { const l = S.wave[i];
+      return `<div${i === mvp ? ' class="mvp"' : ''}>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1} · ${l.kills} kills · ${fmtNum(l.damage)} dmg` +
+        `${l.downs ? ` · ${l.downs} down${l.downs > 1 ? 's' : ''}` : ''}${l.revives ? ` · ${l.revives} revive${l.revives > 1 ? 's' : ''}` : ''}${i === mvp ? ' ★' : ''}</div>`; }).join('');
+  S.wave = heroes.map(newStatLine); S.waveStartHp = state.statueHp; S.waveStartT = state.time;
+}
+// End-of-match table on the overlay
+function showMatchStats(won) {
+  const S = state.stats, mvp = mvpIndex(S.match), el = document.getElementById('matchStats');
+  const waves = won ? WAVES.length : state.waveIndex;
+  el.innerHTML = `<div class="line">${DIFF().name} · ${waves} / ${WAVES.length} waves cleared · ${fmtTime(state.time)} · garden ${Math.max(0, Math.ceil(state.statueHp))} / ${CONFIG.statue.hp}</div>` +
+    '<table><tr><th>Plant</th><th>Kills</th><th>Damage</th><th>Taken</th><th>Downs</th><th>Revives</th></tr>' +
+    heroes.map((h, i) => { const l = S.match[i];
+      return `<tr${i === mvp ? ' class="mvp"' : ''}><td>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1}${h.isAI ? '' : ' · YOU'}</td>` +
+        `<td>${l.kills}</td><td>${fmtNum(l.damage)}</td><td>${fmtNum(l.taken)}</td><td>${l.downs}</td><td>${l.revives}</td></tr>`; }).join('') +
+    '</table>';
+  el.style.display = 'block';
+}
+
 function resetGame() {
   clearMechaWorld();
   ZROUTE.reset();
@@ -4977,7 +5137,12 @@ function resetGame() {
     shake: 0, fovKick: 0, hurt: 0, hitmarker: 0,
     // camera feel: smoothed pivot, bob phase, roll, landing spring, hurt flinch, last airborne fall speed
     cam: { pivot: null, recoilPitch: 0, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: 0, wasGround: true },
+    difficulty: SETTINGS.difficulty,   // preset key, locked for the match
+    statueSeen: CONFIG.statue.hp,      // statue hp after last frame's difficulty scaling
+    stats: newMatchStats(),
   };
+  document.getElementById('waveSummary').replaceChildren();
+  document.getElementById('matchStats').style.display = 'none';
   for (const h of heroes) {
     h.cd.shuckShot = h.cd.huskHop = h.cd.butterBarrage = 0;
     h.shuckQueue = 0;
@@ -5195,7 +5360,9 @@ function resolvePacks(index) {
 }
 
 // Zombie counts scale with the number of active heroes (bosses stay single)
-const scaledCount = (type, n) => ZT[type].boss ? n : Math.round(n * (1 + CONFIG.ZOMBIE_SCALE_PER_HERO * (activeHeroCount() - 1)));
+// and with the difficulty preset (at least one stays)
+const scaledCount = (type, n) => ZT[type].boss ? n :
+  Math.max(n > 0 ? 1 : 0, Math.round(n * DIFF().count * (1 + CONFIG.ZOMBIE_SCALE_PER_HERO * (activeHeroCount() - 1))));
 
 // "Incoming" preview: bosses first, then the most numerous types across all packs
 function incomingPreview(wave) {
@@ -5351,7 +5518,7 @@ document.addEventListener('pointerlockchange', () => {
 addEventListener('blur', clearHumanInput);
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement !== renderer.domElement) return;
-  const sens = CONFIG.camera.sensitivity * (player.type === 'cactus' ? THREE.MathUtils.lerp(1, CONFIG.cactus.camera.sensitivity, player.zoom) : 1 - 0.35 * player.zoom);
+  const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity * (player.type === 'cactus' ? THREE.MathUtils.lerp(1, CONFIG.cactus.camera.sensitivity, player.zoom) : 1 - 0.35 * player.zoom);
   state.yaw -= e.movementX * sens;
   state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, -0.6, 1.2);
 });
@@ -5389,6 +5556,7 @@ function endGame(won) {
   document.exitPointerLock();
   document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
   document.getElementById('overlaySub').innerHTML = (won ? 'The garden is safe.' : 'The statue fell.') + '<br><b>Click to restart</b>';
+  showMatchStats(won);
   document.getElementById('squadPicker').style.display = 'block';
   document.getElementById('matchButton').textContent = 'DEFEND AGAIN';
   overlay.style.display = 'flex';
@@ -5457,7 +5625,7 @@ function spawnParticle(kind, color, pos, vel, { life = 0.6, gravity = 18, grow =
     rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), scale: size, alpha: 1,
     vel, life, maxLife: life, gravity, grow, size, drag,
     spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14) });
-  if (particles.length > CONFIG.maxParticles) particles.shift();
+  while (particles.length > particleCap) particles.shift();
 }
 const rand3 = (s, up = 0) => new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s + up, (Math.random() - 0.5) * s);
 
@@ -6018,6 +6186,8 @@ function explodeAt(pos, radius, damage, { color = 0xff8800, stun = 0, sphere = t
 // Death / revival belongs to the character, regardless of its current controller.
 function damageHero(h, amount) {
   if (!targetable(h)) return;
+  amount *= DIFF().zombieDamage;
+  recordStat(h, 'taken', Math.min(amount, h.hp));
   h.hp -= amount;
   h.lastHurt = state.time;   // pauses passive regen
   heroFlinch(h, amount);
@@ -8700,9 +8870,11 @@ const SFX = (() => {
     },
     play(name, ...args) { if (ctx && S[name]) S[name](...args); },
     toggleMute() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : AU.master, ctx.currentTime, 0.05); return muted; },
+    setVolume(v) { AU.master = v; if (master && !muted) master.gain.setTargetAtTime(v, ctx.currentTime, 0.05); },
     get ctx() { return ctx; },
   };
 })();
+onSettings(s => SFX.setVolume(s.volume));
 
 // Sprint the statue field, glowing and beeping faster as it closes in; blow up on contact (Bomber).
 // Killing it first means no explosion.
@@ -16755,6 +16927,7 @@ function removeDeadZombies() {
 function damageZombie(z, amount, at, reduced = false, heavy = false, owner = null) {
   if (z.dead || z.buried) return;
   const def = z.def;
+  amount /= DIFF().zombieHp;   // difficulty: tougher zombies soak more of every hit
   if (owner) { z.lastHitBy = owner; z.lastHitT = state.time; }
   const mine = owner === player;   // hit / kill markers are for the human's hits only
   if (z.imp?.mech) { damageZMech(z, amount, at, mine); return; }   // the Z-Mech soaks everything until it ejects
@@ -16783,7 +16956,10 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
     return;
   }
   amount = Math.max(1, Math.round(amount * (z.dmgTaken ?? 1)));   // dmgTaken: Turbo Twister
+  const hpBefore = z.hp;
   z.hp -= amount;
+  recordStat(owner, 'damage', Math.max(0, Math.min(amount, hpBefore)));
+  if (hpBefore > 0 && z.hp <= 0) recordStat(owner, 'kills', 1);
   z.flash = 0.08;
   agentFlinch(z, at, amount);
   spawnPopup(at, amount, reduced ? '#b8c4cc' : z.hp <= 0 ? '#ff6a3a' : '#ffe14a');
@@ -17553,6 +17729,7 @@ function drivePeashooter(h, dt) {
 
 // ---- Downed / revive ----
 function downHero(h) {
+  recordStat(h, 'downs', 1);
   h.downed = true;
   h.downT = h.respawnTimer = CONFIG.squad.respawnDelay;
   h.reviveT = 0;
@@ -17584,6 +17761,7 @@ function updateDowned(h, dt) {
   if (reviver) {
     h.reviveT += dt;
     if (h.reviveT >= h.reviveDuration) {
+      recordStat(reviver, 'revives', 1);
       h.downed = false; h.dead = false;
       h.hp = Math.round(h.stats.hp * R.hpFraction);
       h.lastHurt = state.time; h.respawnTimer = 0; h.downT = 0; h.reviveT = 0; h.reviveNear = false;
@@ -17701,7 +17879,7 @@ function updateWaves(dt) {
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {
     if (state.waveIndex === WAVES.length - 1) endGame(true);
-    else { SFX.play('waveClear'); beginCountdown(state.waveIndex + 1); }
+    else { SFX.play('waveClear'); showWaveSummary(state.waveIndex); beginCountdown(state.waveIndex + 1); }
   }
 }
 
@@ -18064,7 +18242,10 @@ function loop() {
     for (const h of heroes) if (h.active) { h.plant.animate(h, dt); heroJuice(h, dt); }
     muzzleLight.intensity *= Math.exp(-dt * 30);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
-    if (state.statueHp <= 0) endGame(false);
+    // Difficulty: scale whatever the garden lost this frame (many systems write statueHp directly)
+    if (state.statueHp < state.statueSeen) state.statueHp = state.statueSeen - (state.statueSeen - state.statueHp) * DIFF().statueDamage;
+    state.statueSeen = state.statueHp;
+    if (state.statueHp <= 0 && !state.over) endGame(false);
   }
   updateCamera(dt);
   // Silence everything while paused / tabbed out (game-over stings still play)
@@ -18095,6 +18276,9 @@ Object.assign(window.__game, { get engineerShells() { return engineerShells; }, 
   engineerTemplate, turretTemplate, makeEngineerBody, throwSonicGrenade, spawnTurret });
 // Gargantuar inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { gargantuarState, gargantuarStartSlam, launchGargantuarImp });
+// Match flow hooks (smoke tests): stats, settings, difficulty
+Object.assign(window.__game, { damageZombie, endGame, SETTINGS, changeSetting, DIFF, sun });
+Object.defineProperty(window.__game, 'particleCap', { get: () => particleCap });
 // Imp inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { THREE, renderer, buildImp, buildZMech, callZMech, throwGravityGrenade, ejectZMech });
 Object.assign(window.__game, { buildMechaGargantuar, mechaState, mechaBegin, mechaThrowBomb, mechaBombs });
