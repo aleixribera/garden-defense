@@ -214,7 +214,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.11.0';
+const VERSION = 'v1.11.1';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -479,7 +479,7 @@ const CONFIG = {
     // TACTICAL AGENTS — hero-class zombies that hunt plant heroes (section "Tactical zombie agents", tuning in
     // CONFIG.AGENTS). Placeholder bean bodies and a generic shot / swing for now; real models, weapons and abilities
     // come later. `agent` holds the role: range = [commit, stalk] distance band, weapon numbers (lower DPS than plants),
-    // unlockWave = first wave index the director may drop it. They never heal, retreat or give up on the plants.
+    // unlockWave = first wave index it may escort a pack. They never heal, retreat or give up on the plants.
     imp: {
       name: 'Imp', hp: 120, speed: 7.5, damage: 5, attackCooldown: 0.12, radius: 0.4, height: 0.55, color: 0xd8c8a0,
       behavior: 'agent', targetPreference: 'agent', aggroRange: 999, deaggroRange: 999,
@@ -575,9 +575,12 @@ const CONFIG = {
     fieldRange: 30,              // farther than this from the target: follow the hero flow field instead of steering
     strafeTime: [0.6, 1.4],      // seconds between strafe-direction flips at the goal
     tacticalReloadFrac: 0.5,     // reload out of sight when below this fraction of the clip
-    // Pressure director: drops agent squads during active waves (per-wave cap = WAVES[i].agentCap, more with more plants)
-    director: { firstDrop: 6, interval: [16, 24], squad: [1, 2], capPerHero: 0.35,
-                quietRadius: 30, quietTime: 6, quietSpeedup: 3 },
+    // Pack escorts: each pack of a wave may bring agents that spawn escortDelay s after the pack's burst and guard it.
+    // chance = per pack (+ chancePerWave each wave); at most WAVES[i].agentCap per wave (more with more plants).
+    escort: { delay: 3, chance: 0.5, chancePerWave: 0.04, perPack: [1, 2], capPerHero: 0.35,
+              followDist: 4,       // guards trail the pack's center by this much (behind it, toward its spawn)
+              engageRange: 22 },   // a plant this close to the pack or the guard breaks guard and starts the hunt
+    damageMult: 0.6,             // global nerf on every agent's weapon damage
   },
   // The shared zombie brain: perception, aggro, steering, attack slots, safety nets
   AI: {
@@ -3172,10 +3175,10 @@ function startWave(index) {
   SFX.play('tick', true);
   SFX.play('waveHorn');
   showSpawnMarkers([]);
-  state.agentTimer = CONFIG.AGENTS.director.firstDrop; state.agentQuiet = 0;
   // Each pack starts `delay` seconds after the previous one (hidden from the player), scaled down on later waves
   const tighten = Math.max(CONFIG.packDelayMin, 1 - CONFIG.packDelayTighten * index);
-  let packStart = 0;
+  let packStart = 0, packId = 0;
+  const escorts = { n: 0 };   // agents queued so far this wave (capped by agentCap)
   for (const pack of state.packs) {
     packStart += (pack.delay || 0) * tighten;
     const list = [];
@@ -3184,8 +3187,9 @@ function startWave(index) {
     // 'split' alternates A/B through the shuffled list, so each half gets a fair mix; the first one drops the skull
     list.forEach((type, i) => state.spawnQueue.push({
       t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn, skull: i === 0,
-      route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route,
+      route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId,
     }));
+    queueEscorts(index, pack, packStart + CONFIG.spawnBurst, packId++, escorts);
   }
   // (Future: apply WAVES[index].modifiers here for special waves.)
 }
@@ -6273,6 +6277,24 @@ function updateHeroTactics(h) {
 
 function thinkAgent(z) {
   const A = z.def.agent, a = z.ai, pos = z.mesh.position, T = AG.target;
+  // 0. Escort: guard the pack while it lives and no plant is near it (or near us), unless a plant just hurt us
+  if (z.pack !== null && z.pack !== undefined) {
+    let n = 0, cx = 0, cz = 0;
+    for (const o of zombies) if (!o.dead && !isAgent(o) && o.pack === z.pack) { n++; cx += o.mesh.position.x; cz += o.mesh.position.z; }
+    if (n) { cx /= n; cz /= n; }
+    const threat = n && heroes.some(h => targetable(h) &&
+      (Math.hypot(h.mesh.position.x - cx, h.mesh.position.z - cz) < AG.escort.engageRange || flatDist(h.mesh.position, pos) < AG.escort.engageRange));
+    if (!n || threat || state.time - z.lastHitT < AI.recentDamageTime) z.pack = null;   // released for good
+    else {
+      if (z.heroTgt) stopChase(z, false);
+      // trail the pack center on the side facing away from the garden
+      const d = Math.hypot(cx, cz) || 1;
+      a.guardPos ||= new THREE.Vector3();
+      a.guardPos.set(cx + cx / d * AG.escort.followDist, 0, cz + cz / d * AG.escort.followDist);
+      a.state = 'guard';
+      return;
+    }
+  }
   // Squad picture: how many other agents are on each hero
   const load = new Map();
   for (const o of zombies) if (o !== z && !o.dead && isAgent(o) && o.heroTgt) load.set(o.heroTgt, (load.get(o.heroTgt) || 0) + 1);
@@ -6332,7 +6354,7 @@ function agentShoot(z, h) {
   mesh.position.copy(start);
   scene.add(mesh);
   SFX.play('spit', start);
-  enemyProjectiles.push({ mesh, vel, life: 1.5, damage: z.def.damage * z.buff.damage });
+  enemyProjectiles.push({ mesh, vel, life: 1.5, damage: z.def.damage * z.buff.damage * AG.damageMult });
   z.ai.swing = 0.08;
 }
 
@@ -6340,6 +6362,11 @@ function agentBehavior(z, t, dt) {
   const A = z.def.agent, a = z.ai, pos = z.mesh.position;
   a.ammo ??= A.clip || 0;
   if (a.reloadT > 0 && (a.reloadT -= dt) <= 0) a.ammo = A.clip;
+  if (a.state === 'guard') {
+    z.mode = 'advance';
+    if (flatDist(a.guardPos, pos) > 2) { steerDirect(a.guardPos, pos, tmpDir); moveZombie(z, tmpDir, dt); }
+    return;
+  }
   if (!t.isHero) { meleeBehavior(z, t, dt); return; }   // every plant down: hit the garden
   const h = t.hero, hp = h.mesh.position, dHero = flatDist(hp, pos);
   // Sight to the target (throttled)
@@ -6363,7 +6390,7 @@ function agentBehavior(z, t, dt) {
   z.mode = a.state === 'commit' ? 'attack' : a.state === 'stalk' ? 'chase' : 'advance';
   // Weapon
   if (A.melee) {
-    if (t.dist <= meleeReach(z, t) && z.attackTimer <= 0) { z.attackTimer = A.fireRate; dealDamage(z, t, z.def.damage * z.buff.damage); }
+    if (t.dist <= meleeReach(z, t) && z.attackTimer <= 0) { z.attackTimer = A.fireRate; dealDamage(z, t, z.def.damage * z.buff.damage * AG.damageMult); }
     return;
   }
   if (a.reloadT > 0) return;
@@ -6374,8 +6401,20 @@ function agentBehavior(z, t, dt) {
   if (--a.ammo <= 0) a.reloadT = A.reloadTime;
 }
 
-// Pressure director: while a wave's packs are still coming, keep dropping agent squads at the spawn nearest the
-// plants (up to the wave's agentCap). A quiet stretch with no zombie near any plant speeds the next drop up.
+// Pack escorts: each pack may bring agents (AG.escort), queued escort.delay s after the pack's burst at the same
+// spawn and route. They guard their pack (thinkAgent 'guard') until a plant comes near, then hunt.
+function queueEscorts(waveIdx, pack, t, packId, escorts) {
+  const E = AG.escort, wave = WAVES[waveIdx];
+  const cap = Math.round((wave.agentCap || 0) * (1 + E.capPerHero * (activeHeroCount() - 1)));
+  if (escorts.n >= cap || Math.random() > E.chance + E.chancePerWave * waveIdx) return;
+  const pool = Object.keys(ZT).filter(k => ZT[k].agent && ZT[k].agent.unlockWave <= waveIdx);
+  const n = Math.min(cap - escorts.n, Math.round(randRange(E.perPack)));
+  for (let i = 0; i < n; i++) state.spawnQueue.push({
+    t: t + E.delay + i * 0.5, type: pool[Math.floor(Math.random() * pool.length)], spawn: pack.spawn,
+    route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId,
+  });
+  escorts.n += n;
+}
 function nearestSpawnToSquad() {
   let cx = 0, cz = 0, n = 0;
   for (const h of heroes) if (targetable(h)) { cx += h.mesh.position.x; cz += h.mesh.position.z; n++; }
@@ -6385,31 +6424,11 @@ function nearestSpawnToSquad() {
   for (const [k, sp] of Object.entries(CONFIG.SPAWN_POINTS)) { const d = Math.hypot(sp.x - cx, sp.z - cz); if (d < bd) { bd = d; best = k; } }
   return best;
 }
-function spawnAgent(type, spawn = nearestSpawnToSquad()) {
-  const z = spawnZombie(type, spawn, randomRoute());
+function spawnAgent(type, spawn = nearestSpawnToSquad(), route = randomRoute()) {
+  const z = spawnZombie(type, spawn, route);
   z.thinkInterval = 1 / AG.thinkRate;
   spawnPopup(z.mesh.position.clone().setY(z.mesh.position.y + 2), z.def.name.toUpperCase(), '#ff7a5a');
   return z;
-}
-function updateAgentDirector(dt) {
-  const D = AG.director, wave = WAVES[state.waveIndex];
-  const cap = Math.round((wave.agentCap || 0) * (1 + D.capPerHero * (activeHeroCount() - 1)));
-  if (!cap || state.spawnQueue.length === 0) return;   // no drops once the wave's last pack is out
-  let near = false;
-  for (const z of zombies) {
-    if (z.dead) continue;
-    if (heroes.some(h => targetable(h) && flatDist(h.mesh.position, z.mesh.position) < D.quietRadius)) { near = true; break; }
-  }
-  state.agentQuiet = near ? 0 : state.agentQuiet + dt;
-  state.agentTimer -= dt * (state.agentQuiet > D.quietTime ? D.quietSpeedup : 1);
-  if (state.agentTimer > 0) return;
-  state.agentTimer = randRange(D.interval);
-  const alive = zombies.filter(z => !z.dead && isAgent(z)).length;
-  if (alive >= cap) return;
-  const pool = Object.keys(ZT).filter(k => ZT[k].agent && ZT[k].agent.unlockWave <= state.waveIndex);
-  const n = Math.min(cap - alive, Math.round(randRange(D.squad))), spawn = nearestSpawnToSquad();
-  for (let i = 0; i < n; i++) spawnAgent(pool[Math.floor(Math.random() * pool.length)], spawn);
-  setMessage(n > 1 ? 'Zombie agents incoming!' : 'A zombie agent is hunting you!', 2);
 }
 
 const BEHAVIORS = {
@@ -7445,7 +7464,8 @@ function updateWaves(dt) {
   for (const s of state.spawnQueue) {
     s.t -= dt;
     if (s.t <= 0) {
-      spawnZombie(s.type, s.spawn, s.route);
+      const z = ZT[s.type].agent ? spawnAgent(s.type, s.spawn, s.route) : spawnZombie(s.type, s.spawn, s.route);
+      z.pack = s.pack ?? null;
       if (s.skull) {
         const sp = CONFIG.SPAWN_POINTS[s.spawn];
         spawnSkull(sp);
@@ -7454,7 +7474,6 @@ function updateWaves(dt) {
       if (ZT[s.type].boss) SFX.play('bossArrive');
     }
   }
-  updateAgentDirector(dt);
   state.spawnQueue = state.spawnQueue.filter(s => s.t > 0);
   // Wave cleared: win after the last wave, otherwise count down to the next
   if (zombies.length === 0 && state.spawnQueue.length === 0) {

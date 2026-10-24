@@ -4,7 +4,7 @@
 Third-person wave-defense browser game inspired by *Plants vs Zombies: Garden Warfare 2 — Garden Ops*.
 The player is a plant hero defending a statue in a huge beautifully made map from waves of zombies.
 
-## Current state (v1.11.0)
+## Current state (v1.11.1)
 - Single file: `index.html`, three.js via CDN (importmap, plus `three/addons/` for RoomEnvironment). No build step.
 - Rendering: ACES tone mapping, soft shadows (sun follows the player), PMREM room environment for the hero's PBR materials.
 - Statue: box at center, 1000 HP, world + HUD health bar. Statue at 0 HP = lose.
@@ -106,8 +106,9 @@ The player is a plant hero defending a statue in a huge beautifully made map fro
   `h.opening` − squad focus, crowd penalty), human and AI alike; `updateHeroTactics` sets `h.opening` (reloading, low ammo,
   spent abilities, low HP, isolated, busy with horde, airborne) and `h.hordeAng`. States hunt / stalk (screened behind the
   horde side, slow pokes) / commit (opening or `groupPush` agents: flank angles off the horde side, full fire). No healing,
-  retreat or leash. `updateAgentDirector` drops 1–2 at the spawn nearest the squad while packs remain, up to `WAVES[i].agentCap`;
-  quiet stretches speed drops up. Debug key 0 spawns one of each.
+  retreat or leash. Spawning: `queueEscorts` gives each wave pack a chance (`AGENTS.escort`) to bring 1–2 agents
+  `escort.delay` s after its burst, same spawn/route, capped by `WAVES[i].agentCap`; they 'guard' (trail the pack) until a
+  plant nears the pack or hits them, or the pack dies. Weapon damage × `AGENTS.damageMult`. Debug key 0 spawns one of each.
 - Bosses: `miniBoss` Brute (`brute`: closest target, never gives up, telegraphed charge → dazed if dodged);
   `finalBoss` Zombie King (`overlord`: phases at 66/33% change targeting + call reinforcements; phase 2 armor
   only heavy hits break, hp locked; phase 3 enraged + charges). HUD boss bar shows armor.
