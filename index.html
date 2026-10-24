@@ -935,6 +935,9 @@ const CONFIG = {
   skullTime: 20,                // the ghost skull marks where a pack spawned for this many seconds
   markerArrowLength: 48,        // metres of each active route shown by ground arrows during the countdown
   maxParticles: 450,
+  render: {
+    minShadowCaster: 0.03,     // m: baked rig parts smaller than this skip the shadow pass (under a shadow texel)
+  },
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
 
@@ -1220,7 +1223,30 @@ function bakeRig(root, refs = null) {
   };
   scan(refs, 0);
   root.traverse(o => { if (Object.keys(o.userData).length) scan(o.userData, 0); });
-  const plainRender = THREE.Object3D.prototype.onBeforeRender;
+  const plainRender = THREE.Object3D.prototype.onBeforeRender, scale = new THREE.Vector3();
+  // Parts smaller than a shadow-map texel (eyelets, rivets, laces) cast no visible shadow: skip their shadow draw
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    if (!o.isMesh || !o.castShadow || !o.geometry.attributes.position) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    o.getWorldScale(scale);
+    if (o.geometry.boundingSphere.radius * Math.max(scale.x, scale.y, scale.z) < CONFIG.render.minShadowCaster) o.castShadow = false;
+  });
+  // A material drawn with mixed receiveShadow / instancing makes three.js re-resolve its shader on every draw:
+  // unify receiveShadow, and give instanced users a twin material that mirrors the original's flash/fade state.
+  const uses = new Map();
+  root.traverse(o => { if (o.isMesh && !Array.isArray(o.material)) { if (!uses.has(o.material)) uses.set(o.material, []); uses.get(o.material).push(o); } });
+  for (const [m, list] of uses) {
+    if (list.some(o => o.receiveShadow)) for (const o of list) o.receiveShadow = true;
+    const inst = list.filter(o => o.isInstancedMesh);
+    if (!inst.length || inst.length === list.length) continue;
+    const twin = m.clone();
+    const mirror = () => {
+      twin.color?.copy(m.color); twin.emissive?.copy(m.emissive);
+      twin.emissiveIntensity = m.emissiveIntensity; twin.opacity = m.opacity; twin.visible = m.visible;
+    };
+    for (const o of inst) { o.material = twin; o.onBeforeRender = mirror; }
+  }
   const parents = [];
   root.traverse(o => { if (o.children.length > 1 && !o.userData.noMerge) parents.push(o); });
   for (const p of parents) {
@@ -1270,15 +1296,19 @@ const shaderGuard = { active: false, queue: [], pending: [], pinned: 0,
 const objectAdd = THREE.Object3D.prototype.add;
 THREE.Object3D.prototype.add = function (object) {
   const result = objectAdd.apply(this, arguments);
-  if (shaderGuard.active && arguments.length === 1 && object !== this) {   // multi-adds recurse one by one
+  if (shaderGuard.active && arguments.length === 1 && object !== this && !object.prewarmed) {   // multi-adds recurse one by one
     let root = this; while (root.parent) root = root.parent;
     if (root === scene) shaderGuard.queue.push(object);
   }
   return result;
 };
 const guardBatch = { list: null, traverse(cb) { for (const o of this.list) o.traverse(cb); }, traverseVisible() {} };
+// Transparent double-sided materials draw in two passes (back, then front), and each pass re-resolves the shader:
+// for effects that's pure overhead, so they draw both faces in one pass.
+const singlePass = o => { for (const m of [].concat(o.material || [])) if (m.transparent && m.side === THREE.DoubleSide) m.forceSinglePass = true; };
 function updateShaderGuard() {
   const G = shaderGuard, programs = renderer.info.programs;
+  for (const o of G.queue) o.traverse(singlePass);
   if (G.queue.length && G.parallel) {
     guardBatch.list = G.queue; G.queue = [];
     const waiting = new Set();
@@ -3455,8 +3485,9 @@ function resetGame() {
   clearPirateWorld();
   clearGargantuarWorld();
   zombies.forEach(z => { z.dead = true; z.parts.dispose?.(); });   // release each rig's own resources
-  [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects, ...particles]
+  [...zombies, ...projectiles, ...rockets, ...butterPats, ...enemyProjectiles, ...effects]
     .forEach(o => scene.remove(o.mesh));
+  particles.forEach(p => freeParticle(p.mesh));
   popups.forEach(p => p.el.remove());
   skulls.forEach(s => s.life = 0);   // removed on the next updateSkulls
   zombies = []; projectiles = []; rockets = []; butterPats = []; enemyProjectiles = []; effects = []; particles = []; popups = [];
@@ -3813,7 +3844,7 @@ const overlay = document.getElementById('overlay');
 
 document.getElementById('matchButton').addEventListener('click', () => {
   if (!matchStarted || state.over) {
-    configureSquad(readSquadSelection()); fillRigPools();   // restart: rebuild spent rigs before play
+    configureSquad(readSquadSelection()); fillRigPools(); warmUpload();   // restart: rebuild spent rigs before play
     matchStarted = true;
     document.body.classList.remove('preMatch');
   }
@@ -3912,17 +3943,22 @@ const PARTICLE_GEO = {
   puff: new THREE.SphereGeometry(0.3, 8, 6),
   leaf: new THREE.PlaneGeometry(0.22, 0.1),
 };
+// Particle meshes are recycled (no per-particle material/mesh allocation, no GC churn). A recycled mesh has been
+// drawn already, so it skips the shader guard (`prewarmed`).
+const particlePool = [];
+function freeParticle(m) { scene.remove(m); m.prewarmed = true; particlePool.push(m); }
 function spawnParticle(kind, color, pos, vel, { life = 0.6, gravity = 18, grow = 0, size = 1, additive = false, drag = 0 } = {}) {
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false,
-    side: THREE.DoubleSide, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
-  const mesh = new THREE.Mesh(PARTICLE_GEO[kind], mat);
+  let mesh = particlePool.pop();
+  if (mesh) { mesh.geometry = PARTICLE_GEO[kind]; mesh.material.color.set(color); mesh.material.opacity = 1; }
+  else mesh = new THREE.Mesh(PARTICLE_GEO[kind], new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }));
+  mesh.material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
   mesh.position.copy(pos);
   mesh.scale.setScalar(size);
   mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
   scene.add(mesh);
   particles.push({ mesh, vel, life, maxLife: life, gravity, grow, size, drag,
     spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14) });
-  if (particles.length > CONFIG.maxParticles) { const old = particles.shift(); scene.remove(old.mesh); old.mesh.material.dispose(); }
+  if (particles.length > CONFIG.maxParticles) freeParticle(particles.shift().mesh);
 }
 const rand3 = (s, up = 0) => new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s + up, (Math.random() - 0.5) * s);
 
@@ -3930,7 +3966,7 @@ function updateParticles(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i], m = p.mesh;
     p.life -= dt;
-    if (p.life <= 0) { scene.remove(m); m.material.dispose(); particles.splice(i, 1); continue; }
+    if (p.life <= 0) { freeParticle(m); particles.splice(i, 1); continue; }
     p.vel.y -= p.gravity * dt;
     if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
     m.position.addScaledVector(p.vel, dt);
@@ -3944,15 +3980,17 @@ function updateParticles(dt) {
 }
 
 // Expanding fading sphere (kind 'sphere'), ground shockwave ring ('ring'), or a fading ground splat ('decal')
+// Effects share unit geometries (scaled per effect) instead of building and uploading new ones per explosion
+const EFFECT_GEO = { sphere: new THREE.SphereGeometry(1, 16, 16), ring: new THREE.RingGeometry(0.8, 1, 48), decal: new THREE.CircleGeometry(1, 24) };
 function spawnExplosion(pos, radius, color = 0xff8800) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16),
+  const mesh = new THREE.Mesh(EFFECT_GEO.sphere,
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false }));
   mesh.position.copy(pos);
   scene.add(mesh);
   effects.push({ mesh, t: 0, duration: 0.35, radius, kind: 'sphere' });
 }
 function spawnRing(pos, radius, color, duration = 0.4) {
-  const mesh = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48),
+  const mesh = new THREE.Mesh(EFFECT_GEO.ring,
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.set(pos.x, 0.08, pos.z);
@@ -3960,9 +3998,9 @@ function spawnRing(pos, radius, color, duration = 0.4) {
   effects.push({ mesh, t: 0, duration, radius, kind: 'ring' });
 }
 function spawnDecal(pos, radius, color, duration) {
-  const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 24),
+  const mesh = new THREE.Mesh(EFFECT_GEO.decal,
     new THREE.MeshStandardMaterial({ color, roughness: 0.2, transparent: true, opacity: 0.85, depthWrite: false }));
-  mesh.rotation.x = -Math.PI / 2;
+  mesh.rotation.x = -Math.PI / 2; mesh.scale.setScalar(radius);
   mesh.position.set(pos.x, 0.03 + Math.random() * 0.01, pos.z);
   mesh.receiveShadow = true;
   scene.add(mesh);
@@ -3983,7 +4021,7 @@ function updateEffects(dt) {
     } else if (e.kind === 'decal') {
       e.mesh.material.opacity = 0.85 * Math.min(1, (1 - k) * 4);
     }
-    if (k >= 1) { scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); effects.splice(i, 1); }
+    if (k >= 1) { scene.remove(e.mesh); e.mesh.material.dispose(); effects.splice(i, 1); }   // geometry is shared
   }
 }
 
@@ -4503,9 +4541,12 @@ function freeSolarObject(root) {
   if (!root) return;
   scene.remove(root);
   const geometries = new Set(), materials = new Set();
-  root.traverse(o => { if (o.geometry) geometries.add(o.geometry); if (o.material) materials.add(o.material); });
+  root.traverse(o => { if (o.geometry && !o.geometry.userData.shared) geometries.add(o.geometry); if (o.material) materials.add(o.material); });
   geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose());
 }
+// Sun pulse shapes are shared by every shot (no geometry build + upload per shot)
+const SUN_PULSE_GEO = { core: new THREE.SphereGeometry(0.065, 8, 6), halo: new THREE.SphereGeometry(0.115, 8, 6) };
+SUN_PULSE_GEO.core.userData.shared = SUN_PULSE_GEO.halo.userData.shared = true;
 function clearSunflowerWorld() {
   for (const a of [sunPulses, healFlowers, sunDrops]) for (const o of a) freeSolarObject(o.mesh);
   sunPulses = []; healFlowers = []; sunDrops = [];
@@ -4609,9 +4650,9 @@ function fireSunPulse(h) {
   if (h.sun?.sunbeam) return;
   const W = h.weapon, F = CONFIG.SUNFLOWER.fx, start = sunflowerMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
   const mesh = new THREE.Group();
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 6), new THREE.MeshBasicMaterial({ color: F.coreColor, toneMapped: false }));
+  const core = new THREE.Mesh(SUN_PULSE_GEO.core, new THREE.MeshBasicMaterial({ color: F.coreColor, toneMapped: false }));
   core.scale.z = 2.7; mesh.add(core);
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 6), new THREE.MeshBasicMaterial({ color: F.pulseColor,
+  const halo = new THREE.Mesh(SUN_PULSE_GEO.halo, new THREE.MeshBasicMaterial({ color: F.pulseColor,
     transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
   halo.scale.z = 2.1; mesh.add(halo); mesh.position.copy(start); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); scene.add(mesh);
   sunPulses.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), start: start.clone(), life: CONFIG.plantShotLife, owner: h, weapon: W });
@@ -13897,12 +13938,11 @@ function buildPirateParrot(M) {
 function attachPirateRig(mesh, parts, def) {
   const halfH = def.radius + def.height / 2;
   mesh.material.visible = false; mesh.castShadow = false;
-  const M = pirateMaterials();
-  const rig = buildDeadbeard(M);
+  const { M, rig, keg, cannon } = takeRig('pirate');   // cloned from a prebuilt template (shared geometry)
   rig.root.position.y = -halfH; rig.root.scale.setScalar(0.94);
   mesh.add(rig.root);
-  const keg = buildPirateKeg(M, true); keg.g.position.y = -halfH; keg.g.visible = false; mesh.add(keg.g);
-  const cannon = buildPirateCannon(M); cannon.g.position.y = -halfH; cannon.g.visible = false; mesh.add(cannon.g);
+  keg.g.position.y = -halfH; keg.g.visible = false; mesh.add(keg.g);
+  cannon.g.position.y = -halfH; cannon.g.visible = false; mesh.add(cannon.g);
   // Sniper laser telegraph (world space, stretched along +Z)
   const laser = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5),
     new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -13914,9 +13954,7 @@ function attachPirateRig(mesh, parts, def) {
     animate: animateDeadbeard,
     dispose() {
       scene.remove(laser); laser.geometry.dispose(); laser.material.dispose();
-      const geos = new Set();
-      mesh.traverse(o => { if (o.geometry && o !== mesh) geos.add(o.geometry); });
-      geos.forEach(g => g.dispose()); mats.forEach(m => m.dispose());
+      mats.forEach(m => m.dispose());   // geometry belongs to the shared rig template
     },
   });
 }
@@ -16320,13 +16358,81 @@ Object.assign(window.__game, { gargantuarState, gargantuarStartSlam, launchGarga
 Object.assign(window.__game, { THREE, renderer, buildImp, buildZMech, callZMech, throwGravityGrenade, ejectZMech });
 Object.assign(window.__game, { buildMechaGargantuar, mechaState, mechaBegin, mechaThrowBomb, mechaBombs });
 
-// Prebuilt procedural rigs: each spawn takes a fresh one built behind a loading screen (boot / match reset)
-// instead of sculpting it mid-match; an empty pool falls back to building on the spot.
+// Prebuilt procedural rigs, never sculpted mid-match (a build is 3-10 ms, longer than a 144 Hz frame).
+// `templates` rigs are built + baked once at boot; every spawn clones one (cloneRig, ~1 ms) with its own materials,
+// cycling through a few variants. `count` rigs (the one-off final boss) are prebuilt per match instead.
 const bakedRig = r => (bakeRig(r.root || r, r), r);
-const RIG_POOL = { mecha: { build: () => bakedRig(buildMechaGargantuar()), count: 1, list: [] }, imp: { build: () => bakedRig(buildImp()), count: 2, list: [] },
-  zmech: { build: () => bakedRig(buildZMech()), count: 1, list: [] }, soldier: { build: () => bakedRig(buildFootSoldier()), count: 2, list: [] } };
-function takeRig(key) { const p = RIG_POOL[key]; return p.list.pop() || p.build(); }
-function fillRigPools() { for (const p of Object.values(RIG_POOL)) while (p.list.length < p.count) p.list.push(p.build()); }
+const RIG_POOL = {
+  mecha: { build: () => bakedRig(buildMechaGargantuar()), count: 1, list: [] },
+  imp: { build: () => bakedRig(buildImp()), templates: 2 },
+  zmech: { build: () => bakedRig(buildZMech()), templates: 1 },
+  soldier: { build: () => bakedRig(buildFootSoldier()), templates: 3, init: rig => {   // own idle rhythm + laser
+    const u = rig.userData; u.phase = Math.random() * 10; u.twitchT = 1 + Math.random() * 3;
+    for (const o of [u.laser, u.laserDot]) if (!o.parent) scene.add(o); } },
+  pirate: { build: () => { const M = pirateMaterials(), rig = buildDeadbeard(M);
+    const t = { M, rig, keg: buildPirateKeg(M, true), cannon: buildPirateCannon(M) }; bakeRig(rig.root, t); return t; }, templates: 2 },
+};
+function takeRig(key) {
+  const p = RIG_POOL[key];
+  if (p.templates) {
+    p.built ||= Array.from({ length: p.templates }, p.build);
+    const rig = cloneRig(p.built[p.next = ((p.next ?? -1) + 1) % p.built.length]);
+    p.init?.(rig);
+    return rig;
+  }
+  return p.list.pop() || p.build();
+}
+function fillRigPools() {
+  for (const p of Object.values(RIG_POOL)) {
+    if (p.templates) p.built ||= Array.from({ length: p.templates }, p.build);
+    else while (p.list.length < p.count) p.list.push(p.build());
+  }
+}
+// Deep-copy a rig template: its Object3D trees (geometry shared, materials cloned once per rig) and every value the
+// builder returned or kept in userData, with references to template objects / materials pointed at the copies.
+// Objects the template parked straight in the scene (laser telegraphs) are copied into the scene too.
+function cloneRig(template) {
+  const objs = new Map(), mats = new Map(), done = new Map();
+  const copyMat = m => {
+    if (!mats.has(m)) { const ud = m.userData; m.userData = {}; const c = m.clone(); m.userData = ud; mats.set(m, c);
+      c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey; c.userData = copy(ud); }
+    return mats.get(m);
+  };
+  const copyTree = src => {
+    const ud = src.userData; src.userData = {};
+    const c = src.clone(false); src.userData = ud;
+    objs.set(src, c);
+    if (c.material) c.material = Array.isArray(c.material) ? c.material.map(copyMat) : copyMat(c.material);
+    for (const child of src.children) objectAdd.call(c, copyTree(child));
+    return c;
+  };
+  const mapObject = o => {
+    if (!objs.has(o)) {
+      let top = o; while (top.parent && top.parent !== scene) top = top.parent;
+      const c = copyTree(top);
+      if (top.parent === scene) scene.add(c);
+      for (const [src, dst] of objs) if (!dst.userDataCopied) { dst.userDataCopied = true; dst.userData = copy(src.userData); }
+    }
+    return objs.get(o);
+  };
+  const copy = v => {
+    if (!v || typeof v !== 'object') return v;
+    if (v.isObject3D) return mapObject(v);
+    if (v.isMaterial) return copyMat(v);
+    if (v.isColor || v.isVector2 || v.isVector3 || v.isVector4 || v.isQuaternion || v.isEuler || v.isMatrix4) return v.clone();
+    if (done.has(v)) return done.get(v);
+    let out;
+    if (Array.isArray(v)) { out = []; done.set(v, out); for (const x of v) out.push(copy(x)); }
+    else if (v instanceof Map) { out = new Map(); done.set(v, out); for (const [k, x] of v) out.set(k, copy(x)); }
+    else if (v instanceof Set) { out = new Set(); done.set(v, out); for (const x of v) out.add(copy(x)); }
+    else if (Object.getPrototypeOf(v) === Object.prototype) { out = {}; done.set(v, out); for (const k in v) out[k] = copy(v[k]); }
+    else return v;   // geometries, textures, typed arrays, class instances: shared
+    return out;
+  };
+  const rig = copy(template);
+  for (const c of objs.values()) delete c.userDataCopied;
+  return rig;
+}
 
 // Build every lazily created model / template and compile its shaders behind the loading screen: one of each
 // zombie type is spawned, rendered once, then cleared by a match reset. New lazy assets belong here too.
@@ -16337,13 +16443,35 @@ function prewarmAssets() {
   try { AS_IMP ||= asImpTemplate(); AS_SHIELD ||= asShieldTemplate(); } catch (err) { console.warn('prewarm all-star', err); }
   for (const z of zombies) z.mesh.visible = true;
   spawnCactusTrail(new THREE.Vector3(0, 2, 0), new THREE.Vector3(0, 2, 6));
+  scene.traverse(singlePass);
   renderer.compile(scene, camera);
-  renderer.render(scene, camera);
+  fillRigPools();
+  warmUpload();
   pinPrograms();   // keep every program alive past the reset below
   prewarmShadowVariants();
   resetGame();
-  fillRigPools();
   shaderGuard.active = true;
+}
+// Draw the whole scene plus every pooled rig and rig template once with frustum culling off, so all geometry and
+// textures are uploaded behind a loading screen, not on the frame something first comes into view.
+function warmUpload() {
+  const guard = shaderGuard.active, before = new Set(scene.children), warm = new THREE.Group(), culled = [];
+  shaderGuard.active = false;
+  const roots = new Set();
+  const rootsOf = r => { for (const v of r.isObject3D ? [r] : Object.values(r)) for (const o of [v, v?.root, v?.g]) if (o?.isObject3D && !o.parent) roots.add(o); };
+  for (const [key, p] of Object.entries(RIG_POOL)) {
+    if (p.templates) for (let i = 0; i < p.templates; i++) rootsOf(takeRig(key));
+    else p.list.forEach(rootsOf);
+  }
+  roots.forEach(o => warm.add(o));
+  scene.add(warm);
+  scene.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
+  renderer.render(scene, camera);
+  culled.forEach(o => { o.frustumCulled = true; });
+  scene.remove(warm);
+  roots.forEach(o => warm.remove(o));   // pooled rigs go back detached; template clones are dropped
+  for (const o of [...scene.children]) if (!before.has(o)) scene.remove(o);   // clones' scene extras (lasers)
+  shaderGuard.active = guard;
 }
 prewarmAssets();
 if (bootSelection) {
