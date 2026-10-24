@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.17.1';
+const VERSION = 'v1.17.2';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -3288,7 +3288,7 @@ function hordeClaw(ha, wind, k, side = 0) {   // side: 1 = left arm, -1 = right,
   const twist = side * 0.38;
   hr(HB.chest, -0.2 * wind + 0.24 * k, twist * wind - twist * k); hr(HB.hips, 0.04 * k);
   ht(HB.hips, 0, -0.04 * k, 0.14 * k);
-  hr(HB.head, -0.14 * wind + 0.22 * k); hr(HB.jaw, 0.25 * wind + 0.5 * k);
+  hr(HB.head, -0.14 * wind + 0.06 * k); hr(HB.jaw, 0.25 * wind + 0.5 * k);
 }
 // 0 → 1 fast when the hit lands, hold, then ease back
 function hordeStrikeK(t) {

@@ -6,7 +6,7 @@
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.17.1)
+## Current state (v1.17.2)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -43,6 +43,10 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   plant's silhouette reaches the crosshair.
 - Debug: F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses, M map, K stress horde.
   `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright).
+- Horde models (section "Horde models"): the 8 basic zombies are sculpted merged meshes, GPU-skinned (16 bones,
+  per-instance bone texture) and instanced per type; clips are procedural in `HORDE_MODELS[type].pose/attack` plus
+  shared layers (`hordeOverlays`: look, wind-up/strike, flinch, stun, spawn); deaths become `hordeCorpses`.
+  Renders: `tests/horde-models.cjs` → `docs/horde-*.png`.
 
 ## Code rules
 - All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.
