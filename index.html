@@ -91,7 +91,7 @@
   #overlayTitle { font-size: 44px; font-weight: 800; letter-spacing: 6px; }
   #overlay small { font-size: 14px; margin-top: 18px; color: var(--dim); line-height: 1.9; max-width: 640px; }
   #overlay small b { color: var(--accent); }
-  #overlay { cursor: default; padding: 24px; box-sizing: border-box; overflow-y: auto; }
+  #overlay { cursor: default; padding: 24px; box-sizing: border-box; overflow-y: auto; justify-content: safe center; }
   #squadPicker { width: min(760px, 94vw); margin: 24px 0; padding: 24px; box-sizing: border-box;
     border: 1px solid var(--line); border-radius: 14px; background: rgba(12,25,16,.92); }
   #squadPicker h2 { margin: 0 0 8px; font-size: 22px; }
@@ -100,6 +100,16 @@
   #squadSlots label { display: grid; gap: 8px; text-align: left; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
   #squadSlots select { width: 100%; font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 12px 7px; font-size: 13px; }
   #squadSummary { margin-top: 20px; font-size: 13px; color: var(--accent); }
+  .plantCard { text-transform: none; letter-spacing: 0; font-size: 12px; line-height: 1.45; color: var(--dim); min-height: 92px; }
+  .plantCard b { display: block; color: var(--accent); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+  .plantCard .kit { margin-top: 6px; display: grid; gap: 2px; color: var(--text); }
+  .plantCard kbd { display: inline-block; min-width: 14px; margin-right: 5px; padding: 0 3px; border-radius: 3px; text-align: center;
+    background: rgba(0,0,0,0.35); border: 1px solid rgba(255,216,74,0.5); color: var(--accent); font: 700 10px/14px inherit; }
+  #pauseActions { display: none; gap: 10px; margin-top: 12px; }
+  body.paused #pauseActions { display: flex; }
+  .ghostButton { font: inherit; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.06); color: var(--text);
+    cursor: pointer; font-size: 13px; font-weight: 700; padding: 10px 18px; letter-spacing: 1px; }
+  .ghostButton:hover { background: rgba(255,255,255,0.14); }
   #matchButton { font: inherit; border: 0; border-radius: 8px; background: var(--accent); color: #182314; cursor: pointer; font-size: 15px; font-weight: 800; padding: 14px 32px; }
   #difficultyPick { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; font-size: 12px;
     color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
@@ -168,13 +178,15 @@
     text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
 
   /* Ability bar (bottom center) */
-  #abilities { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: none; }
+  #abilities { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); display: flex; gap: 22px; pointer-events: none; }
   .ab { width: 56px; height: 56px; border-radius: 12px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line);
-        position: relative; overflow: hidden; text-align: center; transition: box-shadow 0.2s, transform 0.2s; }
-  .ab .icon { font-size: 24px; line-height: 56px; }
-  .ab .name { display: none; }
-  .ab .key { position: absolute; top: 3px; left: 6px; font-size: 10px; font-weight: 800; color: var(--dim); }
-  .ab .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); }
+        position: relative; text-align: center; transition: box-shadow 0.2s, transform 0.2s; }
+  .ab .icon { font-size: 24px; line-height: 56px; position: relative; }
+  /* Ability name under its slot (wraps to two short lines) */
+  .ab .name { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: 78px; font-size: 10px; line-height: 1.15;
+    font-weight: 700; color: rgba(255,255,255,0.82); white-space: normal; }
+  .ab .key { position: absolute; top: 3px; left: 6px; font-size: 10px; font-weight: 800; color: var(--dim); z-index: 1; }
+  .ab .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); border-radius: inherit; }
   .ab .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; }
   .ab.ready { box-shadow: inset 0 0 0 2px var(--accent); }
   .ab.ready .key { color: var(--accent); }
@@ -208,6 +220,44 @@
     text-align: center; color: #eaf2cf; background: rgba(15,30,20,.82); padding: 12px 22px; border: 1px solid #87996c;
     border-radius: 8px; font-size: 12px; line-height: 1.8; pointer-events: none; }
   #droneHud b { letter-spacing: 3px; color: #e4caa5; } #droneHud span { color: #bdcda9; }
+  /* Radar (top right): rotates with the view */
+  #radar { position: fixed; top: 26px; right: 18px; width: 172px; height: 172px; pointer-events: none; border-radius: 50%;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.3); }
+  #radarLegend { position: fixed; top: 202px; right: 18px; width: 172px; text-align: center; font-size: 10px; color: var(--dim);
+    letter-spacing: 0.5px; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+  #radarLegend b { font-weight: 800; } #radarLegend .z { color: #ff6a5a; } #radarLegend .a { color: #ff9a3a; } #radarLegend .s { color: #49b8e8; } #radarLegend .g { color: #5fd0a0; }
+  /* Hit direction arcs around the crosshair */
+  #hitDirs { position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+  #hitDirs i { position: absolute; left: -90px; top: -90px; width: 180px; height: 180px; border-radius: 50%; opacity: 0;
+    border: 6px solid transparent; border-top-color: rgba(255,50,30,0.85); box-sizing: border-box;
+    filter: drop-shadow(0 0 4px rgba(255,40,20,0.7));
+    -webkit-mask: conic-gradient(from -28deg, #000 0 56deg, transparent 56deg); mask: conic-gradient(from -28deg, #000 0 56deg, transparent 56deg); }
+  /* Garden under attack */
+  #gardenAlert { position: fixed; top: 178px; left: 50%; transform: translateX(-50%); display: none; pointer-events: none; text-align: center;
+    padding: 6px 16px; border-radius: 18px; background: rgba(60,8,4,0.72); box-shadow: inset 0 0 0 1px rgba(255,90,74,0.6);
+    color: #ffd0c8; font-size: 12px; font-weight: 800; letter-spacing: 2px; animation: alertPulse 0.7s ease-in-out infinite; }
+  #gardenAlert .arrow { display: inline-block; margin-left: 8px; color: var(--danger); font-size: 16px; line-height: 1; }
+  #gardenAlert .dist { margin-left: 4px; color: var(--dim); font-weight: 700; letter-spacing: 0.5px; }
+  @keyframes alertPulse { 50% { box-shadow: inset 0 0 0 1px rgba(255,90,74,0.6), 0 0 18px rgba(255,60,40,0.55); } }
+  /* Last zombies of a wave: pips through walls */
+  #stragglers .straggler { position: fixed; transform: translate(-50%, -100%); pointer-events: none; padding: 2px 7px 2px 18px; border-radius: 9px;
+    background: rgba(40,8,6,0.65); color: #ffd0c8; font-size: 10px; font-weight: 800; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+  #stragglers .straggler::before { content: ''; position: absolute; left: 6px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px;
+    border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 6px #ff5a4a; }
+  /* Help panel (H) and first-match tips */
+  #helpPanel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(620px, 92vw); display: none; z-index: 5;
+    pointer-events: none; padding: 18px 22px; font-size: 13px; line-height: 1.6; }
+  #helpPanel h3 { margin: 0 0 4px; font-size: 18px; } #helpPanel .role { color: var(--accent); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; }
+  #helpPanel .grid { display: grid; grid-template-columns: 34px 1fr; gap: 6px 10px; margin: 12px 0; align-items: baseline; }
+  #helpPanel kbd, #tip kbd { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 4px; text-align: center; background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,216,74,0.55); color: var(--accent); font: 800 11px/18px inherit; }
+  #helpPanel .keys { color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  #tip { position: fixed; bottom: 172px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90vw); display: none; pointer-events: none;
+    padding: 9px 16px; border-radius: 10px; background: rgba(12,24,14,0.78); box-shadow: inset 0 0 0 1px rgba(255,216,74,0.35);
+    font-size: 13px; line-height: 1.5; text-align: center; color: #f2f6e8; }
+  #tip b { color: var(--accent); }
+  body.preMatch #radar, body.preMatch #radarLegend, body.preMatch #gardenAlert, body.preMatch #tip, body.preMatch #stragglers { visibility: hidden; }
+  @media (max-width: 700px) { #radar { width: 120px; height: 120px; } #radarLegend { display: none; } }
 </style>
 </head>
 <body class="preMatch">
@@ -253,6 +303,13 @@
 <div id="shopPrompt"></div>
 <div id="sunflowerStatus" role="status"></div>
 <div id="cactusScope"></div><div id="droneHud"></div>
+<canvas id="radar"></canvas>
+<div id="radarLegend"><b class="g">◆</b> garden &nbsp; <b class="s">▲</b> squad<br><b class="z">●</b> zombie &nbsp; <b class="a">●</b> agent &nbsp; <b class="z">⬤</b> boss</div>
+<div id="hitDirs"></div>
+<div id="gardenAlert">⚠ GARDEN UNDER ATTACK<span class="arrow">⬆</span><span class="dist"></span></div>
+<div id="stragglers"></div>
+<div id="helpPanel" class="panel"></div>
+<div id="tip"></div>
 <div id="fps"></div>
 <div id="version"></div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
@@ -269,7 +326,8 @@
     <label>Quality <select id="setQuality" aria-label="Quality"></select></label>
   </div>
   <button id="matchButton">DEFEND THE GARDEN</button>
-  <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · Tab or [ / ] switch plants · Hold X near a downed ally to revive · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
+  <div id="pauseActions"><button class="ghostButton" id="abandonButton">ABANDON MATCH</button></div>
+  <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · 1–4 or Tab switch plants · Hold X near a downed ally to revive · H help · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
 
 <script type="importmap">
 { "imports": {
@@ -281,7 +339,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.21.0';
+const VERSION = 'v1.22.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -312,10 +370,21 @@ const CONFIG = {
           heal: 5, magnetRange: 5, pickupRange: 0.85, sunLife: 9, placeDistance: 1.5 },
       },
       abilityNames: { shuckShot: 'Heal Beam', huskHop: 'Sunbeam', butterBarrage: 'Heal Flower' },
-      abilityIcons: { shuckShot: '✚', huskHop: '☀', butterBarrage: '✿' } },
+      abilityIcons: { shuckShot: '✚', huskHop: '☀', butterBarrage: '✿' },
+      // Squad picker card + H help panel (player-facing descriptions)
+      info: { role: 'Medic', blurb: 'Keeps the squad alive and revives fallen plants faster.',
+        primary: 'Sun Pulse: fast, accurate sun bolts with a big clip.',
+        shuckShot: 'Toggle a healing tether on the ally you aim at.',
+        huskHop: 'Root in place and fire a powerful Sunbeam (E or Space to uproot).',
+        butterBarrage: 'Plant a Heal Flower that drops healing suns for 30 s.' } },
     corn: { name: 'Kernel Corn', weaponName: 'Cob Busters', stats: {}, weapon: {}, abilities: {},
       abilityNames: { shuckShot: 'Shuck Shot', huskHop: 'Husk Hop', butterBarrage: 'Butter Barrage' },
-      abilityIcons: { shuckShot: '🌽', huskHop: '🍃', butterBarrage: '🧈' } },
+      abilityIcons: { shuckShot: '🌽', huskHop: '🍃', butterBarrage: '🧈' },
+      info: { role: 'Assault', blurb: 'Mobile all-rounder that shreds packs and bosses.',
+        primary: 'Cob Busters: twin rapid-fire kernel blasters.',
+        shuckShot: 'Fire a volley of six explosive cob missiles.',
+        huskHop: 'Leap high (hold Space to glide) and slam down on landing.',
+        butterBarrage: 'Aim a butter strike, click to call it: damages and stuns.' } },
     cactus: { name: 'Cactus', weaponName: 'Spike Shot',
       stats: { hp: 125, speed: 7.2, accel: 10, aimSpeedMult: 0.42, jumpSpeed: 8.4 },
       weapon: { fireRate: 0.4, damage: 25, criticalMult: 2, clip: 12, reloadTime: 2,
@@ -334,7 +403,12 @@ const CONFIG = {
           range: 6, width: 3.4, depth: 0.85, height: 1.65, life: 120, placeDistance: 3 },
       },
       abilityNames: { shuckShot: 'Potato Mine', huskHop: 'Garlic Drone', butterBarrage: 'Tallnut Battlement' },
-      abilityIcons: { shuckShot: '🥔', huskHop: '🧄', butterBarrage: '🪵' } },
+      abilityIcons: { shuckShot: '🥔', huskHop: '🧄', butterBarrage: '🪵' },
+      info: { role: 'Sniper', blurb: 'Long-range precision and defenses: mines and walls.',
+        primary: 'Spike Shot: hitscan rifle; zoom with RMB, head hits deal double.',
+        shuckShot: 'Plant a Potato Mine (up to 3 charges) that arms after a moment.',
+        huskHop: 'Pilot a Garlic Drone: WASD fly, LMB fire, Q Corn Strike, E return.',
+        butterBarrage: 'Raise a Tallnut Battlement wall that zombies must bash through.' } },
     peashooter: { name: 'Peashooter', weaponName: 'Pea Cannon',
       stats: { hp: 125, speed: 10.5, jumpSpeed: 10, accel: 16 },
       weapon: { fireRate: 0.34, damage: 25, splashDamage: 15, splashRadius: 4, clip: 10, reloadTime: 1.5,
@@ -349,7 +423,12 @@ const CONFIG = {
         butterBarrage: { cooldown: 25, duration: 8, speedMult: 1.75, jumpMult: 1.75, trailInterval: 0.09 },
       },
       abilityNames: { shuckShot: 'Chili Bean Bomb', huskHop: 'Pea Gatling', butterBarrage: 'Hyper' },
-      abilityIcons: { shuckShot: '🫘', huskHop: '✺', butterBarrage: '⚡' } },
+      abilityIcons: { shuckShot: '🫘', huskHop: '✺', butterBarrage: '⚡' },
+      info: { role: 'Artillery', blurb: 'Splash damage that breaks up crowds.',
+        primary: 'Pea Cannon: slow, heavy peas that splash on impact.',
+        shuckShot: 'Throw a Chili Bean Bomb: lures nearby zombies, then explodes.',
+        huskHop: 'Root into a Pea Gatling for 12 s of rapid fire (E to uproot).',
+        butterBarrage: 'Hyper: run faster and jump higher for 8 s.' } },
   },
   cactus: {
     model: { height: 2.64, radius: 0.46, ribs: 10, radialSegments: 100, heightSegments: 64 },
@@ -1065,6 +1144,39 @@ const CONFIG = {
     corpseTime: 2.4,           // s a dead horde zombie lies on the ground before sinking away
   },
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
+  // World art (section "World art"): purely visual dressing over the grey-box collision. Colours are sRGB hex.
+  art: {
+    colors: { grassA: 0x4a7f2b, grassB: 0x6f9c40, grassDark: 0x355f22, meadow: 0x5b8f35, dirt: 0x9b7650, rock: 0x8c8274,
+      rockDark: 0x675d52, quarry: 0xb9a07a, dead: 0x76704f, curb: 0xc9c0ad, courtRing: 0x9a8f7c, grime: 0x4a4038 },
+    groundBoost: 1.12,         // compensates the detail texture's darkening
+    detailTile: 6,             // m per repeat of the ground speckle texture
+    pathWidth: 2.6,            // m: half-width of the worn dirt paths
+    // Worn paths from the court to each spawn area (polylines of [x, z]); they follow the likely zombie routes
+    paths: [
+      [[4, -14], [8, -50], [6, -90], [2, -130], [6, -160], [-4, -192]],                 // Orchard Road
+      [[14, 2], [36, 4], [46, 14], [60, 12], [72, -4]],                                 // Greenhouse Gap
+      [[-14, 5], [-30, 26], [-56, 25], [-74, 25], [-110, 22]],                          // Garden Gate
+      [[-12, -8], [-22, -34], [-48, -52], [-74, -56], [-110, -52]],                     // Sluice Pass
+      [[-6, 13], [-24, 34], [-30, 64], [-24, 110]],                                     // Quarry Ramp W
+      [[9, 11], [40, 34], [55, 64], [46, 110]],                                         // Quarry Ramp E
+    ],
+    courtRings: [[5.4, 6.0], [12.6, 13.2]],   // darker stone rings in the paving (inner / outer radius, m)
+    sky: { radius: 600, top: 0x3f8fd8, horizon: 0xc4e6f2, bottom: 0x9cc8a0, clouds: 9 },
+    decor: { chunk: 60, treeStep: 8, treeFill: 0.75, rocks: 180, boulders: 260, gravesPerArea: 14, tufts: 6000, tuftRange: 110, flowerChance: 0.08 },
+    flowerColors: [0xff5a6a, 0xffd23a, 0xffffff, 0xb07aff, 0xff9a3a],
+    rockShade: ['0.15, 0.13, 0.11', '0.33, 0.29, 0.24'],   // linear RGB: dark / light strata on cliff faces
+    windmillSpin: 0.5,         // rad/s
+    statueBarY: 7.2,           // m: the garden's floating health bar (above the gnome's hat)
+    statueGrime: 0.55,         // how far the gnome's paint fades toward grime at 0 hp
+  },
+  // Situational awareness HUD (section "Situational awareness"): radar, hit arcs, garden alert, straggler pips
+  // One-time onboarding tips (section "Situational awareness"): seen keys persist in localStorage
+  tips: { storageKey: 'gardenDefense.tipsSeen', time: 8, gap: 2.5, abilitiesAt: 25, squadAt: 50 },
+  hudAware: { radarRange: 90, radarHz: 15, hitTime: 1.1, hitGuessRange: 40, gardenAlertTime: 2.5, gardenArrowDist: 22, gardenRadius: 7,
+    stragglers: 6 },
+  // Pacing: zombies far from the garden AND from every plant walk faster (no dead time while they cross the map);
+  // the last few zombies of a wave hurry the same way. Never bosses or agents.
+  hurry: { mult: 1.75, statueDist: 45, heroDist: 40, stragglers: 6, gardenSafe: 25 },   // gardenSafe: stragglers never rush the last metres
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
 
   // Garden Ops economy (section "Garden Ops economy"): zombies drop coins, the squad shares one wallet,
@@ -1293,6 +1405,8 @@ const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber',
 // Automated browsers (tests) also skip the menu gate and boot straight away.
 const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
 const SKIP_MENU = AUTOPLAY || navigator.webdriver;
+// Debug keys (spawns, wave skip, free coins, overlays) only with ?debug (or ?autoplay): never in a normal match
+const DEBUG = AUTOPLAY || new URLSearchParams(location.search).has('debug');
 // Fisher–Yates gives every default plant the same chance at every squad slot, including human control.
 // Shuffle once per new default lineup; respawns and control switches keep the existing characters.
 function shuffledDefaultSquad(random = Math.random) {
@@ -1313,12 +1427,20 @@ for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
   if (i > 0) select.add(new Option('None', ''));
   for (const [key, def] of Object.entries(CONFIG.PLANTS)) select.add(new Option(def.name, key));
   select.value = defaultSquad[i] || '';
-  select.addEventListener('change', () => { squadSelectionCustomized = true; updateSquadSummary(); });
-  label.append(select); squadSlots.append(label);
+  // Plant card: role, one-line pitch and the Q / E / F kit of whatever is picked in this slot
+  const card = document.createElement('div'); card.className = 'plantCard';
+  select.showCard = () => {
+    const d = CONFIG.PLANTS[select.value];
+    card.innerHTML = !d ? '<i>No companion</i>' : `<b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
+      ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span><kbd>${'QEF'[n]}</kbd>${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>';
+  };
+  select.showCard();
+  select.addEventListener('change', () => { squadSelectionCustomized = true; select.showCard(); updateSquadSummary(); });
+  label.append(select, card); squadSlots.append(label);
 }
 function refreshDefaultSquadSelection() {
   defaultSquad = shuffledDefaultSquad();
-  [...squadSlots.querySelectorAll('select')].forEach((select, i) => select.value = defaultSquad[i] || '');
+  [...squadSlots.querySelectorAll('select')].forEach((select, i) => { select.value = defaultSquad[i] || ''; select.showCard(); });
   updateSquadSummary();
 }
 function readSquadSelection() {
@@ -4453,35 +4575,501 @@ function raycastWorld(o, d, maxT, minT = 0) {
   return maxT;
 }
 
-// ---- Terrain + prop meshes (grey boxes: tiers read as shades, cliffs darker) ----
+// =====================================================================
+// World art (tuning CONFIG.art): painted terrain, dressed props, sky, decorations, the garden statue.
+// Purely visual: collision, nav and LOS still come from the analytic terrain + OBSTACLES above. Each prop fills its
+// obstacle's footprint (sunk 1 m so it sits flush on slopes); decorations stay off paths, props and the court.
+// =====================================================================
+const ART = CONFIG.art;
+const artHash = (x, z) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
+function artNoise(x, z) {
+  const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi, u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+  const a = artHash(xi, zi), b = artHash(xi + 1, zi), c = artHash(xi, zi + 1), d = artHash(xi + 1, zi + 1);
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+const artFbm = (x, z) => artNoise(x, z) * 0.55 + artNoise(x * 2.07 + 17.3, z * 2.07 - 9.1) * 0.3 + artNoise(x * 4.3 - 31.7, z * 4.3 + 5.2) * 0.15;
+// Distance from (x,z) to the nearest worn path (polylines in ART.paths)
+function pathDist(x, z) {
+  let best = Infinity;
+  for (const line of ART.paths) for (let i = 1; i < line.length; i++) {
+    const [ax, az] = line[i - 1], [bx, bz] = line[i], dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t));
+  }
+  return best;
+}
+const slopeAt = (x, z) => Math.hypot(heightAt(x + 0.5, z) - heightAt(x - 0.5, z), heightAt(x, z + 0.5) - heightAt(x, z - 0.5));
+const onRamp = (x, z) => MAP.ramps.some(r => {
+  const [x0, z0] = r.from, [x1, z1] = r.to, dx = x1 - x0, dz = z1 - z0, len2 = dx * dx + dz * dz;
+  const t = ((x - x0) * dx + (z - z0) * dz) / len2;
+  return t >= 0 && t <= 1 && Math.abs((x - x0) * dz - (z - z0) * dx) / Math.sqrt(len2) <= r.width / 2;
+});
+const inAnyObstacle = (x, z, pad) => OBSTACLES.some(o => inFootprint(o, x, z, pad));
+const artColor = Object.fromEntries(Object.entries(ART.colors).map(([k, v]) => [k, new THREE.Color(v)]));
+// Tileable speckle (grass blades, grit) multiplied over the vertex-painted ground: breaks up the flat colours up close
+function makeDetailTexture(size) {
+  const raw = Float32Array.from({ length: size * size }, Math.random);
+  const blur = src => {
+    const out = new Float32Array(size * size);
+    for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+      let s = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) s += src[((j + dj + size) % size) * size + (i + di + size) % size];
+      out[j * size + i] = s / 9;
+    }
+    return out;
+  };
+  const soft = blur(blur(raw));
+  let lo = 1, hi = 0;
+  for (const v of soft) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const data = new Uint8Array(size * size * 4);
+  for (let k = 0; k < size * size; k++) {
+    const v = 0.78 + 0.22 * (0.65 * (soft[k] - lo) / (hi - lo) + 0.35 * raw[k]);
+    data[k * 4] = data[k * 4 + 1] = data[k * 4 + 2] = v * 255; data[k * 4 + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, size, size);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true; tex.needsUpdate = true;
+  return tex;
+}
+// Paving slabs for the statue court (canvas texture, sRGB)
+function makePavingTexture() {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 512;
+  const g = cv.getContext('2d'), slab = 128;
+  g.fillStyle = '#7f776a'; g.fillRect(0, 0, 512, 512);
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+    const off = j & 1 ? slab / 2 : 0, l = 74 + Math.random() * 10;
+    for (const dx of [0, 512]) {
+      g.fillStyle = `hsl(${36 + Math.random() * 10}, ${14 + Math.random() * 8}%, ${l}%)`;
+      g.fillRect(i * slab + off + 3 - dx, j * slab + 3, slab - 6, slab - 6);
+    }
+    for (let s = 0; s < 40; s++) {   // grit
+      g.fillStyle = `rgba(${Math.random() < 0.5 ? '255,255,255' : '60,50,40'},${0.05 + Math.random() * 0.08})`;
+      g.fillRect(Math.random() * 512, j * slab + Math.random() * slab, 2 + Math.random() * 6, 2 + Math.random() * 6);
+    }
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = 4;
+  return tex;
+}
+
+// ---- Sky dome (follows the camera) + a few soft clouds ----
+const skyDome = (() => {
+  const R = ART.sky.radius, geo = new THREE.SphereGeometry(R, 32, 16), p = geo.attributes.position, cols = [];
+  const top = new THREE.Color(ART.sky.top), hor = new THREE.Color(ART.sky.horizon), bot = new THREE.Color(ART.sky.bottom), c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i) / R;
+    c.copy(hor).lerp(y > 0 ? top : bot, y > 0 ? Math.pow(y, 0.55) : Math.min(1, -y * 4));
+    cols.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  mesh.renderOrder = -10; mesh.frustumCulled = false;
+  // Clouds: puffs merged into one mesh, parented to the dome so they stay on the horizon
+  const puffs = [];
+  for (let i = 0; i < ART.sky.clouds; i++) {
+    const a = i / ART.sky.clouds * Math.PI * 2 + Math.random() * 0.4, d = R * (0.55 + Math.random() * 0.25), y = R * (0.18 + Math.random() * 0.16);
+    for (let k = 0; k < 6; k++) {
+      const s = 14 + Math.random() * 16, puff = new THREE.IcosahedronGeometry(s, 1);
+      puff.scale(1.6, 0.55, 1).translate(Math.cos(a) * d + (k - 2.5) * s * 0.9, y + Math.random() * s * 0.3, Math.sin(a) * d + (Math.random() - 0.5) * s);
+      puff.deleteAttribute('uv'); puffs.push(puff);
+    }
+  }
+  const clouds = new THREE.Mesh(mergeGeometries(puffs), new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false, transparent: true, opacity: 0.85, depthWrite: false }));
+  clouds.renderOrder = -9; clouds.frustumCulled = false;
+  mesh.add(clouds);
+  scene.add(mesh);
+  scene.background = hor.clone();
+  scene.fog.color.copy(hor);
+  return mesh;
+})();
+
+// ---- Terrain: grass with broad colour variation, mowing stripes, dirt paths, dead ground at the zombie spawns,
+// layered rock cliffs, gravel on the quarry shelf, meadows on the wall tops ----
 {
-  const seg = MAP.size;
+  const C = artColor, seg = MAP.size;
   const geo = new THREE.PlaneGeometry(MAP.size, MAP.size, seg, seg);
   geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
+  const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), steepA = new Float32Array(pos.count), c = new THREE.Color(), t = new THREE.Color();
+  const spawns = Object.values(CONFIG.SPAWN_POINTS);
   for (let k = 0; k < pos.count; k++) {
-    const x = pos.getX(k), z = pos.getZ(k), h = heightAt(x, z);
+    const x = pos.getX(k), z = pos.getZ(k), h = heightAt(x, z), r = Math.hypot(x, z);
     pos.setY(k, h);
-    const slope = Math.hypot(heightAt(x + 0.5, z) - heightAt(x - 0.5, z), heightAt(x, z + 0.5) - heightAt(x, z - 0.5));
-    let g = 0.42 + h * 0.022 - Math.min(0.18, slope * 0.12);
-    // faint 4 m checker so scale and slopes read in grey-box
-    if ((Math.floor(x / 4) + Math.floor(z / 4)) & 1) g -= 0.025;
-    col[k * 3] = g * 0.92; col[k * 3 + 1] = g; col[k * 3 + 2] = g * 0.88;
+    const slope = slopeAt(x, z), n = artFbm(x * 0.07, z * 0.07), fine = artNoise(x * 0.9 + 3.1, z * 0.9 - 7.7);
+    c.copy(C.grassA).lerp(C.grassB, n);
+    if (n < 0.38) c.lerp(C.grassDark, (0.38 - n) * 1.5);
+    if (h > 1.5 && h < 4 && r < 80 && (Math.floor((x - z) / 5) & 1)) c.multiplyScalar(1.12);   // mowing stripes
+    if (h >= MAP.tiers.wall - 0.5) c.copy(C.meadow).lerp(C.grassDark, artFbm(x * 0.05 + 40, z * 0.05) * 0.7);
+    if (h > MAP.tiers.high - 0.6 && h < MAP.tiers.high + 0.6 && z > 58) c.copy(C.quarry).lerp(C.rock, n * 0.6);
+    for (const sp of spawns) {
+      const d = Math.hypot(x - sp.x, z - sp.z) / sp.r;
+      if (d < 1.2) c.lerp(C.dead, Math.min(1, (1.2 - d) * 1.6) * (0.55 + 0.3 * n));
+    }
+    const pd = pathDist(x, z);
+    if (pd < ART.pathWidth) c.lerp(C.dirt, smooth01((ART.pathWidth - pd) / 1.8) * (0.7 + 0.3 * fine));
+    if (onRamp(x, z)) c.lerp(C.dirt, 0.7);
+    steepA[k] = smooth01((slope - 1.2) / 2);   // cliff faces (rise ≫ run): strata in the ground shader
+    if (slope > 0.5) {
+      t.copy(C.rock).lerp(C.rockDark, (Math.sin(h * 2.6 + n * 5) * 0.5 + 0.5) * 0.75);   // strata bands
+      c.lerp(t, smooth01((slope - 0.5) / 0.45));
+    }
+    if (r < MAP.bowl.floorRadius + 1.2) c.lerp(C.curb, smooth01(1 - Math.abs(r - MAP.bowl.floorRadius - 0.3) / 0.9));
+    c.multiplyScalar((0.94 + fine * 0.12) * ART.groundBoost);
+    col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('artSteep', new THREE.BufferAttribute(steepA, 1));
   geo.computeVertexNormals();
-  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  const detail = makeDetailTexture(256);
+  detail.repeat.set(MAP.size / ART.detailTile, MAP.size / ART.detailTile);
+  const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: detail });
+  // Cliff faces are single stretched 1 m quads in the heightfield: paint layered rock per pixel from the world height
+  // (steepness comes per vertex), so 11 m walls read as strata, not flat grey
+  groundMat.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float artSteep;\nvarying vec3 vArtPos;\nvarying float vArtSteep;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvArtPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvArtSteep = artSteep;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vArtPos;\nvarying float vArtSteep;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        float steep = vArtSteep;
+        if (steep > 0.0) {
+          vec3 q = vArtPos;
+          float band = sin(q.y * 2.7 + sin(q.x * 0.31 + q.z * 0.23) * 1.8 + sin(q.x * 1.7 - q.z * 1.3) * 0.25);
+          vec3 cell = floor(vec3(q.x * 1.5, q.y * 3.0, q.z * 1.5));
+          float grain = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+          vec3 rock = mix(vec3(${ART.rockShade[0]}), vec3(${ART.rockShade[1]}), band * 0.5 + 0.5) * (0.82 + 0.3 * grain);
+          diffuseColor.rgb = mix(diffuseColor.rgb, rock, steep);
+        }
+      }`);
+  };
+  groundMat.customProgramCacheKey = () => 'artGround';
+  const ground = new THREE.Mesh(geo, groundMat);
   ground.receiveShadow = true;
   scene.add(ground);
-
-  const KIND_COLOR = { cover: 0xb8b8b0, hedge: 0x587a50, building: 0x8a8a92, platform: 0x7d93a8 };
-  for (const o of OBSTACLES) {
-    const g = o.r !== undefined ? new THREE.CylinderGeometry(o.r, o.r, o.h + 1, 24) : new THREE.BoxGeometry(o.w, o.h + 1, o.d);
-    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: KIND_COLOR[o.kind] }));
-    m.position.set(o.x, o.base + (o.h - 1) / 2, o.z);   // sunk 1 m so it sits flush on slopes
-    m.castShadow = m.receiveShadow = true;
-    scene.add(m);
+  // Statue court: paved disc with two darker stone rings
+  const paving = makePavingTexture();
+  paving.repeat.set(MAP.bowl.floorRadius * 2 / 4, MAP.bowl.floorRadius * 2 / 4);
+  const court = new THREE.Mesh(new THREE.CircleGeometry(MAP.bowl.floorRadius, 64).rotateX(-Math.PI / 2),
+    new THREE.MeshLambertMaterial({ map: paving, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  court.position.y = 0.02; court.receiveShadow = true;
+  scene.add(court);
+  for (const [r0, r1] of ART.courtRings) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 64).rotateX(-Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: ART.colors.courtRing, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+    ring.position.y = 0.03; ring.receiveShadow = true;
+    scene.add(ring);
   }
+}
+
+// ---- Props: every obstacle dressed by kind / name (shared Lambert materials, a few meshes each) ----
+const artSpin = [];   // { obj, axis, rate } turned every frame (windmill sails)
+{
+  const lam = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
+  const M = {
+    stone: lam(0xbdb4a3), stoneDark: lam(0x8f8778), stoneDS: lam(0xa9a091, { side: THREE.DoubleSide }), brick: lam(0xa5573b),
+    soil: lam(0x553923), wood: lam(0x9a6a43), woodDark: lam(0x5e3b26), roof: lam(0x4f3c36), plaster: lam(0xf0e9da),
+    hedge: lam(0x3b7a30), hedgeLight: lam(0x4f9338), hay: lam(0xdcb85c), white: lam(0xf3f1ea), red: lam(0xb8432f),
+    glass: new THREE.MeshStandardMaterial({ color: 0xbfe6dc, roughness: 0.12, metalness: 0.15, emissive: 0x16302a }),
+    water: new THREE.MeshStandardMaterial({ color: 0x4aa3d8, roughness: 0.08, metalness: 0.25, emissive: 0x0a2840 }),
+  };
+  const flowerSpots = [];   // planter tops get flowers (instanced below)
+  function buildProp(o) {
+    const g = new THREE.Group(), H = o.h, sink = 1;
+    g.position.set(o.x, o.base, o.z);
+    const add = (geo, mat, x = 0, y = 0, z = 0) => {
+      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m;
+    };
+    const box = (w, h, d, mat, x, y0, z) => add(new THREE.BoxGeometry(w, h, d), mat, x, y0 + h / 2, z);   // y0 = bottom
+    const W = o.w, D = o.d, long = W > D, L = Math.max(W ?? 0, D ?? 0);
+    if (o.name === 'Fountain') {
+      add(new THREE.CylinderGeometry(o.r, o.r * 1.05, H + sink, 32, 1, true), M.stoneDS, 0, (H - sink) / 2, 0);
+      add(new THREE.TorusGeometry(o.r - 0.14, 0.17, 8, 40).rotateX(Math.PI / 2), M.stone, 0, H, 0);
+      add(new THREE.CircleGeometry(o.r - 0.2, 32).rotateX(-Math.PI / 2), M.water, 0, H - 0.18, 0).castShadow = false;
+      add(new THREE.CylinderGeometry(0.3, 0.42, 1.1, 12), M.stone, 0, H + 0.35, 0);
+      add(new THREE.CylinderGeometry(0.95, 0.5, 0.3, 20), M.stone, 0, H + 0.95, 0);
+      add(new THREE.CircleGeometry(0.85, 20).rotateX(-Math.PI / 2), M.water, 0, H + 1.11, 0).castShadow = false;
+      add(new THREE.SphereGeometry(0.22, 12, 8), M.stone, 0, H + 1.3, 0);
+    } else if (o.kind === 'hedge') {
+      box(W - 0.3, H + sink - 0.2, D - 0.3, M.hedge, 0, -sink, 0);
+      const blobs = [[], []];
+      const n = Math.max(2, Math.round(L / 1.1));
+      for (let i = 0; i < n; i++) {
+        const u = (i + 0.5) / n * L - L / 2;
+        for (const [side, y, r] of [[0, H - 0.45, 0.8], [-1, H * 0.55, 0.65], [1, H * 0.55, 0.65], [-1, H * 0.2, 0.6], [1, H * 0.2, 0.6]]) {
+          const off = side * ((long ? D : W) / 2 - 0.45), jit = (artHash(o.x + i, o.z + y) - 0.5) * 0.6;
+          const b = new THREE.IcosahedronGeometry(r * (0.7 + artHash(i + o.x, y) * 0.5), 1);
+          const shift = (side ? 0.5 : 0) * L / n;   // side rows sit between the top row's blobs
+          b.translate(long ? u + jit + shift : off + jit * 0.3, y + jit * 0.5, long ? off + jit * 0.3 : u + jit + shift);
+          blobs[(i + side + 2) % 2].push(b);
+        }
+      }
+      blobs.forEach((list, k) => add(mergeGeometries(list), k ? M.hedgeLight : M.hedge));
+    } else if (o.name.includes('Planter')) {
+      box(W, H - 0.08 + sink, D, M.brick, 0, -sink, 0);
+      box(W + 0.12, 0.1, D + 0.12, M.stoneDark, 0, H - 0.1, 0);
+      box(W - 0.3, 0.05, D - 0.3, M.soil, 0, H - 0.05, 0).castShadow = false;
+      for (let i = 0; i < W * D * 5; i++) flowerSpots.push([o.x + (Math.random() - 0.5) * (W - 0.45), o.base + H, o.z + (Math.random() - 0.5) * (D - 0.45)]);
+    } else if (o.name.includes('Rail')) {
+      box(W, 0.25 + sink, D, M.white, 0, -sink, 0);
+      box(W + 0.08, 0.1, D + 0.08, M.white, 0, H - 0.1, 0);
+      const n = Math.max(2, Math.round(L / 0.45));
+      for (let i = 0; i <= n; i++) { const u = i / n * (L - 0.1) - (L - 0.1) / 2; box(0.09, H - 0.35, 0.09, M.white, long ? u : 0, 0.25, long ? 0 : u); }
+    } else if (o.name.includes('Crate')) {
+      box(W - 0.06, H + sink - 0.06, D - 0.06, M.wood, 0, -sink, 0);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.14, H + sink, 0.14, M.woodDark, sx * (W / 2 - 0.07), -sink, sz * (D / 2 - 0.07));
+      for (const y of [0.02, H - 0.14]) { box(W, 0.12, 0.12, M.woodDark, 0, y, D / 2 - 0.06); box(W, 0.12, 0.12, M.woodDark, 0, y, -D / 2 + 0.06);
+        box(0.12, 0.12, D, M.woodDark, W / 2 - 0.06, y, 0); box(0.12, 0.12, D, M.woodDark, -W / 2 + 0.06, y, 0); }
+    } else if (o.name === 'Hay Stack') {
+      add(new RoundedBoxGeometry(W, H + sink, D, 3, 0.35), M.hay, 0, (H - sink) / 2, 0);
+      box(W + 0.02, 0.12, D + 0.02, M.woodDark, 0, H * 0.35, 0);
+    } else if (o.name === 'Tool Shed') {
+      box(W, H - 0.35 + sink, D, M.wood, 0, -sink, 0);
+      for (let y = 0.5; y < H - 0.4; y += 0.55) { box(W + 0.03, 0.05, 0.03, M.woodDark, 0, y, D / 2); box(W + 0.03, 0.05, 0.03, M.woodDark, 0, y, -D / 2); }
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.22, H - 0.35 + sink, 0.22, M.plaster, sx * W / 2, -sink, sz * D / 2);
+      box(W + 0.4, 0.35, D + 0.4, M.roof, 0, H - 0.35, 0);
+      box(0.08, 2.3, 1.5, M.woodDark, -W / 2 - 0.04, 0, 0);    // door (faces the court)
+      box(1.6, 0.9, 0.08, M.glass, -1.8, 1.5, -D / 2 - 0.04); box(1.6, 0.9, 0.08, M.glass, 1.8, 1.5, -D / 2 - 0.04);
+    } else if (o.name === 'Greenhouse') {
+      const wall = H - 1.25;
+      box(W, 0.8 + sink, D, M.brick, 0, -sink, 0);
+      box(W - 0.12, wall - 0.8, D - 0.12, M.glass, 0, 0.8, 0);
+      const n = Math.round(D / 2.2);
+      for (let i = 0; i <= n; i++) { const u = i / n * D - D / 2; for (const sx of [-1, 1]) box(0.12, wall - 0.8, 0.12, M.white, sx * (W / 2 - 0.05), 0.8, u); }
+      box(W, 0.12, D, M.white, 0, wall - 0.06, 0);
+      const slant = Math.hypot(W / 2, 1.25), ang = Math.atan2(1.25, W / 2);
+      for (const sx of [-1, 1]) {
+        const roof = add(new THREE.BoxGeometry(slant, 0.08, D), M.glass, sx * W / 4, wall + 0.62, 0);
+        roof.rotation.z = -sx * ang;
+      }
+      box(0.16, 0.16, D + 0.1, M.white, 0, H - 0.12, 0);
+    } else if (o.name === 'Windmill') {
+      add(new THREE.CylinderGeometry(o.r * 0.62, o.r, H + sink, 20), M.plaster, 0, (H - sink) / 2, 0);
+      add(new THREE.ConeGeometry(o.r * 0.9, 2.6, 20), M.red, 0, H + 1.3, 0);
+      const face = Math.atan2(-o.x, -o.z), hub = new THREE.Group();
+      hub.position.set(Math.sin(face) * o.r * 0.75, H - 1.2, Math.cos(face) * o.r * 0.75); hub.rotation.y = face;
+      g.add(hub);
+      const sails = new THREE.Group(); hub.add(sails);
+      const hubBall = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), M.woodDark); hubBall.castShadow = true; sails.add(hubBall);
+      for (let i = 0; i < 4; i++) {
+        const arm = new THREE.Group(); arm.rotation.z = i * Math.PI / 2; sails.add(arm);
+        const spar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 6, 0.12), M.woodDark); spar.position.y = 3; spar.castShadow = true; arm.add(spar);
+        const sail = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4.6, 0.05), M.white); sail.position.set(0.7, 3.5, 0.04); sail.castShadow = true; arm.add(sail);
+      }
+      artSpin.push({ obj: sails, rate: ART.windmillSpin });
+      box(1.2, 2.2, 0.2, M.woodDark, Math.sin(face) * o.r * 0.95, 0, Math.cos(face) * o.r * 0.95).rotation.y = face;
+    } else if (o.name.startsWith('Gate Post')) {
+      add(new THREE.CylinderGeometry(o.r * 0.9, o.r, H + sink, 16), M.stone, 0, (H - sink) / 2, 0);
+      add(new THREE.CylinderGeometry(o.r * 1.12, o.r * 1.12, 0.3, 16), M.stoneDark, 0, H - 0.15, 0);
+      add(new THREE.SphereGeometry(o.r * 0.5, 14, 10), M.stone, 0, H + o.r * 0.45, 0);
+    } else if (o.kind === 'platform') {
+      box(W - 0.2, H - 0.3 + sink, D - 0.2, M.stone, 0, -sink, 0);
+      box(W + 0.15, 0.3, D + 0.15, M.wood, 0, H - 0.3, 0);
+      for (let i = 0; i < 5; i++) box(W + 0.17, 0.04, 0.05, M.woodDark, 0, H - 0.02, (i + 0.5) / 5 * D - D / 2);
+    } else if (o.r !== undefined) {
+      add(new THREE.CylinderGeometry(o.r, o.r, H + sink, 20), M.stone, 0, (H - sink) / 2, 0);
+    } else {   // low walls and other cover: stone with a cap
+      box(W, H - 0.12 + sink, D, M.stone, 0, -sink, 0);
+      box(W + 0.14, 0.12, D + 0.14, M.stoneDark, 0, H - 0.12, 0);
+    }
+    return g;
+  }
+  // Each prop merges its parts by material (a handful of draw calls) but stays its own object, so the camera and
+  // the small shadow frustum still cull props out of view; animated parts (windmill sails) are kept apart
+  for (const o of OBSTACLES) scene.add(bakeRig(buildProp(o), artSpin));
+
+  // ---- Instanced decorations (one draw each): trees on the wall tops, rocks, grass tufts, flowers, gravestones ----
+  const dummy = new THREE.Object3D(), tint = new THREE.Color();
+  // Instances are split into map chunks so whole chunks out of view are frustum-culled (one draw per visible chunk)
+  const scatter = (geo, mat, list, opts = {}) => {
+    const chunks = new Map(), C = ART.decor.chunk;
+    for (const s of list) { const k = `${Math.floor(s.x / C)},${Math.floor(s.z / C)}`; if (!chunks.has(k)) chunks.set(k, []); chunks.get(k).push(s); }
+    return [...chunks.values()].map(part => scatterChunk(geo, mat, part, opts));
+  };
+  const scatterChunk = (geo, mat, list, opts) => {
+    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+    list.forEach((s, i) => {
+      dummy.position.set(s.x, s.y, s.z); dummy.rotation.set(s.rx || 0, s.ry || 0, s.rz || 0); dummy.scale.setScalar(s.s || 1);
+      if (s.sy) dummy.scale.y *= s.sy;
+      dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
+      if (s.c !== undefined) mesh.setColorAt(i, tint.set(s.c));
+    });
+    mesh.count = list.length; mesh.castShadow = !!opts.shadow; mesh.receiveShadow = opts.receive !== false;
+    mesh.computeBoundingSphere();
+    scene.add(mesh);
+    return mesh;
+  };
+  const vcolGeo = (geo, bottom, top, y0, y1) => {   // vertical gradient vertex colours
+    const p = geo.attributes.position, cols = [], a = new THREE.Color(bottom), b = new THREE.Color(top), c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) { c.copy(a).lerp(b, smooth01((p.getY(i) - y0) / (y1 - y0))); cols.push(c.r, c.g, c.b); }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    return geo;
+  };
+  const D = ART.decor, spawnList = Object.values(CONFIG.SPAWN_POINTS);
+  const nearSpawn = (x, z, k = 1) => spawnList.some(sp => Math.hypot(x - sp.x, z - sp.z) < sp.r * k);
+  // Trees: only on the unreachable wall tops (≥ 4 m in from every edge), framing the arena
+  const trees = [];
+  for (let z = -HALF + 4; z < HALF - 4; z += D.treeStep) for (let x = -HALF + 4; x < HALF - 4; x += D.treeStep) {
+    const tx = x + (artHash(x, z) - 0.5) * D.treeStep, tz = z + (artHash(z, x) - 0.5) * D.treeStep;
+    if ([[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]].some(([dx, dz]) => heightAt(tx + dx, tz + dz) < MAP.tiers.wall - 0.3)) continue;
+    if (artHash(tx * 0.3, tz * 0.3) > D.treeFill) continue;
+    trees.push({ x: tx, y: heightAt(tx, tz), z: tz, ry: artHash(tz, tx) * 6.28, s: 0.8 + artHash(tx + 1, tz) * 0.7,
+      c: tint.setHSL(0.27 + artHash(tx, tz + 2) * 0.08, 0.45, 0.32 + artHash(tx + 3, tz) * 0.12).getHex() });
+  }
+  {
+    const trunk = vcolGeo(new THREE.CylinderGeometry(0.22, 0.32, 2.4, 6).translate(0, 1.2, 0).toNonIndexed(), 0x6b4a2e, 0x6b4a2e, 0, 1);
+    const crowns = [[0, 3.4, 0, 1.6], [0.7, 2.8, 0.3, 1.15], [-0.6, 2.9, -0.4, 1.1], [0.1, 4.3, 0.1, 1.05]]
+      .map(([x, y, z, r]) => vcolGeo(new THREE.IcosahedronGeometry(r, 0).translate(x, y, z), 0x9ab89a, 0xffffff, 1.5, 5.2));
+    [trunk, ...crowns].forEach(g => g.deleteAttribute('uv'));
+    // trunk keeps its colour: tint 1 for the trunk via vertex colours × a light instance tint
+    const geo = mergeGeometries([trunk, ...crowns]);
+    scatter(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), trees, { shadow: false });
+  }
+  // Rocks: on the wall tops near their edges and on the quarry shelf (never in a spawn area)
+  const rocks = [];
+  for (let i = 0; i < D.rocks * 6 && rocks.length < D.rocks; i++) {
+    const x = (Math.random() - 0.5) * (MAP.size - 10), z = (Math.random() - 0.5) * (MAP.size - 10), h = heightAt(x, z);
+    const edge = h > MAP.tiers.wall - 0.3 && [[3, 0], [-3, 0], [0, 3], [0, -3]].some(([dx, dz]) => heightAt(x + dx, z + dz) < MAP.tiers.wall - 1);
+    const shelf = Math.abs(h - MAP.tiers.high) < 0.3 && z > 70 && !nearSpawn(x, z, 1.05) && pathDist(x, z) > ART.pathWidth;
+    if (!edge && !shelf) continue;
+    rocks.push({ x, y: h - 0.2, z, rx: Math.random() * 3, ry: Math.random() * 6.28, s: 0.5 + Math.random() * 1.3, sy: 0.6 + Math.random() * 0.4,
+      c: tint.setHSL(0.08, 0.08, 0.42 + Math.random() * 0.15).getHex() });
+  }
+  // Boulders along the foot of every cliff (break up the wall line), off paths, ramps and props
+  for (let i = 0, n = 0; i < D.boulders * 40 && n < D.boulders; i++) {
+    const x = (Math.random() - 0.5) * (MAP.size - 10), z = (Math.random() - 0.5) * (MAP.size - 10), h = heightAt(x, z);
+    if (slopeAt(x, z) > 0.3 || h > MAP.tiers.wall - 1) continue;
+    const up = [[2, 0], [-2, 0], [0, 2], [0, -2]].find(([dx, dz]) => heightAt(x + dx, z + dz) > h + 4);
+    if (!up || pathDist(x, z) < ART.pathWidth + 1 || onRamp(x, z) || inAnyObstacle(x, z, 1)) continue;
+    rocks.push({ x: x + up[0] * 0.35, y: h - 0.3, z: z + up[1] * 0.35, rx: Math.random() * 3, ry: Math.random() * 6.28, s: 0.9 + Math.random() * 1.6,
+      sy: 0.7 + Math.random() * 0.5, c: tint.setHSL(0.08, 0.07, 0.4 + Math.random() * 0.14).getHex() }); n++;
+  }
+  { const geo = new THREE.DodecahedronGeometry(0.8, 0); geo.deleteAttribute('uv'); scatter(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), rocks); }
+  // Gravestones: the zombie side of each spawn area (crooked, mossy)
+  const graves = [];
+  for (const sp of spawnList) for (let i = 0, n = 0; i < 80 && n < D.gravesPerArea; i++) {
+    const a = Math.random() * Math.PI * 2, d = sp.r * (0.25 + Math.random() * 0.7), x = sp.x + Math.cos(a) * d, z = sp.z + Math.sin(a) * d;
+    if (Math.abs(x) > HALF - 3 || Math.abs(z) > HALF - 3 || slopeAt(x, z) > 0.25 || pathDist(x, z) < ART.pathWidth || inAnyObstacle(x, z, 1)) continue;
+    graves.push({ x, y: heightAt(x, z), z, ry: Math.random() * 6.28, rx: (Math.random() - 0.5) * 0.3, rz: (Math.random() - 0.5) * 0.3,
+      s: 0.8 + Math.random() * 0.5, c: tint.setHSL(0.25, 0.05, 0.5 + Math.random() * 0.15).getHex() }); n++;
+  }
+  { const geo = new RoundedBoxGeometry(0.7, 1.1, 0.18, 2, 0.12).translate(0, 0.4, 0); geo.deleteAttribute('uv');
+    scatter(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), graves); }   // (instances can't be shadow-culled)
+  // Grass tufts + wild flowers on the open lawn (quality Low hides the tufts)
+  const tufts = [], flowers = [];
+  for (let i = 0; i < D.tufts * 3 && tufts.length < D.tufts; i++) {
+    const r = MAP.bowl.floorRadius + 1.5 + Math.sqrt(Math.random()) * D.tuftRange, a = Math.random() * Math.PI * 2;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (Math.abs(x) > HALF - 2 || Math.abs(z) > HALF - 2 || slopeAt(x, z) > 0.3 || heightAt(x, z) > MAP.tiers.wall - 1) continue;
+    if (pathDist(x, z) < ART.pathWidth + 0.4 || onRamp(x, z) || inAnyObstacle(x, z, 0.4)) continue;
+    if (Math.abs(heightAt(x, z) - MAP.tiers.high) < 0.6 && z > 58) continue;   // gravel shelf
+    const dead = nearSpawn(x, z, 1.1);
+    tufts.push({ x, y: heightAt(x, z), z, ry: Math.random() * 6.28, s: 0.7 + Math.random() * 0.8,
+      c: dead ? tint.setHSL(0.13, 0.35, 0.45).getHex() : tint.setHSL(0.24 + Math.random() * 0.06, 0.55, 0.42 + Math.random() * 0.14).getHex() });
+    if (!dead && Math.random() < D.flowerChance) flowers.push([x + 0.3, heightAt(x, z), z]);
+  }
+  {
+    const blades = [];
+    for (let b = 0; b < 5; b++) {
+      const a = b / 5 * Math.PI * 2, lean = 0.12 + b * 0.03, hgt = 0.35 + (b % 3) * 0.08;
+      const geo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([
+        -0.05, 0, 0, 0.05, 0, 0, Math.sin(lean) * 0.15, hgt, Math.cos(lean) * 0.1], 3));
+      geo.rotateY(a); geo.computeVertexNormals(); blades.push(vcolGeo(geo, 0x4a6a2a, 0xd8f0a0, 0, 0.5));
+    }
+    const geo = mergeGeometries(blades);
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const meshes = scatter(geo, mat, tufts, { shadow: false });
+    onSettings(s => { for (const m of meshes) m.visible = s.quality !== 'low'; });
+  }
+  // Flowers: planters (dense) + lawn (sparse). Stems and heads share matrices; heads take the instance colour.
+  {
+    const list = [...flowerSpots, ...flowers].map(([x, y, z]) => ({ x, y, z, ry: Math.random() * 6.28, s: 0.8 + Math.random() * 0.5,
+      c: ART.flowerColors[Math.floor(Math.random() * ART.flowerColors.length)] }));
+    const stem = new THREE.CylinderGeometry(0.015, 0.02, 0.32, 4).translate(0, 0.16, 0); stem.deleteAttribute('uv');
+    const head = new THREE.IcosahedronGeometry(0.09, 0).scale(1, 0.55, 1).translate(0, 0.34, 0); head.deleteAttribute('uv');
+    scatter(stem, new THREE.MeshLambertMaterial({ color: 0x3f8a2e }), list.map(f => ({ ...f, c: undefined })));
+    scatter(head, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x111111 }), list);
+  }
+}
+
+// ---- The garden statue: a painted ceramic gnome on a stone plinth (collision stays the S-metre box) ----
+// It wears the garden's health: grime creeps in, the hat tip breaks off below half, it leans when nearly gone, and
+// every hit flashes it red and knocks chips off.
+const gardenStatue = (() => {
+  const std = (color, roughness = 0.5, extra) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
+  const M = { stone: std(0xd2c9b6, 0.9), stoneDark: std(0x9c937f, 0.9), gold: std(0xf2c04a, 0.35, { metalness: 0.6 }),
+    coat: std(0x2f6fc8, 0.45), belt: std(0x3a2a1c, 0.6), skin: std(0xf7cfa8, 0.55, { emissive: 0x2a1408 }), beard: std(0xf5f2ea, 0.7),
+    hat: std(0xd93a2b, 0.45), boot: std(0x5a3a22, 0.6), eye: std(0x161616, 0.2), cheek: std(0xee8f7f, 0.6) };
+  const painted = [M.coat, M.hat, M.beard, M.skin, M.boot, M.belt];
+  painted.forEach(m => { m.userData.base = m.color.clone(); m.userData.glow = m.emissive.clone(); });
+  const root = new THREE.Group(), body = new THREE.Group();
+  const add = (parent, geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
+  // Plinth (fills the collision box footprint)
+  add(root, new THREE.BoxGeometry(S, 0.5, S), M.stoneDark, 0, 0.25, 0);
+  add(root, new THREE.BoxGeometry(S - 0.5, 0.95, S - 0.5), M.stone, 0, 0.95, 0);
+  add(root, new THREE.BoxGeometry(S - 0.2, 0.25, S - 0.2), M.stoneDark, 0, 1.55, 0);
+  for (let i = 0; i < 4; i++) {   // gold plaques on every face
+    const a = i * Math.PI / 2, p = add(root, new THREE.BoxGeometry(1.4, 0.5, 0.06), M.gold, Math.sin(a) * (S / 2 - 0.22), 0.95, Math.cos(a) * (S / 2 - 0.22));
+    p.rotation.y = a;
+  }
+  body.position.y = 1.67; root.add(body);
+  for (const s of [-1, 1]) add(body, new THREE.SphereGeometry(0.5, 16, 10).scale(0.85, 0.55, 1.25), M.boot, s * 0.42, 0.2, 0.18);
+  add(body, new THREE.CylinderGeometry(0.72, 1.12, 1.55, 24), M.coat, 0, 1.0, 0);
+  add(body, new THREE.CylinderGeometry(0.93, 0.98, 0.2, 24), M.belt, 0, 0.95, 0);
+  add(body, new THREE.BoxGeometry(0.34, 0.26, 0.1), M.gold, 0, 0.95, 0.97);
+  for (const s of [-1, 1]) {
+    const arm = add(body, new THREE.CylinderGeometry(0.19, 0.24, 1.0, 12), M.coat, s * 0.78, 1.25, 0.25);
+    arm.rotation.set(-0.7, 0, s * 0.35);
+    add(body, new THREE.SphereGeometry(0.22, 12, 10), M.skin, s * 0.55, 0.85, 0.72);
+  }
+  add(body, new THREE.SphereGeometry(0.64, 24, 18), M.skin, 0, 2.3, 0.02);
+  add(body, new THREE.ConeGeometry(0.68, 1.3, 20).rotateX(Math.PI), M.beard, 0, 1.4, 0.36);
+  add(body, new THREE.SphereGeometry(0.5, 18, 12).scale(1.12, 0.62, 0.8), M.beard, 0, 1.98, 0.32);
+  add(body, new THREE.SphereGeometry(0.2, 14, 10), M.cheek, 0, 2.26, 0.66);
+  for (const s of [-1, 1]) {
+    add(body, new THREE.SphereGeometry(0.085, 10, 8), M.eye, s * 0.21, 2.46, 0.57);
+    add(body, new THREE.SphereGeometry(0.11, 10, 8), M.cheek, s * 0.36, 2.24, 0.52);
+  }
+  add(body, new THREE.TorusGeometry(0.62, 0.09, 8, 28).rotateX(Math.PI / 2), M.hat, 0, 2.6, 0);
+  add(body, new THREE.CylinderGeometry(0.3, 0.66, 1.15, 24), M.hat, 0, 3.15, -0.04);
+  const tip = add(body, new THREE.ConeGeometry(0.31, 1.0, 24), M.hat, 0.08, 4.1, -0.1);
+  tip.rotation.z = -0.18;
+  bakeRig(root, { tip, body });
+  scene.add(root);
+  return { root, body, tip, M, painted, flash: 0, chipT: 0, frac: 1, tipped: false };
+})();
+statueMesh.visible = false;   // the box stays as the logical statue (position, collision helpers)
+statueHpBar.group.position.y = ART.statueBarY;
+// A hit on the garden this frame (loop): red flash + stone chips (throttled)
+function statueHit() {
+  const G = gardenStatue;
+  G.flash = 1;
+  if ((G.chipT -= 1) > 0) return;
+  G.chipT = 6;
+  const a = Math.random() * Math.PI * 2, p = new THREE.Vector3(Math.cos(a) * 1.1, 2.4 + Math.random() * 1.6, Math.sin(a) * 1.1);
+  for (let i = 0; i < 5; i++) spawnParticle('chip', i % 2 ? 0xd2c9b6 : 0x2f6fc8, p, rand3(4, 3), { life: 0.7 });
+}
+// Every frame: hit flash decay, grime by health, hat tip off below half, a lean when nearly gone
+function updateGardenStatue(dt) {
+  const G = gardenStatue, frac = Math.max(0, state.statueHp / CONFIG.statue.hp);
+  G.flash = Math.max(0, G.flash - dt * 5);
+  G.chipT -= dt * 60;
+  const e = G.flash * 0.55;
+  for (const m of G.painted) { const b = m.userData.glow; m.emissive.setRGB(b.r + e, b.g + e * 0.12, b.b + e * 0.08); }
+  if (Math.abs(frac - G.frac) > 0.005) {
+    G.frac = frac;
+    const grime = (1 - frac) * ART.statueGrime;
+    for (const m of G.painted) m.color.copy(m.userData.base).lerp(artColor.grime, grime);
+  }
+  const tipped = frac < 0.5;
+  if (tipped !== G.tipped) {
+    G.tipped = tipped; G.tip.visible = !tipped;
+    if (tipped && state.time > 0) {
+      const p = G.tip.getWorldPosition(new THREE.Vector3());
+      for (let i = 0; i < 16; i++) spawnParticle('chip', 0xd93a2b, p, rand3(6, 5), { life: 1.1 });
+    }
+  }
+  const lean = frac < 0.25 ? 0.07 : 0;
+  G.body.rotation.z += (lean - G.body.rotation.z) * Math.min(1, dt * 3);
+  G.body.position.x = Math.sin(state.time * 40) * G.flash * 0.04;   // hit wobble
 }
 
 // Spawn area markers: a dim terrain-hugging ring outlining each area, plus a tall beacon in its middle,
@@ -5130,6 +5718,13 @@ function setWorldBar(bar, ratio) {
   bar.fill.scale.x = ratio || 0.0001;
   bar.fill.position.x = -(bar.width * (1 - ratio)) / 2;
 }
+// World bars keep a steady on-screen size (full size at `refDist` m, shrinking when closer) and hide right next
+// to the camera, so an ally beside the player never covers the crosshair with a giant bar. Returns "visible".
+function keepBarReadable(group, refDist, hideBelow) {
+  const d = camera.position.distanceTo(group.position);
+  group.scale.setScalar(THREE.MathUtils.clamp(d / refDist, 0.3, 3));
+  return d > hideBelow;
+}
 
 // =====================================================================
 // Game state
@@ -5593,6 +6188,26 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'F1') e.preventDefault();   // no browser help page
   if (e.repeat || !state || state.over) return;
+  // 1–4: take control of that squad member (the number on its squad card)
+  const slot = /^Digit([1-4])$/.exec(e.code);
+  if (slot && !DEBUG) { const h = heroes[slot[1] - 1]; if (h && h !== player) takeControlOf(h); }
+  if (DEBUG) debugKey(e);
+  if (e.code === 'Tab' || e.code === 'BracketRight') switchSquadMember(e.shiftKey ? -1 : 1);
+  if (e.code === 'BracketLeft') switchSquadMember(-1);
+  // Hero controls: queued presses, read into the player's input next frame
+  if (e.code === 'Space') pressed.jump = true;
+  if (e.code === 'KeyR') pressed.reload = true;
+  if (e.code === 'KeyQ') pressed.shuck = true;
+  if (e.code === 'KeyE') pressed.hop = true;
+  if (e.code === 'KeyF') toggleButterTargeting();
+  // Garden Ops shop (between waves): C buy / repair, Z next pot type, Enter start the wave early
+  if (e.code === 'KeyC') shopBuy();
+  if (e.code === 'KeyZ') shopCycle(e.shiftKey ? -1 : 1);
+  if (e.code === 'Enter') shopReady();
+  if (e.code === 'KeyH') toggleHelp();
+});
+// Developer keys (?debug / ?autoplay only)
+function debugKey(e) {
   // Debug: Digit1..Digit9 spawn a small pack of that type at the spawn point
   const m = /^Digit([1-9])$/.exec(e.code);
   const type = m && DEBUG_SPAWN_KEYS[m[1] - 1];
@@ -5633,23 +6248,11 @@ addEventListener('keydown', e => {
       for (let i = 0; i < 30; i++) spawnZombie(mix[i % mix.length], lane);
     setMessage(`[debug] stress horde: ${zombies.length} zombies`, 2);
   }
-  if (e.code === 'Tab' || e.code === 'BracketRight') switchSquadMember(e.shiftKey ? -1 : 1);
-  if (e.code === 'BracketLeft') switchSquadMember(-1);
   // F1 = first autonomous companion's AI overlay (state, target, path)
   if (e.code === 'F1') { e.preventDefault(); mateDebug.toggle(); }
-  // Hero controls: queued presses, read into the player's input next frame
-  if (e.code === 'Space') pressed.jump = true;
-  if (e.code === 'KeyR') pressed.reload = true;
-  if (e.code === 'KeyQ') pressed.shuck = true;
-  if (e.code === 'KeyE') pressed.hop = true;
-  if (e.code === 'KeyF') toggleButterTargeting();
-  // Garden Ops shop (between waves): C buy / repair, Z next pot type, Enter start the wave early
-  if (e.code === 'KeyC') shopBuy();
-  if (e.code === 'KeyZ') shopCycle(e.shiftKey ? -1 : 1);
-  if (e.code === 'Enter') shopReady();
   // Debug: J = +500 coins
   if (e.code === 'KeyJ') { state.coins += 500; setMessage('[debug] +500 coins', 1.5); }
-});
+}
 addEventListener('keyup', e => keys[e.code] = false);
 let mouseDown = false, rightDown = false;
 const overlay = document.getElementById('overlay');
@@ -5667,6 +6270,7 @@ document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
   overlay.style.display = locked ? 'none' : 'flex';
   clearHumanInput();
+  document.body.classList.toggle('paused', !locked && !state.over && matchStarted);
   if (!locked && !state.over && matchStarted) {
     document.getElementById('squadPicker').style.display = 'none';
     document.getElementById('overlayTitle').textContent = 'PAUSED';
@@ -5715,10 +6319,12 @@ function endGame(won) {
   document.exitPointerLock();
   document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
   const why = won ? (state.finale ? 'The squad got out. The garden is safe.' : 'The garden is safe.')
-    : state.finale?.timeUp ? 'The rescue left without you.' : 'The statue fell.';
+    : state.abandoned ? 'Match abandoned.' : state.finale?.timeUp ? 'The rescue left without you.' : 'The statue fell.';
+  document.body.classList.remove('paused');
+  toggleHelp(false);
   showExtractZone(null);
   document.getElementById('laneArrow').style.display = 'none';
-  document.getElementById('overlaySub').innerHTML = why + '<br><b>Click to restart</b>';
+  document.getElementById('overlaySub').innerHTML = why + '<br>Pick a squad and press <b>Defend again</b>';
   showMatchStats(won);
   document.getElementById('squadPicker').style.display = 'block';
   document.getElementById('matchButton').textContent = 'DEFEND AGAIN';
@@ -6347,7 +6953,8 @@ function explodeAt(pos, radius, damage, { color = 0xff8800, stun = 0, sphere = t
 }
 
 // Death / revival belongs to the character, regardless of its current controller.
-function damageHero(h, amount) {
+// src (optional): the zombie, position or projectile origin the hit came from (hit-direction arcs)
+function damageHero(h, amount, src = null) {
   if (!targetable(h)) return;
   amount *= DIFF().zombieDamage;
   recordStat(h, 'taken', Math.min(amount, h.hp));
@@ -6361,6 +6968,7 @@ function damageHero(h, amount) {
     state.cam.flinch = (Math.random() < 0.5 ? -1 : 1) * Math.min(1, 0.4 + amount / 30);
     state.fovKick += CONFIG.camera.hurtFov;
     addShake(0.15 + Math.min(0.25, amount / 80));
+    noteHitFrom(h, src);
   }
   if (h.hp > 0) return;
   if (h.cactus?.drone) endGarlicDrone(h.cactus.drone, true);
@@ -7480,7 +8088,7 @@ function moveZombie(z, dir, dt, mult = 1) {
   steer.y = 0;
   if (steer.lengthSq() < 1e-6) return;
   steer.normalize();
-  const speed = def.speed * z.speedMul * z.buff.speed * mult * (z.climbing ? 0.4 : 1);
+  const speed = def.speed * z.speedMul * z.buff.speed * mult * (z.climbing ? 0.4 : 1) * (z.hurry || 1);
   pos.addScaledVector(steer, speed * dt);
   faceDir(z, dir.lengthSq() > 0 ? dir : steer, dt);
   z.wantsMove = true;
@@ -7632,7 +8240,7 @@ function gardenAlertTarget(h) {
 const gardenAlertPull = () => state.gardenAlert ? CONFIG.gardenAlert.pullScale : 1;
 
 function dealDamage(z, target, amount) {
-  if (target.isHero) { damageHero(target.hero, amount); z.chaseTime = 0; SFX.play('zombieHit', target.hero.mesh.position); }   // landing a hit resets the chase timeout
+  if (target.isHero) { damageHero(target.hero, amount, z); z.chaseTime = 0; SFX.play('zombieHit', target.hero.mesh.position); }   // landing a hit resets the chase timeout
   else { state.statueHp -= amount; SFX.play('statueHit', z.mesh.position); raiseGardenAlert(z); }
   SFX.play('swing', z.mesh.position);
   z.ai.swing = 0.18;   // little lunge-squash for readability
@@ -9048,7 +9656,7 @@ function bomberBehavior(z, t, dt) {
   if (a.beepT <= 0) { a.beepT += 1; z.glow = 1; SFX.play('beep', pos, 700 + rate * 80, def.beepRange); }
   if (t.dist > (t.isPoint ? 0 : def.radius + 0.2)) { moveZombie(z, t.dir, dt); return; }
   if (!t.isPoint) state.statueHp -= def.explosionDamage * z.buff.damage;
-  for (const h of heroes) if (targetable(h) && h.mesh.position.distanceTo(pos) < def.explosionRadius) damageHero(h, def.playerExplosionDamage);
+  for (const h of heroes) if (targetable(h) && h.mesh.position.distanceTo(pos) < def.explosionRadius) damageHero(h, def.playerExplosionDamage, pos);
   spawnExplosion(pos, def.explosionRadius);
   SFX.play('boom', pos, 1.2);
   addShake(0.3, pos);
@@ -10327,7 +10935,7 @@ function updateAllStarFootballs(dt) {
       if (h) {
         const [near, far, minMult] = C.falloff, d = p.distanceTo(f.start);
         const mult = d <= near ? 1 : THREE.MathUtils.lerp(1, minMult, Math.min(1, (d - near) / (far - near)));
-        damageHero(h, f.dmg * mult);
+        damageHero(h, f.dmg * mult, f.start);
         h.vel.addScaledVector(asTmp.copy(f.vel).setY(0).normalize(), C.push);
         SFX.play('asThud', p);
         for (let k = 0; k < 4; k++) spawnParticle('chip', k % 2 ? 0x7c3d1b : 0xf6f2e6, p, rand3(4, 3), { life: 0.4, size: 0.6 });
@@ -12160,7 +12768,7 @@ function updateGooPellets(dt) {
     if (h) {
       const d = pp.distanceTo(p.from), [n, f] = K.falloff;
       const mult = 1 - (1 - K.falloffMin) * THREE.MathUtils.clamp((d - n) / (f - n), 0, 1);
-      damageHero(h, p.damage * mult);
+      damageHero(h, p.damage * mult, p.from);
       hit = splat = true;
     }
     if (splat) {
@@ -15996,7 +16604,7 @@ function pirateFire(z, h) {
   }
   const end = o.clone().addScaledVector(dir, hitT);
   const dmg = (flatDist(z.mesh.position, h.mesh.position) < S.closeRange ? S.closeDamage : S.damage) * z.buff.damage * AG.damageMult;
-  if (hit) { damageHero(hit, dmg); z.chaseTime = 0; SFX.play('zombieHit', hit.mesh.position); }
+  if (hit) { damageHero(hit, dmg, z); z.chaseTime = 0; SFX.play('zombieHit', hit.mesh.position); }
   else if (wall) damageCactusWall(wall, dmg);
   // Feedback: tracer beam, muzzle flash + smoke ring, impact sparks
   const len = o.distanceTo(end);
@@ -16986,6 +17594,16 @@ function updateZombieLook(z, dt) {
   if (z.parts.core && z.parts.core.visible) z.parts.core.scale.setScalar(1 + Math.sin(state.time * 8) * 0.12);
 }
 
+// Pacing (CONFIG.hurry): a horde zombie no plant is near and still far from the garden walks faster, so waves
+// reach the fight instead of strolling 150 m; the last few of a wave hurry wherever they are. Never bosses / agents,
+// and never while chasing, attacking the garden or distracted.
+function hurryMult(z, straggling) {
+  const H = CONFIG.hurry, p = z.mesh.position;
+  if (z.def.boss || isAgent(z) || !z.def.speed || z.heroTgt || z.distraction) return 1;
+  if (p.x * p.x + p.z * p.z < (straggling ? H.gardenSafe : H.statueDist) ** 2) return 1;   // (spitters flag the garden from range)
+  for (const h of heroes) if (h.active && !h.dead && h.mesh.position.distanceToSquared(p) < H.heroDist ** 2) return 1;
+  return H.mult;
+}
 function updateZombies(dt) {
   applyBannerBuffs();
   updateHeroInfo();
@@ -17005,11 +17623,13 @@ function updateZombies(dt) {
     h.need.ground = h.need.climb = false;
   }
 
+  const straggling = state.phase === 'active' && !state.spawnQueue.length && zombies.length <= CONFIG.hurry.stragglers;
   for (const z of zombies) {
     if (z.dead) continue;
     unJuiceAgent(z);
     const pos = z.mesh.position;
     z.wantsMove = false;
+    z.hurry = (z.hurry || 1) + (hurryMult(z, straggling) - (z.hurry || 1)) * Math.min(1, dt * 2);
     z.attackTimer -= dt; z.retargetTimer -= dt; z.reaggroTimer -= dt;
     if (z.heroTgt) { z.chaseTime += dt; if (!z.seesHero) z.unseenTime += dt; }
     updateZombieLook(z, dt);
@@ -17198,7 +17818,7 @@ function updateEnemyProjectiles(dt) {
       const pl = h.mesh.position;
       const dy = Math.max(0, Math.abs(pp.y - pl.y) - h.stats.height / 2);
       const dx = pp.x - pl.x, dz = pp.z - pl.z;
-      if (dx * dx + dy * dy + dz * dz < (h.stats.radius + r) ** 2) { damageHero(h, p.damage); dead = hit = true; }
+      if (dx * dx + dy * dy + dz * dz < (h.stats.radius + r) ** 2) { damageHero(h, p.damage, p.owner); dead = hit = true; }
     }
     // Hit statue (box)
     if (!dead && hitsStatue(pp, r)) {
@@ -18595,12 +19215,13 @@ function updateHud(dt) {
     box.querySelector('.label').textContent = `${h.squadIndex + 1} · ${h.name}${h === player ? ' · YOU' : ''}`;
     box.querySelector('.num').textContent = fallen ? `${h.downed ? 'DOWN' : 'RESPAWN'} ${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`;
     updateFallenTag(h, fallen, left);
-    h.bar.group.visible = h.active && h !== player && !h.dead;
     h.bar.group.position.copy(h.mesh.position).setY(h.mesh.position.y + h.centerY + 0.4);
+    h.bar.group.visible = h.active && h !== player && !h.dead && keepBarReadable(h.bar.group, 20, 3.5);
     h.bar.group.quaternion.copy(camera.quaternion); setWorldBar(h.bar, h.hp / h.stats.hp);
   }
-  hud('squadHint').textContent = heroes.length > 1 ? 'Tab · next living plant   [ / ] · previous / next' : 'Solo defense';
+  hud('squadHint').textContent = heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help';
   setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
+  statueHpBar.group.visible = keepBarReadable(statueHpBar.group, 45, 7);
   statueHpBar.group.quaternion.copy(camera.quaternion);
 
   // Ammo + reload
@@ -18662,6 +19283,213 @@ function updateHud(dt) {
   hud('speedFx').style.opacity = player.type === 'peashooter' && player.pea?.hyper > 0 ? 0.85 : player.sprint * 0.8;
 }
 
+// ---------------------------------------------------------------------
+// Situational awareness (tuning CONFIG.hudAware): radar, hit-direction arcs, garden-under-attack alert,
+// straggler markers. The map is 440 m wide with four spawn areas, so the player always needs to know where the
+// horde is, where hits come from and when the garden is being chewed on.
+// ---------------------------------------------------------------------
+const HA = CONFIG.hudAware;
+const radarCanvas = hud('radar'), radarCtx = radarCanvas.getContext('2d');
+// Backing store follows the screen's pixel ratio (the CSS box is 172 px); redrawn at HA.radarHz, not every frame
+const RADAR_PX = radarCanvas.width = radarCanvas.height = Math.round(172 * Math.min(devicePixelRatio || 1, 2));
+let radarNext = 0;
+const hitDirs = [];                    // { angle (world yaw toward the source), t }
+// Remember where the human's latest hit came from (zombie / position / projectile origin; else the nearest attacker)
+function noteHitFrom(h, src) {
+  let p = src?.mesh?.position || (src?.isVector3 ? src : null);
+  if (!p) {
+    let best = HA.hitGuessRange ** 2;
+    for (const z of zombies) {
+      if (z.dead || z.buried) continue;
+      const d = z.mesh.position.distanceToSquared(h.mesh.position) * (z.heroTgt === h ? 0.25 : 1);
+      if (d < best) { best = d; p = z.mesh.position; }
+    }
+  }
+  if (!p) return;
+  const dx = p.x - h.mesh.position.x, dz = p.z - h.mesh.position.z;
+  if (dx * dx + dz * dz < 0.25) return;   // on top of us: no meaningful direction
+  const angle = Math.atan2(dx, dz), near = hitDirs.find(d => Math.abs(Math.atan2(Math.sin(d.angle - angle), Math.cos(d.angle - angle))) < 0.35);
+  if (near) { near.angle = angle; near.t = HA.hitTime; return; }
+  if (hitDirs.length >= 6) hitDirs.shift();
+  hitDirs.push({ angle, t: HA.hitTime });
+}
+const hitDirEls = Array.from({ length: 6 }, () => { const el = document.createElement('i'); hud('hitDirs').append(el); return el; });
+// Angle of a world direction relative to where the camera looks (+ = to the right)
+function viewAngle(dx, dz) {
+  const f = yawForward();
+  return Math.atan2(dx * -f.z + dz * f.x, dx * f.x + dz * f.z);
+}
+// Straggler markers: once few zombies remain, each gets a floating pip visible through walls (pooled DOM)
+const stragglerEls = [];
+function updateAwareness(dt) {
+  // Hit arcs around the crosshair, pointing at the source
+  for (let i = hitDirs.length - 1; i >= 0; i--) if ((hitDirs[i].t -= dt) <= 0) hitDirs.splice(i, 1);
+  const f = yawForward(), fwdYaw = Math.atan2(f.x, f.z);
+  hitDirEls.forEach((el, i) => {
+    const d = hitDirs[i];
+    if (!d) { el.style.opacity = 0; return; }
+    const rel = Math.atan2(Math.sin(d.angle - fwdYaw), Math.cos(d.angle - fwdYaw));   // 0 = straight ahead
+    el.style.opacity = Math.min(1, d.t / (HA.hitTime * 0.5));
+    el.style.transform = `rotate(${-rel}rad)`;
+  });
+  // Garden under attack: a banner + arrow toward the statue while it is losing health
+  const alertEl = hud('gardenAlert'), hurt = state.time - (state.gardenHurtT ?? -99) < HA.gardenAlertTime && !state.over;
+  alertEl.style.display = hurt ? 'block' : 'none';
+  if (hurt) {
+    const p = playerMesh.position, d = Math.hypot(p.x, p.z);
+    alertEl.querySelector('.arrow').style.transform = `rotate(${viewAngle(-p.x, -p.z)}rad)`;
+    alertEl.querySelector('.arrow').style.visibility = d > HA.gardenArrowDist ? 'visible' : 'hidden';
+    alertEl.querySelector('.dist').textContent = d > HA.gardenArrowDist ? `${Math.round(d)} m` : '';
+  }
+  // Stragglers: the last few zombies of a wave show through walls so nobody hunts for them
+  const left = state.phase === 'active' && !state.spawnQueue.length ? zombies.filter(z => !z.dead && !z.def.boss) : [];
+  const show = left.length && left.length <= HA.stragglers ? left : [];
+  for (let i = 0; i < Math.max(show.length, stragglerEls.length); i++) {
+    let el = stragglerEls[i];
+    if (!el) { el = document.createElement('div'); el.className = 'straggler'; hud('stragglers').append(el); stragglerEls.push(el); }
+    const z = show[i];
+    const v = z && tmP.copy(z.mesh.position).setY(z.mesh.position.y + z.def.height * (z.def.sizeMult || 1) + 1).project(camera);
+    if (!z || v.z > 1) { el.style.display = 'none'; continue; }
+    el.style.display = 'block';
+    el.style.left = `${THREE.MathUtils.clamp((v.x * 0.5 + 0.5) * innerWidth, 24, innerWidth - 24)}px`;
+    el.style.top = `${THREE.MathUtils.clamp((-v.y * 0.5 + 0.5) * innerHeight, 24, innerHeight - 24)}px`;
+    el.textContent = `${Math.round(z.mesh.position.distanceTo(playerMesh.position))} m`;
+  }
+}
+// ---- Onboarding: one-time contextual tips (remembered in localStorage) + the H help panel ----
+const TIPS = {
+  start: 'Zombies march from the glowing <b>beacons</b> to the <b>garden statue</b>. Keep it standing for 10 waves! The <b>radar</b> (top right) shows the horde.',
+  abilities: 'Use your abilities: <kbd>Q</kbd> <kbd>E</kbd> <kbd>F</kbd> (names under the ability bar). Press <kbd>H</kbd> for your plant\'s full kit.',
+  squad: 'Press <kbd>1</kbd>–<kbd>4</kbd> or <kbd>Tab</kbd> to take over another plant. The rest of the squad fights on its own.',
+  garden: '<b>The garden is under attack!</b> Follow the arrow at the top, or look for flashing dots by the ◆ on the radar.',
+  revive: 'An ally is down! Stand next to them and hold <kbd>X</kbd> to revive before the timer runs out.',
+  downed: 'You\'re down. Press <kbd>Tab</kbd> to keep fighting as another plant while you wait to respawn.',
+  shop: '<b>Shop open!</b> Walk onto a glowing ring by the statue and press <kbd>C</kbd> to plant a pot turret (<kbd>Z</kbd> changes type), or <kbd>C</kbd> at the statue to repair it. <kbd>Enter</kbd> starts the wave.',
+  boss: '<b>Boss incoming!</b> Its health bar is at the top. Bosses hunt plants: keep moving and save your abilities for it.',
+  extract: '<b>Extraction!</b> Run to the green landing zone and stand in it until it charges. More plants inside = faster.',
+};
+const tipEl = hud('tip'), tipQueue = [];
+let tipT = 0, tipGap = 0, tipsSeen;
+try { tipsSeen = new Set(JSON.parse(localStorage.getItem(CONFIG.tips.storageKey)) || []); } catch { tipsSeen = new Set(); }
+function tip(key) { if (!tipsSeen.has(key) && !tipQueue.includes(key)) tipQueue.push(key); }
+function updateTips(dt) {
+  if (!matchStarted || state.over) { tipEl.style.display = 'none'; return; }
+  const T = CONFIG.tips, solo = heroes.length < 2;
+  if (state.phase === 'countdown' && state.waveIndex === 0 && state.time > 0.5) tip('start');
+  if (state.phase === 'active' && state.waveIndex === 0 && state.time > T.abilitiesAt) tip('abilities');
+  if (!solo && state.phase === 'active' && state.time > T.squadAt) tip('squad');
+  if (state.time - (state.gardenHurtT ?? -99) < 1) tip('garden');
+  if (!solo && nearestDownedHero()) tip('revive');
+  if (!solo && player.dead) tip('downed');
+  if (shopOpen()) tip('shop');
+  if (state.phase === 'extract') tip('extract');
+  if (zombies.some(z => z.def.boss)) tip('boss');
+  if (helpOpen && helpFor !== player) showHelp();
+  if (tipT > 0) { if ((tipT -= dt) <= 0) tipEl.style.display = 'none'; return; }
+  if ((tipGap -= dt) > 0 || !tipQueue.length) return;
+  const key = tipQueue.shift();
+  tipsSeen.add(key);
+  try { localStorage.setItem(T.storageKey, JSON.stringify([...tipsSeen])); } catch { /* private mode */ }
+  tipEl.innerHTML = TIPS[key]; tipEl.style.display = 'block';
+  tipT = T.time; tipGap = T.gap;
+  SFX.play('tick', true);
+}
+// H: the controlled plant's kit and the controls, over the game (doesn't pause)
+let helpOpen = false, helpFor = null;
+function showHelp() {
+  const d = player.def, I = d.info, el = hud('helpPanel');
+  helpFor = player;
+  el.innerHTML = `<div class="role">${I.role}</div><h3>${PLANT_ICONS[player.type] || ''} ${d.name}</h3><div>${I.blurb}</div>` +
+    `<div class="grid"><kbd>LMB</kbd><span>${I.primary}</span>` +
+    ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<kbd>${'QEF'[n]}</kbd><span><b>${d.abilityIcons[k]} ${d.abilityNames[k]}</b> · ${I[k]}</span>`).join('') +
+    `</div><div class="keys"><kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump · <kbd>RMB</kbd> zoom · <kbd>R</kbd> reload · ` +
+    `<kbd>1</kbd>–<kbd>4</kbd> / <kbd>Tab</kbd> switch plant · <kbd>X</kbd> revive · between waves <kbd>C</kbd> buy, <kbd>Z</kbd> pot type, <kbd>Enter</kbd> ready · <kbd>Esc</kbd> pause · <kbd>H</kbd> close</div>`;
+}
+function toggleHelp(open = !helpOpen) {
+  helpOpen = open;
+  hud('helpPanel').style.display = open ? 'block' : 'none';
+  if (open) showHelp();
+}
+document.getElementById('abandonButton').addEventListener('click', () => {
+  if (!matchStarted || state.over) return;
+  state.abandoned = true;
+  endGame(false);
+});
+
+// Radar: rotates with the camera (up = where you look). Statue, squad, pots, zombies (horde / agent / boss),
+// garden attackers flash, off-range threats sit on the rim, active spawn areas and the landing zone too.
+function drawRadar(force = false) {
+  const now = performance.now();
+  if (!force && now < radarNext) return;
+  radarNext = now + 1000 / HA.radarHz;
+  const c = radarCtx, W2 = 86, R = W2 - 3, scale = R / HA.radarRange, p = playerMesh.position;   // CSS px (172 box)
+  const f = yawForward();   // the world rotates so the view direction points up
+  const toRadar = (x, z, clampRim = true) => {
+    const dx = x - p.x, dz = z - p.z;
+    let rx = (dz * f.x - dx * f.z) * scale, ry = (dx * f.x + dz * f.z) * scale;   // right of view / ahead
+    const len = Math.hypot(rx, ry), out = len > R - 3;
+    if (out && clampRim) { rx *= (R - 3) / len; ry *= (R - 3) / len; }
+    return { x: W2 + rx, y: W2 - ry, out };
+  };
+  c.setTransform(RADAR_PX / 172, 0, 0, RADAR_PX / 172, 0, 0);
+  c.clearRect(0, 0, 172, 172);
+  c.save();
+  c.beginPath(); c.arc(W2, W2, R, 0, Math.PI * 2); c.clip();
+  c.fillStyle = 'rgba(10,22,14,0.62)'; c.fillRect(0, 0, 172, 172);
+  // Range rings
+  c.strokeStyle = 'rgba(255,255,255,0.08)'; c.lineWidth = 1;
+  for (const k of [1 / 3, 2 / 3]) { c.beginPath(); c.arc(W2, W2, R * k, 0, Math.PI * 2); c.stroke(); }
+  // View cone
+  const half = THREE.MathUtils.degToRad(camera.fov * camera.aspect) / 2;
+  c.fillStyle = 'rgba(255,255,255,0.05)';
+  c.beginPath(); c.moveTo(W2, W2); c.arc(W2, W2, R, -Math.PI / 2 - Math.min(1.2, half), -Math.PI / 2 + Math.min(1.2, half)); c.fill();
+  // Active spawn areas (countdown) and the extraction zone
+  if (state.phase === 'countdown') for (const pk of state.packs || []) {
+    const sp = CONFIG.SPAWN_POINTS[pk.spawn], q = toRadar(sp.x, sp.z);
+    c.fillStyle = sp.color; c.globalAlpha = 0.55 + 0.35 * Math.sin(state.time * 5);
+    c.beginPath(); c.arc(q.x, q.y, q.out ? 5 : Math.max(5, sp.r * scale), 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+  }
+  if (state.finale) {
+    const q = toRadar(state.finale.pos.x, state.finale.pos.z);
+    c.strokeStyle = '#7dff6a'; c.lineWidth = 3; c.beginPath(); c.arc(q.x, q.y, q.out ? 6 : Math.max(6, CONFIG.FINALE.radius * scale), 0, Math.PI * 2); c.stroke();
+  }
+  // Pots
+  c.fillStyle = '#9cff6a';
+  for (const s of potSpots) if (s.pot) { const q = toRadar(s.pos.x, s.pos.z, false); if (!q.out) c.fillRect(q.x - 2, q.y - 2, 4, 4); }
+  // Statue (flashes red while hurt)
+  const hurt = state.time - (state.gardenHurtT ?? -99) < HA.gardenAlertTime, sq = toRadar(0, 0);
+  c.fillStyle = hurt && Math.sin(state.time * 14) > 0 ? '#ff5a4a' : '#5fd0a0';
+  c.beginPath(); c.moveTo(sq.x, sq.y - 7); c.lineTo(sq.x + 7, sq.y); c.lineTo(sq.x, sq.y + 7); c.lineTo(sq.x - 7, sq.y); c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 1.5; c.stroke();
+  // Zombies: horde dots, agents bigger, bosses biggest; off-range threats fade on the rim
+  for (const z of zombies) {
+    if (z.dead || z.buried) continue;
+    const q = toRadar(z.mesh.position.x, z.mesh.position.z), boss = z.def.boss, agent = isAgent(z);
+    const rg = Math.hypot(z.mesh.position.x, z.mesh.position.z), atGarden = rg < HA.gardenRadius || (z.attackingStatue && rg < 25);
+    c.globalAlpha = q.out ? 0.45 : 1;
+    c.fillStyle = boss ? '#ff3b2a' : agent ? '#ff9a3a' : atGarden && Math.sin(state.time * 14) > 0 ? '#ffffff' : '#ff6a5a';
+    const r = boss ? 6 + Math.sin(state.time * 6) : agent ? 3.5 : 2;
+    c.beginPath(); c.arc(q.x, q.y, r, 0, Math.PI * 2); c.fill();
+    if (boss) { c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke(); }
+  }
+  c.globalAlpha = 1;
+  // Squad: arrows showing heading; fallen allies as grey crosses
+  for (const h of heroes) {
+    if (!h.active || h === player) continue;
+    const q = toRadar(h.mesh.position.x, h.mesh.position.z);
+    if (h.dead || h.downed) { c.strokeStyle = '#aaa'; c.lineWidth = 2; c.beginPath(); c.moveTo(q.x - 3, q.y - 3); c.lineTo(q.x + 3, q.y + 3); c.moveTo(q.x + 3, q.y - 3); c.lineTo(q.x - 3, q.y + 3); c.stroke(); continue; }
+    const a = viewAngle(-Math.sin(h.yaw ?? 0), -Math.cos(h.yaw ?? 0));
+    c.save(); c.translate(q.x, q.y); c.rotate(a); c.fillStyle = '#49b8e8';
+    c.beginPath(); c.moveTo(0, -5.5); c.lineTo(4, 4); c.lineTo(-4, 4); c.closePath(); c.fill(); c.restore();
+  }
+  c.restore();
+  // Player at the center + rim
+  c.fillStyle = '#ffd84a'; c.beginPath(); c.moveTo(W2, W2 - 7); c.lineTo(W2 + 5, W2 + 5); c.lineTo(W2, W2 + 2); c.lineTo(W2 - 5, W2 + 5); c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(255,255,255,0.18)'; c.lineWidth = 1.5; c.beginPath(); c.arc(W2, W2, R, 0, Math.PI * 2); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.55)'; c.font = '700 10px Segoe UI, sans-serif'; c.textAlign = 'center';
+  c.fillText('N', ...(() => { const q = toRadar(p.x, p.z - 1e4); return [q.x, q.y + 4]; })());
+}
+
 // =====================================================================
 // Squad selection and control ownership. Selection is locked for the duration of a match.
 // Only inputs and camera ownership change on handoff; combat state and zombie targets stay attached
@@ -18716,6 +19544,12 @@ function switchSquadMember(direction = 1) {
   }
   setMessage(player.dead ? 'Squad down · waiting for a respawn' : 'No other living squad members', 1.5);
   return false;
+}
+// Number keys: jump straight to one squad member (a fallen one can't be taken)
+function takeControlOf(h) {
+  if (!matchStarted || state.over || !h.active) return false;
+  if (!targetable(h)) { setMessage(`${h.name} #${h.squadIndex + 1} is down · back in ${Math.ceil(respawnLeft(h))}s`, 1.5); return false; }
+  takeControl(h); setMessage(`Controlling ${h.name} #${h.squadIndex + 1}`, 1.2); return true;
 }
 function disposeHero(h) {
   if (h.type === 'sunflower' && h.sun) { freeSolarObject(h.sun.healFx); freeSolarObject(h.sun.beamFx); }
@@ -18800,7 +19634,10 @@ function loop() {
     muzzleLight.intensity *= Math.exp(-dt * 30);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
     // Difficulty: scale whatever the garden lost this frame (many systems write statueHp directly)
-    if (state.statueHp < state.statueSeen) state.statueHp = state.statueSeen - (state.statueSeen - state.statueHp) * DIFF().statueDamage;
+    if (state.statueHp < state.statueSeen) {
+      state.statueHp = state.statueSeen - (state.statueSeen - state.statueHp) * DIFF().statueDamage;
+      state.gardenHurtT = state.time; statueHit();
+    }
     state.statueSeen = state.statueHp;
     if (state.statueHp <= 0 && !state.over) endGame(false);
   }
@@ -18810,6 +19647,9 @@ function loop() {
   SFX.update(dt);
   updatePopups(playing ? dt : 0);
   updateHud(playing ? dt : 0);
+  updateAwareness(playing ? dt : 0);
+  drawRadar();
+  updateTips(playing ? dt : 0);
   updateCactusHud();
   updateSunflowerHud();
   updateRevivePrompt();
@@ -18818,6 +19658,9 @@ function loop() {
   updateZombieBatches(playing ? dt : 0);
   updateParticleBatches();
   updateShaderGuard();
+  skyDome.position.copy(camera.position);
+  for (const sp of artSpin) sp.obj.rotation.z += sp.rate * dt;
+  updateGardenStatue(playing ? dt : 0);
   renderer.render(scene, camera);
   debugMap.draw();
 }
@@ -18841,6 +19684,8 @@ Object.assign(window.__game, { damageZombie, endGame, SETTINGS, changeSetting, D
 // Boss slot + extraction finale hooks (tests/boss-finale.cjs)
 Object.assign(window.__game, { beginCountdown, startWave, startFinale, extractZone });
 Object.defineProperty(window.__game, 'particleCap', { get: () => particleCap });
+// Experience hooks (tests/experience.cjs): debug gating, awareness HUD, pacing, onboarding, statue states
+Object.assign(window.__game, { DEBUG, hurryMult, noteHitFrom, hitDirs, gardenStatue, takeControlOf, toggleHelp, TIPS, tipsSeen, drawRadar, artSpin });
 // Imp inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { THREE, renderer, buildImp, buildZMech, callZMech, throwGravityGrenade, ejectZMech });
 Object.assign(window.__game, { buildMechaGargantuar, mechaState, mechaBegin, mechaThrowBomb, mechaBombs });
@@ -18965,13 +19810,21 @@ function warmUpload() {
   shaderGuard.active = guard;
 }
 prewarmAssets();
-if (bootSelection) {
-  configureSquad(bootSelection);
-  matchStarted = true;
-  document.body.classList.remove('preMatch');
+{
   const button = document.getElementById('matchButton');
-  document.getElementById('overlayTitle').textContent = 'GARDEN DEFENSE';
-  button.disabled = false; button.textContent = 'DEFEND THE GARDEN';   // pointer lock needs a fresh click
+  button.disabled = false;
+  if (bootSelection) {
+    configureSquad(bootSelection);
+    matchStarted = true;
+    document.body.classList.remove('preMatch');
+    document.getElementById('overlayTitle').textContent = 'THE GARDEN IS READY';
+    button.textContent = 'CLICK TO START';   // pointer lock needs a fresh click
+    button.focus();
+  } else {   // automated boot without ?autoplay: the menu is the squad picker again
+    document.getElementById('overlayTitle').textContent = 'GARDEN DEFENSE';
+    document.getElementById('squadPicker').style.display = 'block';
+    button.textContent = 'DEFEND THE GARDEN';
+  }
 }
 loop();
 </script>

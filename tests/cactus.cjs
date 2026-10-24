@@ -68,7 +68,7 @@ const server = http.createServer((req, res) => {
       T.updateCactusWorld(g.CONFIG.cactus.smokeTrail.life);
       check(T.cactusTrails.length === 0 && !trail.mesh.parent && target.hp === target.def.hp - 25, 'Expired smoke is removed without applying damage again');
       setup(); const head = zombie(12, -8); h.zoom = 1; h.aimPoint.copy(head.mesh.position).y += head.def.height * 0.35; T.fireCactusSpike(h);
-      check(head.hp === head.def.hp - 30, 'Precision headshot deals 30 damage instantly');
+      check(head.hp === head.def.hp - h.weapon.damage * h.weapon.criticalMult, 'Precision headshot deals critical damage instantly');
       setup(); const far = zombie(12, -30), near = zombie(12, -8);
       const start = T.nextMuzzle(h).start, dir = near.mesh.position.clone().sub(start).normalize();
       T.traceCactusSpike(h, start, dir);

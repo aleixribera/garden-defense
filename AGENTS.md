@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.21.0)
+## Current state (v1.22.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -55,6 +55,14 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   instanced coins (shared wallet, magnet pickup, swept on wave clear); between waves the countdown is a 30 s shop
   (C buy, Z cycle, Enter ready): pots on 8 spots around the statue (Peashooter/Kernel reuse hero weapons, Snapdragon
   fire cone, Chomper swallow) and statue repair. Test: `tests/economy.cjs`.
+- World art (section "World art", `CONFIG.art`): visual only over the grey-box collision (terrain painted by vertex
+  colours + detail map, cliff strata in the ground shader, dressed props merged by material via `bakeRig`, instanced
+  trees/rocks/graves/tufts/flowers, sky dome). The garden statue is a gnome (`gardenStatue`; hit flash, grime, hat tip
+  off < 50%); the `statueMesh` box stays as the logical statue. New props: add a case in `buildProp`.
+- Awareness + onboarding (section "Situational awareness", `CONFIG.hudAware`, `CONFIG.tips`): radar, hit arcs
+  (`damageHero(h, amount, src)`; src = zombie / position, else nearest attacker), garden alert, straggler pips, one-time
+  tips (localStorage), H help panel from `PLANTS[type].info`. Pacing: `CONFIG.hurry` (far horde zombies walk faster).
+  Audit + rationale: docs/experience.md. Test: `tests/experience.cjs`.
 - Camera (`CONFIG.camera`): plant sits low-left (`shoulder`, `lift`); `clearZone` slides the shoulder out if the
   plant's silhouette reaches the crosshair.
 - Match flow: `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
@@ -63,7 +71,8 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   `damageZombie`), zombieDamage (`damageHero`), statueDamage (per-frame statue loss in `loop`), count (`scaledCount`).
 - Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, FOV, quality; menu + Esc pause
   panel; systems register appliers with `onSettings()`.
-- Debug: F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses, M map, K stress horde.
+- Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses,
+  M map, K stress horde, J coins. Normal play: 1–4 take a plant, H help.
   `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright); `npm test` runs all,
   `npm run test:smoke` = full-match autoplay (`tests/full-match.cjs`).
 

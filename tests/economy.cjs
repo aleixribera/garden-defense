@@ -81,7 +81,9 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     console.log(`PASS: planted ${r.planted.join(', ')} (${r.spent} coins), repaired the statue to ${r.statue} · prompt "${r.prompt}"`);
 
     // --- Pots fight: zombies walking past the pots take damage from each type
-    await page.evaluate(() => __game.shopReady());
+    // Ready: the clock drops to readyTime (then skip the last seconds; software rendering runs game time slowly)
+    r = await page.evaluate(() => { const g = __game; g.shopReady(); const t = g.state.waveTimer; g.state.waveTimer = Math.min(t, 0.05); return { t, ready: g.CONFIG.economy.readyTime }; });
+    assert.ok(r.t <= r.ready + 1e-6, `Enter cuts the shop to ${r.ready} s (${r.t})`);
     await page.waitForFunction(() => __game.state.phase === 'active', null, { timeout: 90000 });
     r = await page.evaluate(async () => {
       const g = __game, frame = () => new Promise(res => setTimeout(res, 50)), out = {};
