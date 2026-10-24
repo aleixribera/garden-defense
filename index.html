@@ -231,7 +231,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Shown bottom-right; bump on every release (matches the git tag)
-const VERSION = 'v1.17.2';
+const VERSION = 'v1.18.0';
 
 // =====================================================================
 // CONFIG — every tuning number lives here
@@ -809,6 +809,40 @@ const CONFIG = {
     // Several heroes: a zombie targets the best-scoring one = distance − recentDamageBonus if that hero hurt it
     // within recentDamageTime; it switches heroes (retarget cooldown permitting) only when another scores heroSwitchMargin better
     recentDamageTime: 3, recentDamageBonus: 8, heroSwitchMargin: 6,
+    // Zombie routing (section "Zombie routing"): every zombie plans its own A* route to the statue on the nav grid.
+    // Step cost = length × (1 + personal noise + crowd traffic + jams + cactus walls), so each one prefers its own
+    // corridor, packs fan out over different gaps, and blocked or jammed ways are avoided. Searches share a
+    // per-frame budget and resume across frames (one active search at a time); zombies waiting on a route
+    // walk the statue flow field meanwhile.
+    path: {
+      budget: 7000,              // A* node expansions per frame, shared by all zombies…
+      budgetMs: 1.2,             // …and never more than this many ms per frame
+      maxNodes: 60000,           // a single search gives up past this (falls back to the flow field)
+      heuristic: 1.6,            // weighted A*: >1 = faster, slightly less optimal routes (noise keeps them varied)
+      noiseScale: 30,            // m: feature size of the personal route-preference noise
+      noiseAmp: [0.5, 2.6],      // per zombie: extra cost (× length) on its disliked ground, so it commits to a corridor
+      traffic: { cell: 8, weight: 0.35, decay: 30 },   // each planned route makes its 8 m cells pricier for later planners
+      jam: { add: 6, radius: 2, decay: 8 },           // where a zombie got stuck costs more for a while (everyone avoids it)
+      wall: 25,                  // cost multiplier through a cactus wall (they still bash through when it is the only way)
+      goalDist: 7,               // route done this many walking metres from the statue (attack slots take over)
+      lookahead: 7,              // cells: steer at the farthest of the next few cells still in straight walkable line
+      lookEvery: [0.2, 0.35],    // s between lookahead refreshes (line checks are not free)
+      offRoute: 9,               // m from the route (after a chase, knockback, a shove) → plan a new one from here
+      progressTime: 5,           // s without headway along the route → jam the spot + re-plan (3 in a row → hop free)
+      lane: [0, 3.2],            // m: personal sideways offset from the route line (wide corridors fill up)
+      rethink: [14, 28],         // s between spontaneous re-plans (with fresh traffic) while far from the statue
+      rethinkMinDist: 45,        // walking metres from the statue: closer than this a zombie stays committed
+    },
+    // Making the horde feel alive while advancing (not while chasing or attacking)
+    life: {
+      wander: 0.28,              // rad: slow personal heading drift
+      wanderFreq: [0.05, 0.16],  // Hz
+      surge: 0.16,               // ± fraction of speed: zombies drift faster / slower over time
+      surgeFreq: [0.04, 0.12],   // Hz
+      pauseChance: 0.05,         // per second (advancing, far from heroes + statue): stop, look around, carry on
+      pause: [0.6, 1.8],         // s
+      pauseMinDist: 50,          // walking metres from the statue
+    },
   },
   // Solo Ops Corn: a roaming soldier; behavior evidence and adaptation limits: docs/kernel-corn-ai.md.
   TEAMMATE_AI: {
@@ -862,7 +896,6 @@ const CONFIG = {
     climbCost: 5,                // Climbers' nav layer: a cliff step costs this many flat steps
     navClearance: 1.0,           // obstacles are inflated by this for the nav grid
     stepUp: 0.45,                // the hero walks up ledges this tall without jumping
-    routeReach: 7,               // a zombie counts a route waypoint as reached within this many walking metres
     // Raised terrain. rect {x,z,w,d} (center + size) or circle {x,z,r}; edge = blend width (≈1 cliff, 4+ slope)
     plateaus: [
       // Outer cliff walls (tier 14): only Climbers get over these
@@ -937,33 +970,24 @@ const CONFIG = {
       { name: 'Hedge Wall',     x: 36,  z: -38,  note: 'kite loop' },
     ],
   },
-  // Spawn points — each one a different tactical problem, each with two routes (A / B) to the statue.
-  // A route is a list of waypoints (`via`); zombies follow a flow field to each waypoint, then the statue
-  // field. Wave packs pick a spawn + route ('A', 'B' or 'split' = half each); omitted → rotates per wave.
+  // Spawn areas — each one a different tactical problem. A zombie appears on a random open cell inside its
+  // area (`r` metres around x/z, at least `minStatue` walking metres from the statue), then plans its own A*
+  // route to the statue (section "Zombie routing"): no fixed lanes, every zombie picks and re-picks its way.
   SPAWN_POINTS: {
-    longRoad: { x: 0, z: -205, label: 'Orchard Road', note: 'long and open: ~60 s, you see them coming', color: '#ffd23a',
-      routes: { A: { label: 'the road',        via: [[10, -140]] },
-                B: { label: 'over the ridge',  via: [[-26, -182], [-26, -137], [-26, -88]] } } },
-    flank:    { x: 66, z: -5, label: 'Greenhouse Gap', note: 'short flank, ~20 s', color: '#ff5a3a',
-      routes: { A: { label: 'north side',      via: [[54, -24]] },
-                B: { label: 'south side',      via: [[54, 15]] } } },
-    choke:    { x: -150, z: 20, label: 'West Gates', note: 'chokes: packs bunch in the wall gaps', color: '#5ad0ff',
-      routes: { A: { label: 'Garden Gate',     via: [[-82, 25], [-64, 25]] },
-                B: { label: 'Sluice Pass',     via: [[-82, -56], [-64, -56]] } } },
-    climb:    { x: 10, z: 150, label: 'Quarry Top', note: 'cliff lane: ramps down beside the quarry cliffs', color: '#c07aff',
-      routes: { A: { label: 'west ramp',       via: [[-30, 70], [-30, 36]] },
-                B: { label: 'east ramp',       via: [[55, 70], [55, 36]] } } },
+    longRoad: { x: -4, z: -192, r: 34, minStatue: 150, label: 'Orchard Road', note: 'long and open: road or ridge', color: '#ffd23a' },
+    flank:    { x: 72, z: -6,   r: 24, minStatue: 62,  label: 'Greenhouse Gap', note: 'short flank around the greenhouse', color: '#ff5a3a' },
+    choke:    { x: -140, z: -20, r: 52, minStatue: 95, label: 'West Fields', note: 'wide field funnelling into two wall gates', color: '#5ad0ff' },
+    climb:    { x: 2, z: 158,   r: 50, minStatue: 105, label: 'Quarry Top', note: 'cliff shelf: two ramps down beside the quarry', color: '#c07aff' },
   },
-  randomPackSpawns: true,      // every pack picks a random spawn point + route (no fixed order); false = wave data
-  routeCycle: ['A', 'B', 'split'],  // auto route choice for packs without one: cycles per wave + pack index
-  packSpread: 4,                // random scatter around the spawn point
+  randomPackSpawns: true,      // every pack picks a random spawn area (no fixed order); false = wave data
+  packCluster: 0.45,           // fraction of a pack that spawns around a shared anchor; the rest anywhere in the area
+  packAnchorRadius: 14,        // m: the clustered part's scatter around the anchor
   spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
   packDelayTighten: 0.02,       // each wave shortens the hidden pack timers by this fraction…
   packDelayMin: 0.8,            // …down to this multiplier (wave data already ramps the pacing)
   waveCountdown: 5,           // seconds of countdown before each wave (banner, beacons, ground arrows, HUD arrow)
   incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
   skullTime: 20,                // the ghost skull marks where a pack spawned for this many seconds
-  markerArrowLength: 48,        // metres of each active route shown by ground arrows during the countdown
   maxParticles: 450,
   render: {
     minShadowCaster: 0.03,     // m: baked rig parts smaller than this skip the shadow pass (under a shadow texel)
@@ -974,62 +998,61 @@ const CONFIG = {
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
   fxLights: 2,            // pooled effect point lights (Super Brainz balls); fixed so shaders never recompile
 
-  // Waves as data. Each wave: { lanes?, packs: [{ spawn?, route?, delay, zombies: { type: count } }], modifiers: [] }
+  // Waves as data. Each wave: { lanes?, packs: [{ spawn?, delay, zombies: { type: count } }], modifiers: [] }
   //   lanes     — optional: spawns this wave may use; packs without `spawn` take them in turn
   //   packs     — spawn in order; `delay` = hidden seconds after the previous pack (shrunk by packDelayTighten)
-  //   route     — 'A' | 'B' | 'split' (half the pack on each); omitted → CONFIG.routeCycle rotation
   //   modifiers — reserved for future "special waves" (e.g. speed-up, all-one-type); ignored for now
   // Lanes rotate between waves so no single spot covers everything.
   WAVES: [
     // Pacing: packs every ~6 s in waves 1–2, ~7–8 s in 3–4, ~10–13 s after; one longer lull (~22–28 s) mid-wave before a heavy pack.
     // 1 — tutorial: shamblers, Orchard Road both routes (4 packs)
     { agentCap: 1, packs: [
-      { spawn: 'longRoad', route: 'A', zombies: { shambler: 5 } },
-      { spawn: 'longRoad', route: 'B', delay: 6, zombies: { shambler: 5 } },
-      { spawn: 'flank', route: 'A', delay: 7, zombies: { shambler: 4 } },
-      { spawn: 'longRoad', route: 'split', delay: 7, zombies: { shambler: 7 } },
+      { spawn: 'longRoad', zombies: { shambler: 5 } },
+      { spawn: 'longRoad', delay: 6, zombies: { shambler: 5 } },
+      { spawn: 'flank', delay: 7, zombies: { shambler: 4 } },
+      { spawn: 'longRoad', delay: 7, zombies: { shambler: 7 } },
     ] },
     // 2 — sprinters appear (5)
     { agentCap: 1, packs: [
-      { spawn: 'flank', route: 'split', zombies: { shambler: 5 } },
-      { spawn: 'longRoad', route: 'A', delay: 5, zombies: { shambler: 5, sprinter: 2 } },
-      { spawn: 'flank', route: 'B', delay: 5, zombies: { sprinter: 4 } },
-      { spawn: 'longRoad', route: 'B', delay: 6, zombies: { shambler: 6 } },
-      { spawn: 'flank', route: 'split', delay: 6, zombies: { shambler: 5, sprinter: 3 } },
+      { spawn: 'flank', zombies: { shambler: 5 } },
+      { spawn: 'longRoad', delay: 5, zombies: { shambler: 5, sprinter: 2 } },
+      { spawn: 'flank', delay: 5, zombies: { sprinter: 4 } },
+      { spawn: 'longRoad', delay: 6, zombies: { shambler: 6 } },
+      { spawn: 'flank', delay: 6, zombies: { shambler: 5, sprinter: 3 } },
     ] },
     // 3 — West Gates + plated (7)
     { agentCap: 1, packs: [
-      { spawn: 'choke', route: 'A', zombies: { shambler: 6 } },
-      { spawn: 'choke', route: 'B', delay: 7, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'choke', zombies: { shambler: 6 } },
+      { spawn: 'choke', delay: 7, zombies: { shambler: 5, plated: 1 } },
       { spawn: 'flank', delay: 7, zombies: { sprinter: 4 } },
-      { spawn: 'longRoad', route: 'A', delay: 8, zombies: { shambler: 6, plated: 1 } },
-      { spawn: 'choke', route: 'split', delay: 7, zombies: { shambler: 6, sprinter: 2 } },
-      { spawn: 'flank', route: 'A', delay: 8, zombies: { shambler: 4, plated: 1 } },
-      { spawn: 'choke', route: 'A', delay: 8, zombies: { shambler: 7, plated: 2 } },
+      { spawn: 'longRoad', delay: 8, zombies: { shambler: 6, plated: 1 } },
+      { spawn: 'choke', delay: 7, zombies: { shambler: 6, sprinter: 2 } },
+      { spawn: 'flank', delay: 8, zombies: { shambler: 4, plated: 1 } },
+      { spawn: 'choke', delay: 8, zombies: { shambler: 7, plated: 2 } },
     ] },
     // 4 — Quarry Top, spitters + climbers (8)
     { agentCap: 2, packs: [
-      { spawn: 'climb', route: 'A', zombies: { shambler: 6 } },
-      { spawn: 'climb', route: 'B', delay: 7, zombies: { shambler: 4, spitter: 2 } },
+      { spawn: 'climb', zombies: { shambler: 6 } },
+      { spawn: 'climb', delay: 7, zombies: { shambler: 4, spitter: 2 } },
       { spawn: 'longRoad', delay: 7, zombies: { shambler: 5, sprinter: 2 } },
       { spawn: 'choke', delay: 7, zombies: { shambler: 5, plated: 1 } },
-      { spawn: 'climb', route: 'split', delay: 8, zombies: { shambler: 4, climber: 2 } },
+      { spawn: 'climb', delay: 8, zombies: { shambler: 4, climber: 2 } },
       { spawn: 'flank', delay: 6, zombies: { sprinter: 4, spitter: 1 } },
-      { spawn: 'longRoad', route: 'B', delay: 7, zombies: { shambler: 6, spitter: 2 } },
-      { spawn: 'climb', route: 'A', delay: 8, zombies: { shambler: 6, climber: 2, plated: 1 } },
+      { spawn: 'longRoad', delay: 7, zombies: { shambler: 6, spitter: 2 } },
+      { spawn: 'climb', delay: 8, zombies: { shambler: 6, climber: 2, plated: 1 } },
     ] },
     // 5 — the Brute leads the third pack so later enemies can catch up (10)
     { agentCap: 2, packs: [
-      { spawn: 'flank', route: 'split', zombies: { shambler: 5, sprinter: 2 } },
-      { spawn: 'longRoad', route: 'A', delay: 9, zombies: { shambler: 6 } },
-      { spawn: 'longRoad', route: 'B', delay: 9, zombies: { miniBoss: 1, shambler: 6 } },
+      { spawn: 'flank', zombies: { shambler: 5, sprinter: 2 } },
+      { spawn: 'longRoad', delay: 9, zombies: { shambler: 6 } },
+      { spawn: 'longRoad', delay: 9, zombies: { miniBoss: 1, shambler: 6 } },
       { spawn: 'climb', delay: 9, zombies: { shambler: 4, spitter: 2 } },
-      { spawn: 'choke', route: 'A', delay: 14, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'choke', delay: 14, zombies: { shambler: 5, plated: 1 } },
       { spawn: 'flank', delay: 11, zombies: { sprinter: 4 } },
-      { spawn: 'choke', route: 'split', delay: 9, zombies: { shambler: 6, plated: 1 } },
-      { spawn: 'climb', route: 'B', delay: 9, zombies: { climber: 3, shambler: 3 } },
+      { spawn: 'choke', delay: 9, zombies: { shambler: 6, plated: 1 } },
+      { spawn: 'climb', delay: 9, zombies: { climber: 3, shambler: 3 } },
       { spawn: 'longRoad', delay: 9, zombies: { shambler: 6, spitter: 2 } },
-      { spawn: 'flank', route: 'split', delay: 9, zombies: { shambler: 5, sprinter: 3, plated: 1 } },
+      { spawn: 'flank', delay: 9, zombies: { shambler: 5, sprinter: 3, plated: 1 } },
     ] },
     // 6 — howlers, lanes rotate (12)
     { agentCap: 2, lanes: ['choke', 'climb', 'flank', 'longRoad'], packs: [
@@ -1048,19 +1071,19 @@ const CONFIG = {
     ] },
     // 7 — bombers, banners (13)
     { agentCap: 3, packs: [
-      { spawn: 'longRoad', route: 'A', zombies: { shambler: 6 } },
+      { spawn: 'longRoad', zombies: { shambler: 6 } },
       { spawn: 'flank', delay: 13, zombies: { shambler: 4, bomber: 1 } },
-      { spawn: 'choke', route: 'A', delay: 13, zombies: { shambler: 6, banner: 1 } },
+      { spawn: 'choke', delay: 13, zombies: { shambler: 6, banner: 1 } },
       { spawn: 'climb', delay: 13, zombies: { shambler: 4, spitter: 2 } },
-      { spawn: 'longRoad', route: 'B', delay: 13, zombies: { shambler: 6 } },
-      { spawn: 'flank', route: 'split', delay: 12, zombies: { sprinter: 5 } },
-      { spawn: 'choke', route: 'B', delay: 20, zombies: { shambler: 7, plated: 2, banner: 1 } },
-      { spawn: 'climb', route: 'A', delay: 13, zombies: { climber: 3, shambler: 3 } },
+      { spawn: 'longRoad', delay: 13, zombies: { shambler: 6 } },
+      { spawn: 'flank', delay: 12, zombies: { sprinter: 5 } },
+      { spawn: 'choke', delay: 20, zombies: { shambler: 7, plated: 2, banner: 1 } },
+      { spawn: 'climb', delay: 13, zombies: { climber: 3, shambler: 3 } },
       { spawn: 'longRoad', delay: 12, zombies: { shambler: 5, bomber: 2 } },
       { spawn: 'flank', delay: 12, zombies: { shambler: 4, howler: 1, sprinter: 2 } },
-      { spawn: 'choke', route: 'split', delay: 13, zombies: { shambler: 6 } },
-      { spawn: 'climb', route: 'B', delay: 12, zombies: { shambler: 5, spitter: 2 } },
-      { spawn: 'longRoad', route: 'split', delay: 14, zombies: { shambler: 8, plated: 2, bomber: 1, banner: 1 } },
+      { spawn: 'choke', delay: 13, zombies: { shambler: 6 } },
+      { spawn: 'climb', delay: 12, zombies: { shambler: 5, spitter: 2 } },
+      { spawn: 'longRoad', delay: 14, zombies: { shambler: 8, plated: 2, bomber: 1, banner: 1 } },
     ] },
     // 8 — full roster, all lanes in rotation (15)
     { agentCap: 3, lanes: ['longRoad', 'choke', 'flank', 'climb'], packs: [
@@ -1082,46 +1105,46 @@ const CONFIG = {
     ] },
     // 9 — heavy pressure (17)
     { agentCap: 3, packs: [
-      { spawn: 'longRoad', route: 'B', zombies: { shambler: 7 } },
-      { spawn: 'flank', route: 'split', delay: 12, zombies: { sprinter: 5 } },
-      { spawn: 'climb', route: 'A', delay: 12, zombies: { shambler: 5, spitter: 2 } },
+      { spawn: 'longRoad', zombies: { shambler: 7 } },
+      { spawn: 'flank', delay: 12, zombies: { sprinter: 5 } },
+      { spawn: 'climb', delay: 12, zombies: { shambler: 5, spitter: 2 } },
       { spawn: 'choke', delay: 12, zombies: { shambler: 5, plated: 2 } },
-      { spawn: 'longRoad', route: 'A', delay: 12, zombies: { shambler: 5, bomber: 2 } },
+      { spawn: 'longRoad', delay: 12, zombies: { shambler: 5, bomber: 2 } },
       { spawn: 'flank', delay: 11, zombies: { shambler: 4, banner: 1, sprinter: 2 } },
-      { spawn: 'climb', route: 'B', delay: 12, zombies: { climber: 3, shambler: 2 } },
-      { spawn: 'choke', route: 'split', delay: 12, zombies: { shambler: 6, howler: 1 } },
-      { spawn: 'longRoad', route: 'split', delay: 22, zombies: { shambler: 9, plated: 3, banner: 1 } },
-      { spawn: 'flank', route: 'A', delay: 12, zombies: { sprinter: 5, bomber: 1 } },
+      { spawn: 'climb', delay: 12, zombies: { climber: 3, shambler: 2 } },
+      { spawn: 'choke', delay: 12, zombies: { shambler: 6, howler: 1 } },
+      { spawn: 'longRoad', delay: 22, zombies: { shambler: 9, plated: 3, banner: 1 } },
+      { spawn: 'flank', delay: 12, zombies: { sprinter: 5, bomber: 1 } },
       { spawn: 'climb', delay: 11, zombies: { shambler: 5, spitter: 2 } },
-      { spawn: 'choke', route: 'A', delay: 11, zombies: { shambler: 5, plated: 1 } },
+      { spawn: 'choke', delay: 11, zombies: { shambler: 5, plated: 1 } },
       { spawn: 'longRoad', delay: 12, zombies: { shambler: 6 } },
-      { spawn: 'flank', route: 'B', delay: 11, zombies: { shambler: 5, howler: 1 } },
-      { spawn: 'climb', route: 'split', delay: 12, zombies: { shambler: 4, climber: 3 } },
-      { spawn: 'choke', route: 'B', delay: 11, zombies: { spitter: 3, bomber: 2 } },
-      { spawn: 'longRoad', route: 'A', delay: 14, zombies: { shambler: 9, plated: 3, sprinter: 3, banner: 1 } },
+      { spawn: 'flank', delay: 11, zombies: { shambler: 5, howler: 1 } },
+      { spawn: 'climb', delay: 12, zombies: { shambler: 4, climber: 3 } },
+      { spawn: 'choke', delay: 11, zombies: { spitter: 3, bomber: 2 } },
+      { spawn: 'longRoad', delay: 14, zombies: { shambler: 9, plated: 3, sprinter: 3, banner: 1 } },
     ] },
     // 10 — finale: the Zombie King leads pack nine, with his court following after a breather (20)
     { agentCap: 4, packs: [
-      { spawn: 'longRoad', route: 'A', zombies: { shambler: 7 } },
-      { spawn: 'flank', route: 'split', delay: 12, zombies: { sprinter: 5 } },
+      { spawn: 'longRoad', zombies: { shambler: 7 } },
+      { spawn: 'flank', delay: 12, zombies: { sprinter: 5 } },
       { spawn: 'choke', delay: 11, zombies: { shambler: 5, plated: 2 } },
       { spawn: 'climb', delay: 11, zombies: { shambler: 5, spitter: 2 } },
-      { spawn: 'longRoad', route: 'B', delay: 11, zombies: { shambler: 5, bomber: 2 } },
+      { spawn: 'longRoad', delay: 11, zombies: { shambler: 5, bomber: 2 } },
       { spawn: 'flank', delay: 11, zombies: { shambler: 4, banner: 1, howler: 1 } },
-      { spawn: 'choke', route: 'split', delay: 11, zombies: { shambler: 6 } },
-      { spawn: 'climb', route: 'B', delay: 11, zombies: { climber: 3, shambler: 3 } },
-      { spawn: 'longRoad', route: 'A', delay: 12, zombies: { finalBoss: 1, shambler: 8, plated: 2 } },
-      { spawn: 'flank', route: 'A', delay: 11, zombies: { sprinter: 5, bomber: 1 } },
-      { spawn: 'choke', route: 'A', delay: 11, zombies: { shambler: 5, spitter: 2 } },
-      { spawn: 'longRoad', route: 'split', delay: 28, zombies: { shambler: 7, plated: 2, banner: 1 } },
-      { spawn: 'climb', route: 'split', delay: 15, zombies: { shambler: 5, spitter: 2 } },
+      { spawn: 'choke', delay: 11, zombies: { shambler: 6 } },
+      { spawn: 'climb', delay: 11, zombies: { climber: 3, shambler: 3 } },
+      { spawn: 'longRoad', delay: 12, zombies: { finalBoss: 1, shambler: 8, plated: 2 } },
+      { spawn: 'flank', delay: 11, zombies: { sprinter: 5, bomber: 1 } },
+      { spawn: 'choke', delay: 11, zombies: { shambler: 5, spitter: 2 } },
+      { spawn: 'longRoad', delay: 28, zombies: { shambler: 7, plated: 2, banner: 1 } },
+      { spawn: 'climb', delay: 15, zombies: { shambler: 5, spitter: 2 } },
       { spawn: 'flank', delay: 12, zombies: { sprinter: 4, howler: 1 } },
-      { spawn: 'choke', route: 'B', delay: 12, zombies: { shambler: 5, plated: 2, banner: 1 } },
-      { spawn: 'longRoad', route: 'B', delay: 12, zombies: { shambler: 3, bomber: 1 } },
-      { spawn: 'climb', route: 'A', delay: 12, zombies: { climber: 3, shambler: 3 } },
-      { spawn: 'flank', route: 'split', delay: 12, zombies: { shambler: 6, sprinter: 2 } },
-      { spawn: 'choke', route: 'split', delay: 12, zombies: { spitter: 3, plated: 2 } },
-      { spawn: 'longRoad', route: 'split', delay: 14, zombies: { shambler: 10, plated: 3, bomber: 2, banner: 1 } },
+      { spawn: 'choke', delay: 12, zombies: { shambler: 5, plated: 2, banner: 1 } },
+      { spawn: 'longRoad', delay: 12, zombies: { shambler: 3, bomber: 1 } },
+      { spawn: 'climb', delay: 12, zombies: { climber: 3, shambler: 3 } },
+      { spawn: 'flank', delay: 12, zombies: { shambler: 6, sprinter: 2 } },
+      { spawn: 'choke', delay: 12, zombies: { spitter: 3, plated: 2 } },
+      { spawn: 'longRoad', delay: 14, zombies: { shambler: 10, plated: 3, bomber: 2, banner: 1 } },
     ] },
   ],
 };
@@ -4274,73 +4297,55 @@ function raycastWorld(o, d, maxT, minT = 0) {
   }
 }
 
-// Spawn point markers: a dim disc each, plus a tall beacon shown when that lane is about to be used
+// Spawn area markers: a dim terrain-hugging ring outlining each area, plus a tall beacon in its middle,
+// both lit up during the countdown for the areas this wave will use
 const spawnMarkers = {};
+function areaRingGeometry(sp, width = 1.2, segments = 96) {
+  // A flat ribbon following the terrain (heights sampled per vertex) so it reads on slopes and cliff shelves
+  const pos = [], idx = [];
+  for (let i = 0; i <= segments; i++) {
+    const a = i / segments * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+    for (const r of [sp.r - width / 2, sp.r + width / 2]) {
+      const x = sp.x + c * r, z = sp.z + s * r;
+      pos.push(x, heightAt(x, z) + 0.15, z);
+    }
+    if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
+}
 for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
   sp.y = heightAt(sp.x, sp.z);
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), new THREE.MeshLambertMaterial({ color: 0x552222 }));
-  disc.position.set(sp.x, sp.y + 0.05, sp.z);
-  disc.receiveShadow = true;
+  const ring = new THREE.Mesh(areaRingGeometry(sp),
+    new THREE.MeshBasicMaterial({ color: 0x552222, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
   const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 30, 12),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(sp.color), transparent: true, opacity: 0.55, depthWrite: false }));
   beacon.position.set(sp.x, sp.y + 15, sp.z);
   beacon.visible = false;
-  scene.add(disc, beacon);
-  spawnMarkers[name] = { disc, beacon };
+  scene.add(ring, beacon);
+  spawnMarkers[name] = { ring, beacon, on: false };
 }
-// Countdown markers for a wave's resolved packs: beacons on the spawns + ground arrows along each route used
+// Countdown markers for a wave's resolved packs
 function showSpawnMarkers(packs) {
   for (const [name, m] of Object.entries(spawnMarkers)) {
-    const on = packs.some(p => p.spawn === name);
-    m.beacon.visible = on;
-    m.disc.material.color.setHex(on ? 0xcc2222 : 0x552222);
-    for (const [key, arrows] of Object.entries(routeArrows(name)))
-      arrows.visible = packs.some(p => p.spawn === name && (p.route === key || p.route === 'split'));
+    m.on = packs.some(p => p.spawn === name);
+    m.beacon.visible = m.on;
+    m.ring.material.color.set(m.on ? CONFIG.SPAWN_POINTS[name].color : 0x552222);
+    m.ring.material.opacity = m.on ? 0.6 : 0.16;   // idle areas: a faint outline only
   }
 }
-// Ground arrows (flat chevrons) along the first CONFIG.markerArrowLength metres of a route, built on first use
-const chevronGeo = (() => {
-  const sh = new THREE.Shape();
-  sh.moveTo(0, 1.2); sh.lineTo(1.3, -0.6); sh.lineTo(0, -0.1); sh.lineTo(-1.3, -0.6); sh.closePath();
-  return new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);   // tip points to -z
-})();
-function routeArrows(name) {
-  const m = spawnMarkers[name];
-  if (m.arrows) return m.arrows;
-  m.arrows = {};
-  const sp = CONFIG.SPAWN_POINTS[name];
-  for (const [key, r] of Object.entries(sp.routes)) {
-    const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(sp.color), transparent: true, opacity: 0.85, depthWrite: false });
-    let walked = 0;
-    for (let i = 1; i < r.pts.length && walked < CONFIG.markerArrowLength; i++) {
-      const [x0, z0] = r.pts[i - 1], [x1, z1] = r.pts[i];
-      walked += Math.hypot(x1 - x0, z1 - z0);
-      if (i % 2) continue;   // one chevron every ~6 m
-      const c = new THREE.Mesh(chevronGeo, mat);
-      c.position.set(x1, heightAt(x1, z1) + 0.12, z1);
-      c.rotation.y = Math.atan2(-(x1 - x0), -(z1 - z0));
-      c.userData.phase = walked;
-      g.add(c);
-    }
-    g.visible = false;
-    scene.add(g);
-    m.arrows[key] = g;
-  }
-  return m.arrows;
-}
-// Chevrons pulse in a wave running toward the statue so the direction reads at a glance
+// Active rings breathe so the areas read at a glance
 function animateMarkers(t) {
-  for (const m of Object.values(spawnMarkers)) for (const g of Object.values(m.arrows || {})) {
-    if (!g.visible) continue;
-    for (const c of g.children) c.scale.setScalar(1 + 0.35 * Math.max(0, Math.sin(t * 6 - c.userData.phase * 0.25)));
-  }
+  for (const m of Object.values(spawnMarkers)) if (m.on) m.ring.material.opacity = 0.55 + 0.35 * Math.sin(t * 5);
 }
 
 // Ghost skull: a floating primitive skull (always visible through walls) where a pack spawned
 const skulls = [];
 const skullMat = new THREE.MeshBasicMaterial({ color: 0xf4f0e6, transparent: true, opacity: 0.8, depthTest: false, depthWrite: false });
 const skullDark = new THREE.MeshBasicMaterial({ color: 0x1a1010, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
-function spawnSkull(sp) {
+function spawnSkull(sp) {   // sp: any { x, z }
   const g = new THREE.Group();
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.renderOrder = mat === skullDark ? 11 : 10; g.add(m); return m; };
   add(new THREE.SphereGeometry(1.2, 18, 14), skullMat, 0, 0.3, 0);                       // cranium
@@ -4349,9 +4354,10 @@ function spawnSkull(sp) {
   add(new THREE.SphereGeometry(0.32, 12, 8), skullDark, 0.45, 0.15, 1.0);
   add(new THREE.ConeGeometry(0.15, 0.3, 3), skullDark, 0, -0.3, 1.12).rotation.x = Math.PI;   // nose
   for (let i = -1; i <= 1; i++) add(new THREE.BoxGeometry(0.12, 0.3, 0.1), skullDark, i * 0.32, -0.75, 0.76);   // teeth gaps
-  g.position.set(sp.x, sp.y + 7, sp.z);
+  const y = heightAt(sp.x, sp.z) + 7;
+  g.position.set(sp.x, y, sp.z);
   scene.add(g);
-  skulls.push({ g, life: CONFIG.skullTime, baseY: sp.y + 7 });
+  skulls.push({ g, life: CONFIG.skullTime, baseY: y });
 }
 function updateSkulls(dt, t) {
   for (let i = skulls.length - 1; i >= 0; i--) {
@@ -4482,37 +4488,320 @@ function flowDir(field, x, z, out, climb = false) {
 // Walking distance to the statue from (x,z) (Infinity if unreachable)
 const statueDistance = (x, z) => STATUE_FIELD[NAV.cellOf(x, z)];
 
-// ---- Routes: every spawn has two (A / B). Each waypoint gets its own static flow field. ----
-// sp.routes[key].wps = [{ x, z, field, statueDist }]
-for (const sp of Object.values(CONFIG.SPAWN_POINTS))
-  for (const r of Object.values(sp.routes))
-    r.wps = r.via.map(([x, z]) => ({ x, z, field: buildFlowField(goalCells(x, z, 3)), statueDist: statueDistance(x, z) }));
+// ---- Zombie routing: every zombie plans (and re-plans) its own A* route to the statue ----
+// Nothing is premeditated: a zombie spawns somewhere inside a wide spawn area and searches the nav grid for its own
+// way in. The step cost mixes path length with
+//   • personal noise   — one tileable value-noise grid read at a per-zombie offset: each zombie dislikes different
+//                        ground, so it commits to its own corridor (road vs ridge, north vs south gate…)
+//   • crowd traffic    — every planned route adds weight to its coarse cells (decays), so later planners fan out
+//   • jams             — where someone got stuck costs more for a while; everyone routes around it
+//   • cactus walls     — near-blocked; routes crossing a freshly raised wall are re-planned
+// The heuristic is the statue flow field (true walking distance, ×P.heuristic), so a search heads almost straight
+// for the statue and needs no per-map tuning. One search runs at a time and resumes across frames within a fixed
+// node budget; a zombie waiting for its route walks the statue flow field meanwhile.
+// Re-plans: off the route (chase, knockback), route blocked, stuck, or now and then while still far away.
+const ZROUTE = (() => {
+  const P = CONFIG.AI.path, L = CONFIG.AI.life, { N, C, DIRS, cx } = NAV, NN = N * N;
+  const rr = ([a, b]) => a + Math.random() * (b - a);
+  const cellX = k => cx(k % N), cellZ = k => cx((k / N) | 0);
 
-// Current route field for a walker at (x,z), skipping waypoints already reached or passed
-// (closer to the statue than the waypoint, e.g. after a chase). null = route done → statue field.
-function routeField(walker, x, z) {
-  const k = NAV.cellOf(x, z);
-  while (walker.route && walker.wp < walker.route.length) {
-    const w = walker.route[walker.wp];
-    if (isFinite(w.field[k]) && w.field[k] > MAP.routeReach && STATUE_FIELD[k] > w.statueDist - 4) return w.field;
-    walker.wp++;
-  }
-  return null;
-}
+  // Personal preference noise (two octaves, tileable, contrast-stretched so preferences are decisive)
+  const noise = new Float32Array(NN);
+  const octave = (period, w) => {
+    const Lc = Math.max(2, Math.round(N * C / period)), lat = new Float32Array(Lc * Lc).map(() => Math.random());
+    const at = (a, b) => lat[(b % Lc) * Lc + (a % Lc)], sm = t => t * t * (3 - 2 * t);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const u = i / N * Lc, v = j / N * Lc, i0 = Math.floor(u), j0 = Math.floor(v), fu = sm(u - i0), fv = sm(v - j0);
+      noise[j * N + i] += w * ((at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv);
+    }
+  };
+  octave(P.noiseScale, 0.7); octave(P.noiseScale / 2.5, 0.3);
+  for (let k = 0; k < NN; k++) noise[k] = THREE.MathUtils.smoothstep(noise[k], 0.25, 0.75);
 
-// Trace a route: walk the waypoint fields then the statue field from a spawn; polyline + length
-function traceRoute(sp, route) {
-  const pts = [[sp.x, sp.z]], d = new THREE.Vector3(), walker = { route: route.wps, wp: 0 };
-  let x = sp.x, z = sp.z, len = 0;
-  for (let i = 0; i < 3000 && flowDir(routeField(walker, x, z) || STATUE_FIELD, x, z, d); i++) {
-    x += d.x; z += d.z; len += 1;
-    if (i % 3 === 0) pts.push([x, z]);
+  // Shared cost layers
+  const TC = Math.ceil(MAP.size / P.traffic.cell), traffic = new Float32Array(TC * TC), coarse = new Uint16Array(NN);
+  for (let k = 0; k < NN; k++)
+    coarse[k] = Math.min(TC - 1, Math.floor((k % N) * C / P.traffic.cell)) + Math.min(TC - 1, Math.floor(((k / N) | 0) * C / P.traffic.cell)) * TC;
+  const jam = new Float32Array(NN), walls = new Uint8Array(NN);
+  let wallCells = [], wallTimer = 0, wallStamp = 0, jamTimer = 0;
+
+  // Resumable A* (one active job). Generation stamps avoid clearing the big arrays per search.
+  const g = new Float32Array(NN), parent = new Int32Array(NN), seen = new Uint32Array(NN), closed = new Uint32Array(NN);
+  let gen = 0, hk = new Int32Array(8192), hf = new Float32Array(8192), hn = 0, job = null;
+  const urgent = [], lazy = [];
+  const stats = { searches: 0, failed: 0, expanded: 0, lastNodes: 0, frameNodes: 0, maxFrameMs: 0 };
+  function push(k, f) {
+    if (hn === hk.length) { const k2 = new Int32Array(hn * 2), f2 = new Float32Array(hn * 2); k2.set(hk); f2.set(hf); hk = k2; hf = f2; }
+    let i = hn++;
+    while (i > 0) { const p = (i - 1) >> 1; if (hf[p] <= f) break; hk[i] = hk[p]; hf[i] = hf[p]; i = p; }
+    hk[i] = k; hf[i] = f;
   }
-  pts.push([0, 0]);
-  return { pts, len: len + Math.hypot(x, z) - S / 2 };
+  function pop() {
+    const top = hk[0], lk = hk[--hn], lf = hf[hn];
+    let i = 0;
+    for (;;) {
+      let c = 2 * i + 1;
+      if (c >= hn) break;
+      if (c + 1 < hn && hf[c + 1] < hf[c]) c++;
+      if (hf[c] >= lf) break;
+      hk[i] = hk[c]; hf[i] = hf[c]; i = c;
+    }
+    hk[i] = lk; hf[i] = lf;
+    return top;
+  }
+
+  // Route cell on another level than the zombie: well above (a cliff it cannot climb) or far below
+  const levelGap = d => d > 1.8 || d < -2.5;
+  // A fresh personality for a new zombie (routing + "alive" layers). Agents and bosses keep tight lines.
+  function personality(def) {
+    const horde = !def.agent && !def.boss;
+    return {
+      path: null, i: 0, look: 0, lookAt: 0, queued: false, wallStamp: 0, progI: 0, progT: 0, progStrikes: 0,
+      ox: Math.floor(Math.random() * N), oy: Math.floor(Math.random() * N), amp: horde ? rr(P.noiseAmp) : P.noiseAmp[0],
+      lane: horde ? rr(P.lane) * (Math.random() < 0.5 ? -1 : 1) : 0,
+      rethinkAt: 0, pauseUntil: 0, pauseCheck: 0, canPause: horde && !def.canClimb,
+      wanderF: rr(L.wanderFreq), wanderP: Math.random() * 6.3, surgeF: rr(L.surgeFreq), surgeP: Math.random() * 6.3,
+      alive: horde,
+    };
+  }
+  function request(z, isUrgent) {
+    const nv = z.nav;
+    if (!nv || nv.queued) return;
+    nv.queued = true;
+    (isUrgent ? urgent : lazy).push(z);
+  }
+  // Start the next queued search (urgent first). false = nothing to do.
+  function begin() {
+    let z;
+    while ((z = urgent.shift() || lazy.shift())) if (!z.dead && z.nav.queued && !z.nav.fixed) break;
+    if (!z) return false;
+    const climb = !!z.def.canClimb, H = climb ? CLIMB_STATUE_FIELD : STATUE_FIELD, p = z.mesh.position;
+    let s = NAV.cellOf(p.x, p.z);
+    // Standing on a cliff face, the cell can belong to the level above: start from a neighbour we can actually walk to
+    // (dropping down is always possible, climbing up is not)
+    if (!climb) {
+      const y = heightAt(p.x, p.z), up = MAP.maxSlope * C;
+      if (NAV.h[s] - y > up || Math.abs(NAV.h[s] - y) > 1.2) {
+        let bestK = -1, bestD = Infinity;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+          const n = s + dj * N + di, d = n >= 0 && n < NN ? Math.abs(NAV.h[n] - y) : Infinity;
+          if (d < bestD && isFinite(H[n]) && NAV.h[n] - y <= up) { bestD = d; bestK = n; }
+        }
+        if (bestK >= 0) s = bestK;
+      }
+    }
+    if (!isFinite(H[s])) {   // pushed onto a closed cell: start from the nearest connected neighbour
+      let best = -1;
+      for (let r = 1; r < 4 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+        const n = s + dj * N + di;
+        if (n >= 0 && n < NN && isFinite(H[n]) && (best < 0 || H[n] < H[best])) best = n;
+      }
+      if (best < 0) { z.nav.queued = false; stats.failed++; return true; }
+      s = best;
+    }
+    if (++gen > 0xfffffff0) { gen = 1; seen.fill(0); closed.fill(0); }
+    hn = 0; g[s] = 0; seen[s] = gen; parent[s] = -1;
+    push(s, H[s] * P.heuristic);
+    job = { z, H, edges: climb ? NAV.climb : NAV.pass, ox: z.nav.ox, oy: z.nav.oy, amp: z.nav.amp, n: 0 };
+    return true;
+  }
+  // Expand up to `budget` nodes of the active search; returns nodes used
+  function step(budget) {
+    const { H, edges, ox, oy, amp } = job, pass = NAV.pass, TW = P.traffic.weight, WALL = P.wall, HW = P.heuristic;
+    let used = 0;
+    while (hn && used < budget) {
+      const k = pop();
+      if (closed[k] === gen) continue;
+      closed[k] = gen; used++;
+      if (H[k] <= P.goalDist) { finish(k); return used; }
+      const i = k % N, j = (k / N) | 0, gk = g[k], ek = edges[k], pk = pass[k];
+      for (let b = 0; b < 8; b++) {
+        if (!(ek & (1 << b))) continue;
+        const di = DIRS[b][0], dj = DIRS[b][1], n = k + dj * N + di;
+        if (closed[n] === gen || !isFinite(H[n])) continue;
+        const nz = noise[((j + dj + oy) % N) * N + (i + di + ox) % N];
+        let cost = C * (b < 4 ? 1 : Math.SQRT2) * (pk & (1 << b) ? 1 : MAP.climbCost) * (1 + amp * nz + TW * traffic[coarse[n]] + jam[n]);
+        if (walls[n]) cost *= WALL;
+        const ng = gk + cost;
+        if (seen[n] !== gen || ng < g[n]) { seen[n] = gen; g[n] = ng; parent[n] = k; push(n, ng + H[n] * HW); }
+      }
+    }
+    job.n += used;
+    if (!hn || job.n > P.maxNodes) { job.z.nav.queued = false; stats.failed++; stats.lastNodes = job.n; job = null; }
+    return used;
+  }
+  function finish(goal) {
+    const z = job.z, nv = z.nav, cells = [];
+    for (let k = goal; k >= 0; k = parent[k]) cells.push(k);
+    cells.reverse();
+    stats.searches++; stats.lastNodes = job.n + 1; job = null;
+    nv.queued = false;
+    if (z.dead) return;
+    nv.path = Int32Array.from(cells); nv.i = 0; nv.look = 0; nv.lookAt = 0; nv.wallStamp = wallStamp; nv.progI = 0; nv.progT = state.time;
+    // Claim the corridor: later planners see this traffic and spread to other ways in
+    let last = -1;
+    for (const k of cells) { const c = coarse[k]; if (c !== last) { traffic[c] += 1; last = c; } }
+  }
+
+  // Per frame: decay shared layers, refresh cactus wall cells, spend the search budget
+  const probe = new THREE.Vector3();
+  function update(dt) {
+    const t0 = performance.now(), tDecay = Math.exp(-dt / P.traffic.decay);
+    for (let c = 0; c < traffic.length; c++) traffic[c] *= tDecay;
+    if ((jamTimer -= dt) <= 0) {
+      jamTimer = 0.5;
+      const jd = Math.exp(-0.5 / P.jam.decay);
+      for (let k = 0; k < NN; k++) if (jam[k]) jam[k] = jam[k] < 0.05 ? 0 : jam[k] * jd;
+    }
+    if ((wallTimer -= dt) <= 0) {
+      wallTimer = 0.4;
+      const fresh = [];
+      for (const w of cactusWalls) {
+        if (w.hp <= 0) continue;
+        const wp = w.mesh.position, k0 = NAV.cellOf(wp.x, wp.z), R = Math.ceil((w.ability.width / 2 + 1) / C);
+        for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) {
+          const k = k0 + dj * N + di;
+          if (k >= 0 && k < NN && cactusWallAt(probe.set(cellX(k), wp.y + 0.5, cellZ(k)), 0.8)) fresh.push(k);
+        }
+      }
+      if (fresh.length !== wallCells.length || fresh.some((k, n) => k !== wallCells[n])) {
+        for (const k of wallCells) walls[k] = 0;
+        for (const k of fresh) walls[k] = 1;
+        wallCells = fresh; wallStamp++;
+      }
+    }
+    let budget = P.budget;
+    stats.frameNodes = 0;
+    const deadline = t0 + P.budgetMs;
+    while (budget > 0 && performance.now() < deadline) {
+      if (!job && !begin()) break;
+      if (!job) continue;   // that request failed instantly
+      const used = step(Math.min(budget, 400));
+      budget -= Math.max(1, used); stats.frameNodes += used; stats.expanded += used;
+    }
+    stats.maxFrameMs = Math.max(stats.maxFrameMs * 0.995, performance.now() - t0);
+  }
+
+  // Where a zombie on its way to the statue wants to walk. false = no route (yet): use the statue flow field.
+  // Zero vector = pausing (an "alive" beat).
+  function follow(z, out) {
+    const nv = z.nav, pos = z.mesh.position, path = nv.path, t = state.time;
+    if (!path) { request(z, true); return false; }
+    const end = path.length - 1;
+    // Progress: nearest cell within a short window ahead (copes with lanes, shoves and a freshly swapped route)
+    let best = nv.i, bd = Infinity;
+    for (let j = nv.i, e = Math.min(end, nv.i + 14); j <= e; j++) {
+      const dx = cellX(path[j]) - pos.x, dz = cellZ(path[j]) - pos.z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = j; }
+    }
+    // Knocked or lured away, or beside the route but on another level (below a cliff it runs along): plan again
+    if (bd > P.offRoute * P.offRoute || (!z.def.canClimb && levelGap(NAV.h[path[best]] - heightAt(pos.x, pos.z)))) {
+      nv.path = null; request(z, true); return false;
+    }
+    // Progress watchdog: no headway along the route for a while (pinned, oscillating) → jam the spot and re-plan;
+    // a few times in a row → hop to open ground
+    // (only time spent actually walking counts: a Spitter firing from range or a queued zombie is not stuck)
+    if (best > nv.progI + 1 || t < nv.pauseUntil || !(t - z.movedT < 0.25)) { if (best > nv.progI + 1) nv.progStrikes = 0; nv.progI = best; nv.progT = t; }
+    else if (t - nv.progT > P.progressTime) {
+      nv.progT = t;
+      if (++nv.progStrikes >= 3) { nv.progStrikes = 0; teleportToOpenCell(z); return false; }
+      nv.path = null; jamAt(z); return false;
+    }
+    nv.i = best;
+    if (end - best < 2) return false;   // route done: the flow field + attack slots finish the approach
+    const far = (z.def.canClimb ? CLIMB_STATUE_FIELD : STATUE_FIELD)[path[best]];
+    // Spontaneous re-plan now and then while far out (fresh traffic may send it another way)
+    if (!nv.rethinkAt) nv.rethinkAt = t + rr(P.rethink);
+    if (t > nv.rethinkAt) { nv.rethinkAt = t + rr(P.rethink); if (far > P.rethinkMinDist) request(z, false); }
+    // Alive: the odd stop to look around, far from the statue
+    if (nv.canPause) {
+      if (t < nv.pauseUntil) { out.set(0, 0, 0); return true; }
+      if (t > nv.pauseCheck) {
+        nv.pauseCheck = t + 1;
+        if (far > L.pauseMinDist && Math.random() < L.pauseChance) { nv.pauseUntil = t + rr(L.pause); out.set(0, 0, 0); return true; }
+      }
+    }
+    // Lookahead: farthest of the next few cells in straight walkable line (refreshed a few times a second)
+    if (t >= nv.lookAt || nv.look <= best) {
+      nv.lookAt = t + rr(P.lookEvery);
+      if (nv.wallStamp !== wallStamp) for (let j = best, e = Math.min(end, best + 16); j <= e; j++)
+        if (walls[path[j]]) { nv.wallStamp = wallStamp; request(z, true); break; }
+      let la = Math.min(end, best + P.lookahead);
+      while (la > best + 1 && !lineClear(pos.x, pos.z, cellX(path[la]), cellZ(path[la]))) la--;
+      nv.look = la;
+    }
+    const k = path[nv.look], tx = cellX(k), tz = cellZ(k);
+    // Personal lane: sideways from the route line, only onto open ground at the same level; fades near the end
+    let lx = 0, lz = 0;
+    if (nv.lane) {
+      const k0 = path[Math.max(0, nv.look - 2)], dx = tx - cellX(k0), dz = tz - cellZ(k0), l = Math.hypot(dx, dz);
+      if (l > 0.1) {
+        const s = nv.lane * Math.min(1, (end - nv.look) / 10) / l;
+        lx = -dz * s; lz = dx * s;
+        const k1 = NAV.cellOf(tx + lx, tz + lz), k2 = NAV.cellOf(tx + lx * 0.5, tz + lz * 0.5);
+        if (!NAV.open[k1] || !NAV.open[k2] || Math.abs(NAV.h[k1] - NAV.h[k]) > 1 || !isFinite(STATUE_FIELD[k1])) lx = lz = 0;
+      }
+    }
+    out.set(tx + lx - pos.x, 0, tz + lz - pos.z);
+    if (out.lengthSq() < 1e-4) return false;
+    out.normalize();
+    return true;
+  }
+  // Cheap straight-line test on the nav grid (open cells, no step steeper than the slope limit), 1 m samples
+  function lineClear(x0, z0, x1, z1) {
+    const d = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(d)), lim = MAP.maxSlope * (d / n) * 1.3 + 0.1;
+    let ph = NAV.h[NAV.cellOf(x0, z0)];
+    for (let i = 1; i <= n; i++) {
+      const k = NAV.cellOf(x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n);
+      if (!NAV.open[k] || Math.abs(NAV.h[k] - ph) > lim) return false;
+      ph = NAV.h[k];
+    }
+    return true;
+  }
+  // A zombie got stuck here: make the spot pricier for everyone for a while, and re-plan
+  function jamAt(z) {
+    const p = z.mesh.position, k0 = NAV.cellOf(p.x, p.z), R = P.jam.radius;
+    for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) {
+      const k = k0 + dj * N + di;
+      if (k >= 0 && k < NN) jam[k] = Math.min(jam[k] + P.jam.add / (1 + Math.abs(di) + Math.abs(dj)), 20);
+    }
+    request(z, true);
+  }
+  // "Alive" layers on the steering while advancing: slow heading drift + speed surges
+  const wanderAngle = z => L.wander * Math.sin(state.time * z.nav.wanderF * 6.283 + z.nav.wanderP);
+  const surge = z => 1 + L.surge * Math.sin(state.time * z.nav.surgeF * 6.283 + z.nav.surgeP);
+  function reset() {
+    urgent.length = lazy.length = 0; job = null; hn = 0;
+    traffic.fill(0); jam.fill(0);
+  }
+  return { personality, request, update, follow, jamAt, wanderAngle, surge, reset, stats, noise, traffic, walls, TC,
+    get pending() { return urgent.length + lazy.length + (job ? 1 : 0); } };
+})();
+
+// ---- Spawn areas: candidate cells (open, connected, within r, far enough from the statue) ----
+for (const sp of Object.values(CONFIG.SPAWN_POINTS)) {
+  const { N, C, cx, open } = NAV;
+  sp.cells = [];
+  const i0 = Math.max(0, Math.floor((sp.x - sp.r + HALF) / C)), i1 = Math.min(N - 1, Math.floor((sp.x + sp.r + HALF) / C));
+  const j0 = Math.max(0, Math.floor((sp.z - sp.r + HALF) / C)), j1 = Math.min(N - 1, Math.floor((sp.z + sp.r + HALF) / C));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const k = j * N + i;
+    if (open[k] && isFinite(STATUE_FIELD[k]) && STATUE_FIELD[k] >= (sp.minStatue || 0) && Math.hypot(cx(i) - sp.x, cx(j) - sp.z) <= sp.r) sp.cells.push(k);
+  }
+  if (!sp.cells.length) sp.cells.push(NAV.cellOf(sp.x, sp.z));
+  sp.walk = Math.min(...sp.cells.map(k => STATUE_FIELD[k]));   // shortest walk in (debug map / HUD)
 }
-for (const sp of Object.values(CONFIG.SPAWN_POINTS))
-  for (const r of Object.values(sp.routes)) Object.assign(r, traceRoute(sp, r));
+// A random spawn spot in an area; with an anchor (the pack's gathering point), prefer cells near it
+function spawnSpot(sp, anchor, out) {
+  const { N, cx } = NAV, R = CONFIG.packAnchorRadius;
+  let k = sp.cells[Math.floor(Math.random() * sp.cells.length)];
+  if (anchor) for (let n = 0; n < 40; n++) {
+    const c = sp.cells[Math.floor(Math.random() * sp.cells.length)];
+    if (Math.hypot(cx(c % N) - anchor.x, cx(Math.floor(c / N)) - anchor.z) < R) { k = c; break; }
+  }
+  const j = 0.8;   // jitter inside the cell
+  return out.set(cx(k % N) + (Math.random() * 2 - 1) * j, 0, cx(Math.floor(k / N)) + (Math.random() * 2 - 1) * j);
+}
 
 // ---- Debug top-down map (M): tiers, props, lanes with walk times, landmarks, live zombies ----
 const debugMap = (() => {
@@ -4557,27 +4846,21 @@ const debugMap = (() => {
     b.beginPath(); b.moveTo(px - fd.x * L * 0.3, pz - fd.z * L * 0.3); b.lineTo(ex, ez);
     b.lineTo(ex - (fd.x + fd.z * 0.6) * 3, ez - (fd.z - fd.x * 0.6) * 3); b.stroke();
   }
-  // Routes (A solid, B dashed) + walk times at Shambler speed
+  // Spawn areas (no fixed routes: every zombie plans its own) + shortest walk in at Shambler speed
   const lanes = {};
   b.font = 'bold 12px Segoe UI'; b.textAlign = 'center';
   for (const [name, sp] of Object.entries(CONFIG.SPAWN_POINTS)) {
-    const lines = [];
-    for (const [key, r] of Object.entries(sp.routes)) {
-      lanes[`${name}.${key}`] = { label: `${sp.label} ${key} (${r.label})`, len: r.len, seconds: r.len / ZT.shambler.speed };
-      b.strokeStyle = sp.color; b.lineWidth = 3; b.setLineDash(key === 'A' ? [] : [8, 5]);
-      b.beginPath(); r.pts.forEach((p, i) => i ? b.lineTo(...toPx(...p)) : b.moveTo(...toPx(...p))); b.stroke();
-      b.setLineDash([]);
-      for (const w of r.wps) { const [wx, wz] = toPx(w.x, w.z); b.fillStyle = sp.color; b.fillRect(wx - 3, wz - 3, 6, 6); }
-      lines.push(`${key}: ${Math.round(r.len)} m · ${(r.len / ZT.shambler.speed).toFixed(0)} s`);
-    }
+    lanes[name] = { label: sp.label, len: sp.walk, seconds: sp.walk / ZT.shambler.speed, cells: sp.cells.length };
     const [px, pz] = toPx(sp.x, sp.z);
-    b.fillStyle = sp.color; b.beginPath(); b.arc(px, pz, 7, 0, 7); b.fill();
+    b.globalAlpha = 0.18; b.fillStyle = sp.color;
+    for (const c of sp.cells) { const [qx, qz] = toPx(cx(c % N) - C / 2, cx(Math.floor(c / N)) - C / 2); b.fillRect(qx, qz, C * k, C * k); }
+    b.globalAlpha = 1; b.strokeStyle = sp.color; b.lineWidth = 2;
+    b.beginPath(); b.arc(px, pz, sp.r * k, 0, 7); b.stroke();
     b.fillStyle = '#fff';
-    const below = pz < 60 ? 46 : 0;   // near the top edge: put the label under the dot
-    b.fillText(sp.label, px, pz - 30 + below);
-    lines.forEach((t, i) => b.fillText(t, px, pz - 17 + below + i * 13 + (i ? 27 : 0)));
+    b.fillText(sp.label, px, pz - 4);
+    b.fillText(`${Math.round(sp.walk)} m · ${(sp.walk / ZT.shambler.speed).toFixed(0)} s`, px, pz + 10);
   }
-  console.table(Object.fromEntries(Object.entries(lanes).map(([k2, l]) => [k2, { route: l.label, metres: Math.round(l.len), seconds: +l.seconds.toFixed(1) }])));
+  console.table(Object.fromEntries(Object.entries(lanes).map(([k2, l]) => [k2, { area: l.label, metres: Math.round(l.len), seconds: +l.seconds.toFixed(1), cells: l.cells }])));
   b.font = '11px Segoe UI';
   for (const l of MAP.landmarks) {
     const [px, pz] = toPx(l.x, l.z);
@@ -4590,7 +4873,7 @@ const debugMap = (() => {
    'grey = walkable (lighter = higher)',
    'red tint = unreachable for zombies',
    'black = blocked / cliff-locked',
-   'routes: A solid, B dashed · s at Shambler speed',
+   'spawn areas · thin lines = every zombie route',
    'white ticks = statue flow field direction',
    'green hedge / grey building block sight'].forEach((t, i) => b.fillText(t, 12, SIZE - 96 + i * 14));
   return {
@@ -4600,6 +4883,17 @@ const debugMap = (() => {
     draw() {
       if (!this.visible) return;
       ctx.drawImage(bg, 0, 0);
+      // Every zombie's planned route (what is left of it), faint, in its type colour
+      ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+      for (const z of zombies) {
+        const path = z.nav && z.nav.path;
+        if (!path || z.heroTgt) continue;
+        ctx.strokeStyle = '#' + z.def.color.toString(16).padStart(6, '0');
+        ctx.beginPath(); ctx.moveTo(...toPx(z.mesh.position.x, z.mesh.position.z));
+        for (let i = z.nav.i; i < path.length; i += 2) ctx.lineTo(...toPx(cx(path[i] % N), cx(Math.floor(path[i] / N))));
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
       for (const z of zombies) {
         const [px, pz] = toPx(z.mesh.position.x, z.mesh.position.z);
         ctx.fillStyle = z.heroTgt ? (z.heroTgt.isAI ? '#30d0ff' : '#ff3030') : z.buried ? '#6a4a2a' : '#' + z.def.color.toString(16).padStart(6, '0');
@@ -4611,6 +4905,7 @@ const debugMap = (() => {
       const f = yawForward();
       ctx.strokeStyle = '#ffe14a'; ctx.beginPath(); ctx.moveTo(px, pz); ctx.lineTo(px + f.x * 14, pz + f.z * 14); ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = '12px Segoe UI';
+      ctx.fillText(`routes: ${ZROUTE.stats.searches} planned, ${ZROUTE.pending} pending, ${ZROUTE.stats.maxFrameMs.toFixed(2)} ms peak`, 10, 34);
       ctx.fillText(`zombies: ${zombies.length}   chasing you: ${zombies.filter(z => z.heroTgt === player).length}   chasing companions: ${zombies.filter(z => z.heroTgt && z.heroTgt !== player).length}   fps: ${fpsAvg.toFixed(0)}`, 10, 18);
     },
   };
@@ -4646,6 +4941,7 @@ let popups = [];             // floating damage numbers
 
 function resetGame() {
   clearMechaWorld();
+  ZROUTE.reset();
   clearAllStarWorld();
   clearAgentCorpses();
   clearImpWorld();
@@ -4671,7 +4967,7 @@ function resetGame() {
     waveIndex: 0,
     phase: 'countdown', // 'countdown' | 'active'
     waveTimer: 0,
-    spawnQueue: [],     // pending staggered spawns: { t, type, spawn, route, skull }
+    spawnQueue: [],     // pending staggered spawns: { t, type, spawn, anchor, skull }
     distractions: [],   // { pos, time, radius } — zombies inside drop everything and go there
     time: 0,            // game clock (animation phases)
     yaw: 0, pitch: 0.2, // the human's camera
@@ -4833,15 +5129,17 @@ function buildZombieMesh(type) {
 // Plant bullets die past the map edge (or far above it)
 const outsideMap = p => Math.abs(p.x) > CONFIG.MAP.size / 2 || Math.abs(p.z) > CONFIG.MAP.size / 2 || p.y > 150;
 const randomLane = () => { const k = Object.keys(CONFIG.SPAWN_POINTS); return k[Math.floor(Math.random() * k.length)]; };
-const randomRoute = () => Math.random() < 0.5 ? 'A' : 'B';
+const tmpSpawn = new THREE.Vector3();
+// A pack's gathering point: a random spot in its spawn area (part of the pack spawns around it, the rest anywhere)
+const packAnchor = spawnName => spawnSpot(CONFIG.SPAWN_POINTS[spawnName], null, new THREE.Vector3());
 const randRange = ([a, b]) => a + Math.random() * (b - a);
 let nextZombieId = 1;
 
-function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
+function spawnZombie(type, spawnName = randomLane(), anchor = null) {
   const def = ZT[type], AI = CONFIG.AI;
   const sp = CONFIG.SPAWN_POINTS[spawnName];
   const { mesh, parts } = makeZombieMesh(type);
-  const x = sp.x + (Math.random() - 0.5) * CONFIG.packSpread * 2, z = sp.z + (Math.random() - 0.5) * CONFIG.packSpread * 2;
+  const { x, z } = spawnSpot(sp, anchor, tmpSpawn);   // anywhere in the wide spawn area (near the pack anchor if any)
   mesh.position.set(x, heightAt(x, z) + def.radius + def.height / 2, z);
   // "Buttered" marker: a pat of butter on the head, shown while stunned
   const butter = new THREE.Mesh(butterGeo, butterMat);
@@ -4867,7 +5165,7 @@ function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
     slot: null, kb: new THREE.Vector3(),
     stuck: { t: 0, x, z, strikes: 0 }, wantsMove: false, nudge: 0, nudgeDir: new THREE.Vector3(),
     climbing: false, buried: false,
-    route: sp.routes[routeKey].wps, wp: 0,   // waypoints to pass before heading for the statue (routeField)
+    nav: ZROUTE.personality(def),    // own A* route to the statue + personal quirks (section "Zombie routing")
     ai: {},                          // behavior-local state (lunge, scream, charge, phases…)
     buff: { speed: 1, damage: 1 },   // recomputed each frame by banners
     stun: 0, flash: 0, glow: 0, glowColor: 0xff2000,
@@ -4875,6 +5173,7 @@ function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
     dead: false,
   };
   zombies.push(zombie);
+  ZROUTE.request(zombie, true);
   if (type === 'imp') setupImp(zombie);
   if (isAgent(zombie)) zombie.limp = collectLimpJoints(zombie);   // rest pose, before any animation (section "Animation juice")
   if (HORDE_MODELS[type]) { zombie.horde = hordeKit(type); zombie.batched = true; return zombie; }   // skinned horde batch
@@ -4888,16 +5187,11 @@ function spawnZombie(type, spawnName = randomLane(), routeKey = randomRoute()) {
 // ---------------------------------------------------------------------
 const displayName = type => ZT[type].name || type[0].toUpperCase() + type.slice(1);
 
-// Resolve a wave's packs to concrete { spawn, route, delay, zombies }:
-//   spawn - pack.spawn, else the wave's `lanes` taken in turn (offset by wave index so they rotate)
-//   route - pack.route, else CONFIG.routeCycle rotated by wave + pack index (A / B / split)
+// Resolve a wave's packs to concrete { spawn, delay, zombies }:
+//   spawn - randomPackSpawns: a random area per pack; otherwise pack.spawn, else the wave's `lanes` taken in turn
 function resolvePacks(index) {
-  const wave = WAVES[index], lanes = wave.lanes || Object.keys(CONFIG.SPAWN_POINTS), cyc = CONFIG.routeCycle;
-  // randomPackSpawns: every pack rolls its own spawn point and route (the wave data's spawn/route/lanes are ignored)
-  const pick = list => list[Math.floor(Math.random() * list.length)];
-  return wave.packs.map((p, i) => CONFIG.randomPackSpawns
-    ? { ...p, spawn: randomLane(), route: pick(cyc) }
-    : { ...p, spawn: p.spawn || lanes[(i + index) % lanes.length], route: p.route || cyc[(index + i) % cyc.length] });
+  const wave = WAVES[index], lanes = wave.lanes || Object.keys(CONFIG.SPAWN_POINTS);
+  return wave.packs.map((p, i) => ({ ...p, spawn: CONFIG.randomPackSpawns ? randomLane() : p.spawn || lanes[(i + index) % lanes.length] }));
 }
 
 // Zombie counts scale with the number of active heroes (bosses stay single)
@@ -4940,12 +5234,13 @@ function startWave(index) {
     const list = [];
     for (const [type, n] of Object.entries(pack.zombies)) for (let i = 0; i < scaledCount(type, n); i++) list.push(type);
     list.sort(() => Math.random() - 0.5);
-    // 'split' alternates A/B through the shuffled list, so each half gets a fair mix; the first one drops the skull
-    // Bosses ignore the pack's lane: they arrive at a random spawn point on a random route
+    // Part of the pack gathers around a shared anchor, the rest appears anywhere in the area; the first drops the skull.
+    // Bosses ignore the pack's area: they arrive at a random one
+    pack.anchor = packAnchor(pack.spawn);
     list.forEach((type, i) => state.spawnQueue.push(ZT[type].boss
-      ? { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: randomLane(), route: randomRoute(), skull: true }
+      ? { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: randomLane(), skull: true }
       : { t: packStart + (i / list.length) * CONFIG.spawnBurst, type, spawn: pack.spawn, skull: i === 0,
-          route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId }));
+          anchor: Math.random() < CONFIG.packCluster ? pack.anchor : null, pack: packId }));
     queueEscorts(index, pack, packStart + CONFIG.spawnBurst, packId++, escorts);
   }
   // (Future: apply WAVES[index].modifiers here for special waves.)
@@ -4965,8 +5260,7 @@ function updateLaneArrow() {
   el.style.display = 'block';
   el.querySelector('.arrow').style.transform = `rotate(${ang}rad)`;
   el.querySelector('.arrow').style.color = sp.color;
-  const route = pack.route === 'split' ? 'split A + B' : `${pack.route}: ${sp.routes[pack.route].label}`;
-  el.querySelector('.label').textContent = `${sp.label} (${route}) · ${Math.round(Math.hypot(dx, dz))} m`;
+  el.querySelector('.label').textContent = `${sp.label} · ${Math.round(Math.hypot(dx, dz))} m`;
 }
 
 // =====================================================================
@@ -6749,7 +7043,8 @@ function fieldDir(z, toHero, goal, out) {
   const pos = z.mesh.position, climb = !!z.def.canClimb;
   let field;
   if (toHero) { const h = z.heroTgt; field = climb ? h.climbField : h.field; h.need[climb ? 'climb' : 'ground'] = true; }
-  else field = routeField(z, pos.x, pos.z) || (climb ? CLIMB_STATUE_FIELD : STATUE_FIELD);   // route waypoints first
+  else if (ZROUTE.follow(z, out)) return out;   // its own planned route (section "Zombie routing")
+  else field = climb ? CLIMB_STATUE_FIELD : STATUE_FIELD;   // no route yet / route done
   if (field && flowDir(field, pos.x, pos.z, out, climb)) return out;
   return steerDirect(goal, pos, out);
 }
@@ -6828,6 +7123,13 @@ function avoidObstacles(z, v) {
 function moveZombie(z, dir, dt, mult = 1) {
   const def = z.def, pos = z.mesh.position;
   steer.copy(dir);
+  // Alive (horde, advancing on its own route): slow personal heading drift and speed surges
+  const alive = z.mode === 'advance' && z.nav && z.nav.alive && !z.slot && dir.lengthSq() > 0;
+  if (alive) {
+    const a = ZROUTE.wanderAngle(z), c = Math.cos(a), s = Math.sin(a), x = steer.x;
+    steer.x = x * c - steer.z * s; steer.z = x * s + steer.z * c;
+    mult *= ZROUTE.surge(z);
+  }
   // Separation: keep a little personal space from packmates (packs spread but stay clumped)
   const sx0 = steer.x, sz0 = steer.z;
   forNeighbors(pos.x, pos.z, def.radius + 2.6 + AI.separation, o => {
@@ -6849,6 +7151,7 @@ function moveZombie(z, dir, dt, mult = 1) {
   pos.addScaledVector(steer, speed * dt);
   faceDir(z, dir.lengthSq() > 0 ? dir : steer, dt);
   z.wantsMove = true;
+  z.movedT = state.time;   // route progress watchdog: this zombie is trying to walk
 }
 // Smoothly turn to face a flat direction (facing matters for the Plated front plate)
 function faceDir(z, dir, dt = 1) {
@@ -6875,6 +7178,7 @@ function teleportToOpenCell(z) {
   if (!isFinite(p.x + p.z)) { const sp = CONFIG.SPAWN_POINTS[randomLane()]; p.x = sp.x; p.z = sp.z; }
   z.prevX = p.x; z.prevZ = p.z;
   z.kb.set(0, 0, 0);
+  if (z.nav && !z.nav.queued) { z.nav.path = null; ZROUTE.request(z, true); }
 }
 function checkStuck(z, dt) {
   const st = z.stuck, p = z.mesh.position;
@@ -6885,6 +7189,7 @@ function checkStuck(z, dt) {
   const moved = Math.hypot(p.x - st.x, p.z - st.z);
   st.t = 0; st.x = p.x; st.z = p.z;
   if (moved >= AI.stuck.minProgress) { st.strikes = 0; return; }
+  if (z.nav && !z.heroTgt) ZROUTE.jamAt(z);   // mark the spot for everyone's routing and plan a way around
   if (++st.strikes < AI.stuck.teleportStrikes) {
     // Nudge toward the most open side: sample 8 headings, prefer ones near perpendicular to where we want to go
     // (sliding along the blocker), and flip sides on each strike so a corner doesn't trap us twice.
@@ -10097,7 +10402,7 @@ function queueEscorts(waveIdx, pack, t, packId, escorts) {
   const n = Math.min(cap - escorts.n, roll);
   for (let i = 0; i < n; i++) state.spawnQueue.push({
     t: t + E.delay + i * 0.5, type: pool[Math.floor(Math.random() * pool.length)], spawn: pack.spawn,
-    route: pack.route === 'split' ? (i % 2 ? 'B' : 'A') : pack.route, pack: packId,
+    anchor: pack.anchor, pack: packId,
   });
   escorts.n += n;
 }
@@ -10110,8 +10415,8 @@ function nearestSpawnToSquad() {
   for (const [k, sp] of Object.entries(CONFIG.SPAWN_POINTS)) { const d = Math.hypot(sp.x - cx, sp.z - cz); if (d < bd) { bd = d; best = k; } }
   return best;
 }
-function spawnAgent(type, spawn = nearestSpawnToSquad(), route = randomRoute()) {
-  const z = spawnZombie(type, spawn, route);
+function spawnAgent(type, spawn = nearestSpawnToSquad(), anchor = null) {
+  const z = spawnZombie(type, spawn, anchor);
   z.thinkInterval = 1 / AG.thinkRate;
   spawnPopup(z.mesh.position.clone().setY(z.mesh.position.y + 2), z.def.name.toUpperCase(), '#ff7a5a');
   return z;
@@ -10753,10 +11058,10 @@ function turretSpot(z, hp) {
   return null;
 }
 function spawnTurret(owner, spot) {
-  const t = spawnZombie('engineerTurret', randomLane(), 'A');
+  const t = spawnZombie('engineerTurret', randomLane());
   t.mesh.position.set(spot.x, spot.y + ZT.engineerTurret.radius + ZT.engineerTurret.height / 2, spot.z);
   t.mesh.rotation.y = owner.mesh.rotation.y;
-  t.stuck.x = spot.x; t.stuck.z = spot.z; t.route = []; t.wp = 0;
+  t.stuck.x = spot.x; t.stuck.z = spot.z; t.nav.fixed = t.nav.queued = true;   // stationary: never plans a route
   Object.assign(t.ai, { owner, anchor: { x: spot.x, z: spot.z }, life: EN.turret.life, deploy: 0, fireT: 0.6, scanT: 0, barrel: 0 });
   SFX.play('turretDeploy', spot);
   for (let i = 0; i < 8; i++) spawnParticle('puff', 0x9a8a6a, spot.clone().add(rand3(0.8)), rand3(3, 1), { life: 0.6, gravity: -0.5, grow: 2, drag: 4, size: 0.5 });
@@ -11657,7 +11962,7 @@ function scientistBehave(z, t, dt) {
       const st = spawnZombie('healStation', randomLane());
       const sx = pos.x - Math.sin(z.mesh.rotation.y) * 0.8, sz = pos.z - Math.cos(z.mesh.rotation.y) * 0.8;
       st.mesh.position.set(sx, heightAt(sx, sz) + st.def.radius + st.def.height / 2, sz);
-      st.prevX = sx; st.prevZ = sz; st.ai.life = st.def.station.life; st.ai.owner = z;
+      st.prevX = sx; st.prevZ = sz; st.nav.fixed = st.nav.queued = true; st.ai.life = st.def.station.life; st.ai.owner = z;
       a.station = st;
       SFX.play('healStation', st.mesh.position);
       z.parts.rig.throwT = 0.45;
@@ -16352,6 +16657,7 @@ function updateZombies(dt) {
   updateDistractions(dt);
   for (const z of zombies) { z.prevX = z.mesh.position.x; z.prevZ = z.mesh.position.z; }
   rebuildHash();
+  ZROUTE.update(dt);   // route planning (budgeted, resumable A*) + shared cost layers
   for (const h of heroes) updateHeroTactics(h);   // openings + horde side, read by tactical agents
   // Hero flow fields (ground / climb layer, one set per hero), rebuilt a few times a second while someone needed them
   for (const h of heroes) {
@@ -17381,12 +17687,12 @@ function updateWaves(dt) {
   for (const s of state.spawnQueue) {
     s.t -= dt;
     if (s.t <= 0) {
-      const z = ZT[s.type].agent ? spawnAgent(s.type, s.spawn, s.route) : spawnZombie(s.type, s.spawn, s.route);
+      const z = ZT[s.type].agent ? spawnAgent(s.type, s.spawn, s.anchor) : spawnZombie(s.type, s.spawn, s.anchor);
       z.pack = s.pack ?? null;
-      if (s.skull) {
-        const sp = CONFIG.SPAWN_POINTS[s.spawn];
-        spawnSkull(sp);
-        SFX.play('skull', new THREE.Vector3(sp.x, heightAt(sp.x, sp.z) + 3, sp.z));
+      if (s.skull) {   // the skull marks where the pack actually came out
+        const p = z.mesh.position;
+        spawnSkull(p);
+        SFX.play('skull', new THREE.Vector3(p.x, heightAt(p.x, p.z) + 3, p.z));
       }
       if (ZT[s.type].boss) SFX.play('bossArrive');
     }
@@ -17782,7 +18088,7 @@ for (const h of heroes) h.plant.animate(h, 0);
 if (AUTOPLAY) { matchStarted = true; document.body.classList.remove('preMatch'); overlay.style.display = 'none'; }
 // Debug handle for the browser console (inspect / pose the hero)
 window.__game = { CONFIG, PLANT_TYPES, get state() { return state; }, get corn() { return corn; }, camera, scene, spawnZombie, spawnAgent, explodeAt, get zombies() { return zombies; },
-  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, distractAt, heroes, get player() { return player; }, get mate() { return mate; },
+  heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, ZROUTE, distractAt, heroes, get player() { return player; }, get mate() { return mate; },
   get matchStarted() { return matchStarted; }, findPath, configureSquad, switchSquadMember, damageHero, SFX, get fps() { return fpsAvg; } };
 // Engineer inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { get engineerShells() { return engineerShells; }, get sonicGrenades() { return sonicGrenades; },

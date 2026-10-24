@@ -1,12 +1,13 @@
 # Garden Defense — Agent Guide
 **Keep this file small:** short, current facts only; replace outdated lines, never append history.
 **Always commit, tag, push:** bump `VERSION` in `index.html` and the version below, commit, tag it, push with tags.
+If another session is making changes, only commit, tag, push your changes, and let the other session handle its own changes.
 
 ## Game
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.17.2)
+## Current state (v1.18.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -27,13 +28,21 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - Heroes: data in `CONFIG.PLANTS`, class tuning in `CONFIG.SUNFLOWER` / `CONFIG.PEASHOOTER` / `CONFIG.cactus`,
   Corn in `CONFIG.weapon` / `CONFIG.abilities` / `CONFIG.TEAMMATE_AI`. Docs per hero in `docs/*.md`. AI Cactus fortifies
   the statue with mines/walls (`cactus.ai.fortify`). Plant bullets fly until they hit something or leave the map.
+- Horde models (section "Horde models"): the 8 basic zombies are sculpted merged meshes, GPU-skinned (16 bones,
+  per-instance bone texture) and instanced per type; clips are procedural in `HORDE_MODELS[type].pose/attack` plus
+  shared layers (`hordeOverlays`: look, wind-up/strike, flinch, stun, spawn); deaths become `hordeCorpses`.
+  Renders: `tests/horde-models.cjs` → `docs/horde-*.png`.
 - Zombies: `CONFIG.ZOMBIE_TYPES` (behavior key → `BEHAVIORS`), shared brain `CONFIG.AI`. Tactical agents (Imp, Foot
   Soldier, All-Star, Captain Deadbeard, Super Brainz, Engineer, Scientist) use `thinkAgent` + own kits, tuning
   `CONFIG.AGENTS` (`damageMult`, `sizeMult` 2× size: hitbox scaled in `scaleAgentDef`, models built at base size then mesh-scaled; local rig offsets use `rigHalf`). Bosses (Gargantuar wave 5, Mecha Gargantuar wave 10)
   spawn at a random lane and prefer plants (`heroFirst`). Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
-- Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static Float64 flow fields per route
-  waypoint, A* for AI plants. Spawns/routes in `CONFIG.SPAWN_POINTS`; waves are data in `CONFIG.WAVES`;
-  every pack rolls a random spawn + route (`CONFIG.randomPackSpawns`).
+- Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static statue flow fields, A* for AI plants.
+  Spawn areas (`CONFIG.SPAWN_POINTS`: center, `r`, `minStatue`) — zombies appear anywhere inside; packs roll a random
+  area (`randomPackSpawns`), part of a pack clusters on an anchor. Waves are data in `CONFIG.WAVES`.
+- Zombie routing (`ZROUTE`, section "Zombie routing", tuning `CONFIG.AI.path` / `AI.life`): no fixed lanes; each zombie
+  plans its own A* route (cost = length × personal noise + shared traffic + jams + cactus walls, heuristic = statue
+  field), budgeted + resumable (one search at a time, ms cap). Re-plans when off-route/other level, walled, stuck, no
+  headway, or now and then. Horde adds lanes, wander, speed surges, pauses. Test: `tests/routing.cjs`.
 - Animation juice (`CONFIG.juice`, section "Animation juice"): layered on every rig after its animator — heroes lean
   into acceleration, flinch on hits, topple/bounce when downed, spring up, pop in on respawn, and play ability gestures
   (`heroAction` → `JH.gestures`); agents flinch away from hits, pop in on spawn and leave a toppling corpse
@@ -43,10 +52,6 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   plant's silhouette reaches the crosshair.
 - Debug: F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses, M map, K stress horde.
   `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright).
-- Horde models (section "Horde models"): the 8 basic zombies are sculpted merged meshes, GPU-skinned (16 bones,
-  per-instance bone texture) and instanced per type; clips are procedural in `HORDE_MODELS[type].pose/attack` plus
-  shared layers (`hordeOverlays`: look, wind-up/strike, flinch, stun, spawn); deaths become `hordeCorpses`.
-  Renders: `tests/horde-models.cjs` → `docs/horde-*.png`.
 
 ## Code rules
 - All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.
