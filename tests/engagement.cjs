@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     const url = `http://127.0.0.1:${server.address().port}/?autoplay`;
     const boot = async () => { await page.goto(url); await page.waitForFunction(() => window.__engagementTest, null, { timeout: 90000 }); };
     await boot();
-    assert.deepEqual(await page.evaluate(() => Object.values(__game.mastery.plants)), [0, 0, 0, 0], 'prewarming earns no mastery');
+    assert.ok((await page.evaluate(() => Object.values(__game.mastery.plants))).every(xp => xp === 0), 'prewarming earns no mastery');
 
     let result = await page.evaluate(() => {
       const g = __game, t = __engagementTest;

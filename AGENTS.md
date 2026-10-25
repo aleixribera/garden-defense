@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.25.2)
+## Current state (v1.26.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -28,6 +28,12 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - Heroes: data in `CONFIG.PLANTS`, class tuning in `CONFIG.SUNFLOWER` / `CONFIG.PEASHOOTER` / `CONFIG.cactus`,
   Corn in `CONFIG.weapon` / `CONFIG.abilities` / `CONFIG.TEAMMATE_AI`. Docs per hero in `docs/*.md`. AI Cactus fortifies
   the statue with mines/walls (`cactus.ai.fortify`). Plant bullets fly until they hit something or leave the map.
+- Citron (tank: heat beam, EMPeach, Citron Ball + Spin Dash, Peel Shield), Rose (homing thistles, Goatify, Time Snare,
+  Arcane Enigma) and Chomper (bite / swallow from behind + chew, Goop, Burrow, Spikeweed): `CONFIG.CITRON` / `ROSE` /
+  `CHOMPER`, sections "<Name> combat" + the shared "New plant kits" (zombie status `z.pfx` via `plantStatus`: slow, goop,
+  hold, goat; `rayZombie`; `np*` AI helpers). Optional `PLANT_TYPES` hooks: reset, onDown, dispose, speedMult, absorb,
+  stance, hud. `h.cloak` (Burrow, Enigma) makes `targetable()` false; the human's aim / squad switching use `standing()`.
+  Docs: docs/citron.md, rose.md, chomper.md. Test: `tests/new-plants.cjs`; renders: `npm run renders:plants` (`tools/plant-models.cjs`).
 - Horde models (section "Horde models"): the 8 basic zombies are sculpted merged meshes, GPU-skinned (16 bones,
   per-instance bone texture) and instanced per type; clips are procedural in `HORDE_MODELS[type].pose/attack` plus
   shared layers (`hordeOverlays`: look, wind-up/strike, flinch, stun, spawn); deaths become `hordeCorpses`.
@@ -84,8 +90,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   menu + Esc pause panel; systems register appliers with `onSettings()`. Focus loss pauses and clears input.
 - Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses,
   M map, K stress horde, J coins. Normal play: 1–4 take a plant, H help.
-  `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright); `npm test` runs all,
-  `npm run test:smoke` = full-match autoplay (`tests/full-match.cjs`).
+  `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright). `npm test` = the short tests in
+  pairs (~3.5 min); `npm run test:full` adds the slow real-time runs listed in `SLOW` (tests/run-all.cjs: boss-finale,
+  economy, experience, full-match, polish, cactus). Keep new tests short (one boot, simulated steps, no real-time waits).
 
 ## Code rules
 - All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.

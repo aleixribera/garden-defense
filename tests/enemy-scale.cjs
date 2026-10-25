@@ -115,6 +115,8 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     console.table(result.enemies.map(e => ({ type: e.type, model: e.height.toFixed(2), capsule: e.capsule.toFixed(2) })));
     const png = await page.evaluate(() => {
       const g = __game, T = __scaleTest, THREE = g.THREE;
+      // The reference sheet always shows the original four plants (default squads draw random companions)
+      if (!['peashooter', 'sunflower', 'cactus'].every(t => g.heroes.some(h => h.type === t))) { g.state.over = true; g.configureSquad(['corn', 'peashooter', 'sunflower', 'cactus']); }
       const r = g.renderer, width = 1800, rowH = 400;
       r.setPixelRatio(1); r.setSize(width, rowH, false);
       const out = document.createElement('canvas'); out.width = width; out.height = rowH * 3;

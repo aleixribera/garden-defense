@@ -1,11 +1,13 @@
 {
   "name": "garden-defense",
-  "version": "1.25.2",
+  "version": "1.26.0",
   "private": true,
   "description": "Third-person wave defense in a single index.html (three.js, no build step).",
   "scripts": {
     "test": "node tests/run-all.cjs",
-    "test:smoke": "node tests/full-match.cjs"
+    "test:full": "node tests/run-all.cjs --full",
+    "test:smoke": "node tests/full-match.cjs",
+    "renders:plants": "node tools/plant-models.cjs"
   },
   "devDependencies": {
     "playwright": "^1.48.0"

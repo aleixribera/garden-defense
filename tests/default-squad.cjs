@@ -10,6 +10,12 @@ const { chromium } = require('playwright');
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const defaults = ['corn', 'peashooter', 'sunflower', 'cactus'];
 const picks = ['corn', 'random', 'random', 'random'];
+// The live roster (every CONFIG.PLANTS entry): a default squad is Corn plus three different plants from it
+const roster = [...source.matchAll(/^    (\w+): \{ name: '[^']+', weaponName:/gm)].map(m => m[1]);
+const assertSquad = (types, message) => {
+  assert.equal(types.length, 4, message); assert.equal(new Set(types).size, 4, message);
+  assert.ok(types.includes('corn') && types.every(type => roster.includes(type)), message);
+};
 const resolverSource = source.match(/function resolveSquadSelection\([^]*?\n\}/)[0];
 const makeResolver = roster => vm.runInNewContext(`${resolverSource}; resolveSquadSelection;`,
   { CONFIG: { PLANTS: Object.fromEntries(roster.map(type => [type, {}])) } });
@@ -56,11 +62,11 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const g = __game, picks = [...document.querySelectorAll('#squadSlots select[id^="pick-"]')].map(el => el.value);
       return { types: g.heroes.map(h => h.type), picks, human: g.player.type, ai: g.heroes.filter(h => h.isAI).length };
     });
-    assert.deepEqual([...initial.types].sort(), [...defaults].sort());
+    assertSquad(initial.types, 'boot squad: Corn + three different roster plants');
     assert.deepEqual(initial.picks, picks, 'all companion slots default to Random');
     assert.equal(initial.human, 'corn'); assert.equal(initial.ai, 3);
     await page.click('#matchButton');
-    assert.deepEqual(await page.evaluate(() => __game.heroes.map(h => h.type).sort()), [...defaults].sort());
+    assertSquad(await page.evaluate(() => __game.heroes.map(h => h.type)), 'match squad: Corn + three different roster plants');
     assert.equal(await page.evaluate(() => __game.player.type), 'corn');
     console.log('PASS: picker and match default to Corn plus three different random AI plants');
 
@@ -77,7 +83,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     assert.equal(lifecycle.respawnKept, true); assert.equal(lifecycle.switchKept, true);
     assert.deepEqual(lifecycle.next, picks, 'Random stays selected for the next match');
     await page.click('#matchButton');
-    assert.deepEqual(await page.evaluate(() => __game.heroes.map(h => h.type).sort()), [...defaults].sort());
+    assertSquad(await page.evaluate(() => __game.heroes.map(h => h.type)), 'match squad: Corn + three different roster plants');
     assert.equal(await page.evaluate(() => __game.player.type), lifecycle.next[0]);
     console.log('PASS: respawn / handoff preserve identity; the next default match uses a fresh shuffle');
 
@@ -107,7 +113,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await menu.click('#matchButton');
     await menu.waitForFunction(() => window.__defaultSquadTest && !document.body.classList.contains('loading'), null, { timeout: 90000 });
     const booted = await menu.evaluate(() => ({ types: __game.heroes.map(h => h.type), human: __game.player.type }));
-    assert.equal(booted.human, 'corn'); assert.deepEqual([...booted.types].sort(), [...defaults].sort());
+    assert.equal(booted.human, 'corn'); assertSquad(booted.types, 'menu boot squad');
     console.log('PASS: human menu boots the chosen Corn and random companion squad behind the loading screen');
     assert.deepEqual(errors, [], 'no runtime exceptions during lineup lifecycle');
   } finally { await browser?.close(); server.close(); }
