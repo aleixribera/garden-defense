@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
       const step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { g.state.time += dt; T.updateHero(h, dt); T.updateCactusWorld(dt); T.animateCactus(h, dt); } };
       const zombie = (x, z, type = 'plated') => { const zed = g.spawnZombie(type); zed.mesh.position.set(x, g.heightAt(x, z) + zed.def.radius + zed.def.height / 2, z); zed.mesh.rotation.y = Math.PI; return zed; };
       setup();
-      check(h.stats.hp === 125 && h.weapon.clip === 12 && h.weapon.damage === 25, 'Cactus class loadout');
+      check(h.stats.hp === 125 && h.weapon.clip === 12 && h.weapon.damage === 32, 'Cactus class loadout');
       let vertices = 0, spines = 0; h.mesh.traverse(o => { if (o.geometry) vertices += o.geometry.attributes.position.count; if (o.isInstancedMesh) spines += o.count; });
       check(vertices > 20000 && spines > 350, 'Detailed procedural sculpt and instanced details');
       h.input.move.set(0, 0, -1); step(30); check(h.mesh.position.z < 10 && h.vel.z < -5, 'Accelerated movement');
@@ -57,7 +57,7 @@ const server = http.createServer((req, res) => {
       check(h.ammo === 11 && T.cactusShots.length === 0 && T.cactusTrails.length === 1, 'Spike Shot consumes one round and creates smoke without a travelling bullet');
       h.input.reload = true; step(); h.input.reload = false; step(125); check(h.ammo === 12 && !h.reloading, 'Reload restores clip');
       setup(); const target = zombie(12, -8); h.zoom = 1; h.aimPoint.copy(target.mesh.position); T.fireCactusSpike(h);
-      check(target.hp === target.def.hp - 25, 'Spike Shot deals body damage on the firing frame');
+      check(target.hp === target.def.hp - h.weapon.damage, 'Spike Shot deals body damage on the firing frame');
       const trail = T.cactusTrails[0], points = trail.mesh.geometry.attributes.position;
       check(points.count > 2 && new V().fromBufferAttribute(points, 0).distanceTo(trail.start) < 0.001 &&
         new V().fromBufferAttribute(points, points.count - 1).distanceTo(trail.end) < 0.001 &&
@@ -66,24 +66,24 @@ const server = http.createServer((req, res) => {
       const end = trail.end.clone(); T.updateCactusWorld(0.15);
       check(trail.mesh.material.uniforms.age.value === 0.15 && trail.end.equals(end), 'Smoke fades and drifts without advancing its endpoint');
       T.updateCactusWorld(g.CONFIG.cactus.smokeTrail.life);
-      check(T.cactusTrails.length === 0 && !trail.mesh.parent && target.hp === target.def.hp - 25, 'Expired smoke is removed without applying damage again');
+      check(T.cactusTrails.length === 0 && !trail.mesh.parent && target.hp === target.def.hp - h.weapon.damage, 'Expired smoke is removed without applying damage again');
       setup(); const head = zombie(12, -8); h.zoom = 1; h.aimPoint.copy(head.mesh.position).y += head.def.height * 0.35; T.fireCactusSpike(h);
       check(head.hp === head.def.hp - h.weapon.damage * h.weapon.criticalMult, 'Precision headshot deals critical damage instantly');
       setup(); const far = zombie(12, -30), near = zombie(12, -8);
       const start = T.nextMuzzle(h).start, dir = near.mesh.position.clone().sub(start).normalize();
       T.traceCactusSpike(h, start, dir);
-      check(near.hp === near.def.hp - 25 && far.hp === far.def.hp, 'Ray hits the nearest enemy regardless of spawn order');
+      check(near.hp === near.def.hp - h.weapon.damage && far.hp === far.def.hp, 'Ray hits the nearest enemy regardless of spawn order');
       setup(); T.plantTallnut(h); const wallPos = T.cactusWalls[0].mesh.position;
       const shielded = zombie(wallPos.x, wallPos.z - 3);
       const muzzle = wallPos.clone().add(new V(0, 0.8, 3)); T.traceCactusSpike(h, muzzle, new V(0, 0, -1));
       check(shielded.hp === shielded.def.hp && T.cactusTrails[0].end.z > shielded.mesh.position.z, 'Solid cover clips both instant damage and the smoke endpoint');
       setup(); const buried = zombie(12, -8), behind = zombie(12, -20); buried.buried = true;
       const origin = T.nextMuzzle(h).start; T.traceCactusSpike(h, origin, behind.mesh.position.clone().sub(origin).normalize());
-      check(buried.hp === buried.def.hp && behind.hp === behind.def.hp - 25, 'Buried enemies cannot intercept a ray');
+      check(buried.hp === buried.def.hp && behind.hp === behind.def.hp - h.weapon.damage, 'Buried enemies cannot intercept a ray');
       setup(); const birdMesh = new T.THREE.Group(); birdMesh.position.set(12, 8, -8); T.scene.add(birdMesh);
       const bird = { kind: 'parrot', mesh: birdMesh, hp: 40, t: 5 }; T.pirateProps.push(bird);
       const birdStart = T.nextMuzzle(h).start, birdDir = birdMesh.position.clone().sub(birdStart).normalize();
-      T.traceCactusSpike(h, birdStart, birdDir); check(bird.hp === 15, 'Instant Spike Shot can damage a remote parrot');
+      T.traceCactusSpike(h, birdStart, birdDir); check(bird.hp === 40 - h.weapon.damage, 'Instant Spike Shot can damage a remote parrot');
       T.traceCactusSpike(h, birdStart, birdDir); T.updatePirateWorld(0.01);
       check(!T.pirateProps.includes(bird) && !birdMesh.parent, 'Destroyed parrot is removed on the next world update');
       setup(); T.plantPotatoMine(h); const mine = T.cactusMines[0]; check(!!mine && h.cactus.charges.shuckShot === 2, 'Mine deployment spends a charge');

@@ -409,7 +409,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.26.1';
+const VERSION = 'v1.27.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -429,16 +429,16 @@ const CONFIG = {
   PLANTS: {
     sunflower: { name: 'Sunflower', weaponName: 'Sun Pulse',
       stats: { hp: 110, speed: 10.8, accel: 15, jumpSpeed: 9.5, reviveMult: 0.6 },
-      weapon: { fireRate: 0.15, damage: 8, minDamage: 4, falloffStart: 20, falloffEnd: 60,
+      weapon: { fireRate: 0.14, damage: 10, minDamage: 6, falloffStart: 30, falloffEnd: 65,
         criticalMult: 1.25, clip: 50, reloadTime: 2, kernelSpeed: 260, kernelLife: 0.5,
         kernelRadius: 0.11, spread: 0.012, aimSpread: 0.003, bloomPerShot: 0.0015,
         bloomMax: 0.014, bloomRecovery: 0.09, recoilKick: 0.0013 },
       abilities: {
-        shuckShot: { cooldown: 0, range: 12, breakRange: 16, rate: 10, duration: 240, aimCone: 0.55 },
+        shuckShot: { cooldown: 0, range: 12, breakRange: 16, rate: 14, duration: 240, aimCone: 0.55 },
         huskHop: { cooldown: 30, deployTime: 0.8, ammo: 100, fireRate: 0.06,
           damage: 9, minDamage: 7, criticalMult: 1.15, range: 100, radius: 0.12 },
         butterBarrage: { cooldown: 35, duration: 30, hp: 25, interval: 2.5, suns: 3,
-          heal: 5, magnetRange: 5, pickupRange: 0.85, sunLife: 9, placeDistance: 1.5 },
+          heal: 7, magnetRange: 5, pickupRange: 0.85, sunLife: 9, placeDistance: 1.5 },
       },
       abilityNames: { shuckShot: 'Heal Beam', huskHop: 'Sunbeam', butterBarrage: 'Heal Flower' },
       abilityIcons: { shuckShot: '✚', huskHop: '☀', butterBarrage: '✿' },
@@ -458,12 +458,12 @@ const CONFIG = {
         butterBarrage: 'Aim a butter strike, click to call it: damages and stuns.' } },
     cactus: { name: 'Cactus', weaponName: 'Spike Shot',
       stats: { hp: 125, speed: 7.2, accel: 10, aimSpeedMult: 0.42, jumpSpeed: 8.4 },
-      weapon: { fireRate: 0.4, damage: 25, criticalMult: 2, clip: 12, reloadTime: 2,
+      weapon: { fireRate: 0.4, damage: 32, criticalMult: 1.75, clip: 12, reloadTime: 2,
         spread: 0.027, aimSpread: 0.00065, bloomPerShot: 0.004, bloomMax: 0.018, bloomRecovery: 0.055,
         hitscan: true, range: 340, kernelRadius: 0.065, recoilKick: 0.012 },
       // Q / E / F are the shared ability slots; actions and HUD labels belong to each class.
       abilities: {
-        shuckShot: { cooldown: 30, maxCharges: 3, maxActive: 4, hp: 10, armTime: 1.25, triggerRadius: 1.6,
+        shuckShot: { cooldown: 24, maxCharges: 3, maxActive: 4, hp: 10, armTime: 1.25, triggerRadius: 1.6,
           radius: 3.5, damage: 175, placeDistance: 1.35, life: 180 },
         huskHop: { cooldown: 60, duration: 40, hp: 5, speed: 12, verticalSpeed: 7, altitude: 18,
           launchHeight: 3, fireRate: 0.105, damage: 8, projectileSpeed: 120, projectileLife: 1.8,
@@ -476,13 +476,13 @@ const CONFIG = {
       abilityNames: { shuckShot: 'Potato Mine', huskHop: 'Garlic Drone', butterBarrage: 'Tallnut Battlement' },
       abilityIcons: { shuckShot: '🥔', huskHop: '🧄', butterBarrage: '🪵' },
       info: { role: 'Sniper', blurb: 'Long-range precision and defenses: mines and walls.',
-        primary: 'Spike Shot: hitscan rifle; zoom with RMB, head hits deal double.',
+        primary: 'Spike Shot: hitscan rifle; zoom with RMB, head hits deal 1.75× damage.',
         shuckShot: 'Plant a Potato Mine (up to 3 charges) that arms after a moment.',
         huskHop: 'Pilot a Garlic Drone: WASD fly, LMB fire, Q Corn Strike, E return.',
         butterBarrage: 'Raise a Tallnut Battlement wall that zombies must bash through.' } },
     peashooter: { name: 'Peashooter', weaponName: 'Pea Cannon',
       stats: { hp: 125, speed: 10.5, jumpSpeed: 10, accel: 16 },
-      weapon: { fireRate: 0.34, damage: 25, splashDamage: 15, splashRadius: 4, clip: 10, reloadTime: 1.5,
+      weapon: { fireRate: 0.44, damage: 27, splashDamage: 12, splashRadius: 3.5, clip: 10, reloadTime: 1.5,
         kernelSpeed: 170, kernelLife: 0.8, kernelRadius: 0.3, spread: 0.012, aimSpread: 0.003,
         bloomPerShot: 0.006, bloomMax: 0.025, bloomRecovery: 0.09, recoilKick: 0.009 },
       // Shared Q/E/F action slots; each class provides its own implementation and labels.
@@ -490,7 +490,7 @@ const CONFIG = {
         shuckShot: { cooldown: 30, fuse: 2.5, damage: 175, radius: 8, range: 34, flightTime: 0.85,
           gravity: 24, bounce: 0.3, drag: 3, attractRadius: 18, minFlight: 0.32 },
         huskHop: { cooldown: 30, duration: 12, deployTime: 0.65, ammo: 100, fireRate: 0.075,
-          damage: 12, speed: 240, spread: 0.007, life: 0.65 },
+          damage: 10, speed: 240, spread: 0.007, life: 0.65 },
         butterBarrage: { cooldown: 25, duration: 8, speedMult: 1.75, jumpMult: 1.75, trailInterval: 0.09 },
       },
       abilityNames: { shuckShot: 'Chili Bean Bomb', huskHop: 'Pea Gatling', butterBarrage: 'Hyper' },
@@ -503,9 +503,10 @@ const CONFIG = {
     citron: { name: 'Citron', weaponName: 'Orange Beam',
       // GW2: 200 HP tank; slowest on foot, fastest rolling. Heat replaces the magazine (no reload).
       stats: { hp: 200, speed: 8.2, accel: 11, jumpSpeed: 8.6, aimSpeedMult: 0.62 },
-      weapon: { fireRate: 0.15, damage: 12, minDamage: 6, falloffStart: 16, falloffEnd: 42, range: 58, clip: 1, reloadTime: 0.1,
+      // range caps the drawing only; damage traces have no distance cutoff (cover still blocks them).
+      weapon: { fireRate: 0.15, damage: 13, minDamage: 7, falloffStart: 16, falloffEnd: 42, range: 58, clip: 1, reloadTime: 0.1,
         kernelRadius: 0.16, spread: 0.006, aimSpread: 0.002, bloomPerShot: 0, bloomMax: 0, bloomRecovery: 1, recoilKick: 0.0011,
-        heatPerTick: 0.052, cooling: 0.55, coolDelay: 0.3, overheatTime: 2.2 },
+        heatPerTick: 0.045, cooling: 0.55, coolDelay: 0.3, overheatTime: 2.2 },
       abilities: {
         shuckShot: { cooldown: 26, range: 34, speed: 26, gravity: 22, fuse: 1.6, radius: 8, stun: 3.5, bossStun: 1.2,
           damage: 20, mechMult: 5, arcTime: 0.35 },
@@ -517,16 +518,16 @@ const CONFIG = {
       abilityNames: { shuckShot: 'EMPeach', huskHop: 'Citron Ball', butterBarrage: 'Peel Shield' },
       abilityIcons: { shuckShot: '🍑', huskHop: '⚪', butterBarrage: '🛡️' },
       info: { role: 'Tank', blurb: 'Armored bounty hunter: shields the line and bowls through hordes.',
-        primary: 'Orange Beam: continuous laser, no reload; overheats if held too long.',
+        primary: 'Orange Beam: hits at any distance, strongest up close; no reload, but overheats.',
         shuckShot: 'Throw an EMPeach: stuns every zombie in the blast; wrecks Z-Mechs and turrets.',
         huskHop: 'Curl into the Citron Ball: roll fast and ram; hold LMB to charge a Spin Dash (E to unroll).',
         butterBarrage: 'Raise a Peel Shield in front of you; you can keep firing through it (F to lower).' } },
     rose: { name: 'Rose', weaponName: 'Magic Thistles',
       // GW2: 100 HP floating sorceress; thistles home on whatever is under the reticle.
       stats: { hp: 110, speed: 10.6, accel: 12, jumpSpeed: 9.4, gravity: 19, aimSpeedMult: 0.7, airControl: 0.55 },
-      weapon: { fireRate: 0.19, damage: 14, clip: 20, reloadTime: 1.5, kernelSpeed: 46, kernelLife: 1.45, kernelRadius: 0.2,
+      weapon: { fireRate: 0.19, damage: 15, clip: 20, reloadTime: 1.4, kernelSpeed: 72, kernelLife: 6, kernelRadius: 0.2,
         spread: 0.012, aimSpread: 0.004, bloomPerShot: 0.002, bloomMax: 0.012, bloomRecovery: 0.08, recoilKick: 0.0014,
-        lockRange: 42, lockCone: 0.085, turnRate: 7.5, lockGrace: 0.25 },
+        lockRange: 55, lockCone: 0.085, turnRate: 7.5, lockGrace: 0.4 },
       abilities: {
         shuckShot: { cooldown: 28, castTime: 0.32, speed: 72, range: 45, radius: 3.2, maxTargets: 4, duration: 7, agentDuration: 4 },
         huskHop: { cooldown: 22, range: 30, speed: 30, gravity: 20, radius: 7, duration: 6, slowMult: 0.32, attackSlow: 0.5,
@@ -542,10 +543,10 @@ const CONFIG = {
         butterBarrage: 'Arcane Enigma: become untouchable and fast for 6 s; pulses hurt nearby zombies.' } },
     chomper: { name: 'Chomper', weaponName: 'Chomp',
       // GW2: 175 HP melee ambusher. Bites, swallows zombies whole from behind, then has to chew.
-      stats: { hp: 175, speed: 9.6, accel: 16, jumpSpeed: 9.2, aimSpeedMult: 0.85 },
-      weapon: { fireRate: 0.46, damage: 46, clip: 1, reloadTime: 0.1, range: 3.4, arc: 0.45, cleave: 2, cleaveMult: 0.55,
+      stats: { hp: 190, speed: 10.2, accel: 16, jumpSpeed: 9.2, aimSpeedMult: 0.85, regenDelay: 4, regenRate: 4 },
+      weapon: { fireRate: 0.46, damage: 50, clip: 1, reloadTime: 0.1, range: 3.4, arc: 0.45, cleave: 2, cleaveMult: 0.55,
         snap: 0.075, lunge: 5, push: 4, kernelRadius: 0.3, spread: 0, aimSpread: 0, bloomPerShot: 0, bloomMax: 0, bloomRecovery: 1,
-        recoilKick: 0.004, behind: -0.25, chew: 3.2, chewSpeed: 0.8, heldChew: 2, swallowHeal: 20 },
+        recoilKick: 0.004, behind: -0.25, chew: 1.6, chewSpeed: 0.9, heldChew: 1.1, swallowHeal: 25 },
       abilities: {
         shuckShot: { cooldown: 7, speed: 42, gravity: 9, life: 1.4, radius: 2.6, duration: 4, slow: 0.45, dps: 5 },
         huskHop: { cooldown: 14, duration: 8, speedMult: 1.35, eatRadius: 2.5, hitRadius: 3.4, hitDamage: 35, bossDamage: 160,
@@ -556,7 +557,7 @@ const CONFIG = {
       abilityNames: { shuckShot: 'Goop', huskHop: 'Burrow', butterBarrage: 'Spikeweed' },
       abilityIcons: { shuckShot: '🟣', huskHop: '🕳️', butterBarrage: '🌵' },
       info: { role: 'Ambusher', blurb: 'Melee predator: swallow zombies whole from behind.',
-        primary: 'Chomp: a big bite. From behind (or on a trapped / stunned zombie) it swallows it whole (+20 HP), then you chew.',
+        primary: 'Chomp: a sweeping bite. From behind (or on a trapped / stunned zombie) it swallows it whole (+25 HP), then you chew briefly.',
         shuckShot: 'Goop: spit goo that slows zombies and stops their attacks.',
         huskHop: 'Burrow: travel underground unseen; pop up (E or LMB) to swallow the zombie above you.',
         butterBarrage: 'Spikeweed: plant a trap (3 charges) that holds the first zombie to step on it.' } },
@@ -638,7 +639,7 @@ const CONFIG = {
   CITRON: {
     fx: { beamColor: 0xff8a1c, coreColor: 0xfff1c4, coreWidth: 0.05, glowWidth: 0.16, impactLight: 9,
       empColor: 0x6ff4ff, empLight: 40, arcs: 10, arcLife: 0.35, shieldColor: 0xffa431 },
-    ai: { thinkRate: 10, engageRange: 46, preferRange: [9, 20], guardRadius: 34, patrol: [10, 24], patrolTime: [4, 8],
+    ai: { thinkRate: 10, engageRange: 65, preferRange: [9, 20], guardRadius: 34, patrol: [10, 24], patrolTime: [4, 8],
       turnSpeed: 5, fireCone: 0.07, aimError: 0.01, reaction: 0.2, stickiness: 6, ventAt: 0.86, ventTime: 0.9,
       ballTravel: 22, unballDist: 9, dashPack: 3, dashRange: [5, 15], dashLane: 2.2, dashPlanTime: 2.5,
       shieldCrowd: 2, shieldRange: 10, shieldHurt: 1.5, shieldDrop: 4,
@@ -668,7 +669,7 @@ const CONFIG = {
       trailEvery: 0.035 },
     goats: 10,   // prebuilt goat rigs (the most zombies that can be goats at once)
     goatWander: { speed: 2.4, turn: [0.7, 1.8], hop: 0.18 },
-    ai: { thinkRate: 10, engageRange: 44, preferRange: [14, 26], kiteRange: 7, guardRadius: 36, patrol: [12, 24], patrolTime: [4, 8],
+    ai: { thinkRate: 10, engageRange: 55, preferRange: [14, 26], kiteRange: 7, guardRadius: 36, patrol: [12, 24], patrolTime: [4, 8],
       turnSpeed: 5.5, fireCone: 0.06, reaction: 0.2, stickiness: 8, goatRange: 34, goatCluster: 3, snareCluster: 4, snareRange: [6, 28],
       snareBoss: 24, enigmaHp: 0.35, enigmaCrowd: 7 },
     model: {
@@ -732,7 +733,7 @@ const CONFIG = {
   },
   // Kernel Corn (the hero). Collision is still a capsule of radius/height; the model is cosmetic.
   player: {
-    hp: 125, speed: 10, radius: 0.6, height: 1.4,
+    hp: 150, speed: 10, radius: 0.6, height: 1.4,
     accel: 14,                 // how fast velocity approaches the wished velocity (1/s)
     airControl: 0.35,          // fraction of accel available while airborne
     jumpSpeed: 9, gravity: 26,
@@ -743,7 +744,7 @@ const CONFIG = {
   },
   // Primary weapon: twin cob blasters that alternate kernel shots
   weapon: {
-    fireRate: 0.075, damage: 12, clip: 60, reloadTime: 1.7,
+    fireRate: 0.09, damage: 9, clip: 50, reloadTime: 1.9,
     spread: 0.02, aimSpread: 0.004,   // radians of random deviation (hip / zoomed)
     bloomPerShot: 0.004, bloomMax: 0.03, bloomRecovery: 0.12,
     kernelSpeed: 240, kernelLife: 0.4, kernelRadius: 0.12,
@@ -751,12 +752,12 @@ const CONFIG = {
   },
   abilities: {
     // Volley of explosive corn-cob missiles, alternating arms
-    shuckShot: { cooldown: 9, missiles: 6, interval: 0.09, speed: 38, spread: 0.035, damage: 45, radius: 3.2, life: 2.5 },
+    shuckShot: { cooldown: 16, missiles: 6, interval: 0.09, speed: 38, spread: 0.035, damage: 35, radius: 3.2, life: 2.5 },
     // Leaf-powered leap; hold Space while falling to glide; slams on landing
-    huskHop: { cooldown: 7, upSpeed: 16, forwardSpeed: 10, slamDamage: 50, slamRadius: 4.5, glideGravity: 0.22 },
+    huskHop: { cooldown: 12, upSpeed: 16, forwardSpeed: 10, slamDamage: 50, slamRadius: 4.5, glideGravity: 0.22 },
     // Call a rain of butter on a ground target: damages and stuns ("buttered")
-    butterBarrage: { cooldown: 18, range: 45, delay: 0.7, pats: 12, interval: 0.11, areaRadius: 6,
-                     damage: 40, splashRadius: 2.6, stun: 2.5, dropHeight: 26, fallSpeed: 34 },
+    butterBarrage: { cooldown: 28, range: 45, delay: 0.7, pats: 10, interval: 0.11, areaRadius: 6,
+                     damage: 32, splashRadius: 2.6, stun: 1.5, dropHeight: 26, fallSpeed: 34 },
   },
   // Procedural sound (section "Audio"): mix levels, 3D falloff, ambient timing
   audio: {
@@ -1460,7 +1461,7 @@ const CONFIG = {
       sunflower: { name: 'Focus Pulse', description: 'Accurate, heavier pulses with slower fire and a smaller clip.',
         mult: { damage: 1.35, minDamage: 1.35, fireRate: 1.4, clip: 0.75, spread: 0.5, aimSpread: 0.5 } },
       cactus: { name: 'Repeater Spikes', description: 'Faster follow-up shots and more ammo; less damage and precision.',
-        mult: { damage: 0.62, minDamage: 0.62, fireRate: 0.65, clip: 1.6, criticalMult: 0.75, spread: 1.6, aimSpread: 1.6 } },
+        mult: { damage: 0.62, minDamage: 0.62, fireRate: 0.65, clip: 1.6, criticalMult: 0.9, spread: 1.6, aimSpread: 1.6 } },
       citron: { name: 'Focus Beam', description: 'A hotter beam that hits harder but overheats much sooner.',
         mult: { damage: 1.35, minDamage: 1.35, heatPerTick: 1.5 } },
       rose: { name: 'Thorn Flurry', description: 'Faster thistles and a bigger clip; each hits softer and homes less.',
@@ -9446,6 +9447,11 @@ function addShake(amount, at) {
 function getAimPoint() {
   const o = camera.position, d = camera.getWorldDirection(new THREE.Vector3());
   const minT = o.distanceTo(player.cactus?.drone?.mesh.position || playerMesh.position) + 0.5;
+  // Citron's muzzle must converge on the actual distant target, not the old 150 m aim plane.
+  if (player.type === 'citron') {
+    const start = o.clone().addScaledVector(d, minT), { distance } = rayZombie(start, d, Infinity);
+    return start.addScaledVector(d, distance);
+  }
   let best = raycastWorld(o, d, 150, minT);
   for (const z of zombies) {
     if (z.dead) continue;
@@ -10784,7 +10790,7 @@ function plantStatus(z, dt) {
 const rayTmp = new THREE.Vector3(), raySphere = new THREE.Sphere();
 function rayZombie(start, dir, range, pad = 0) {
   const ray = new THREE.Ray(start, dir);
-  let distance = raycastWorld(start, dir, range), victim = null;
+  let distance = range, victim = null;
   for (const z of zombies) {
     if (!validTarget(z)) continue;
     const c = z.mesh.position, radius = z.def.radius + pad, lo = c.y - z.def.height / 2, hi = c.y + z.def.height / 2;
@@ -10798,6 +10804,10 @@ function rayZombie(start, dir, range, pad = 0) {
     for (const y of [lo, hi]) if (ray.intersectSphere(raySphere.set(rayTmp.set(c.x, y, c.z), radius), rayTmp)) hit = Math.min(hit, start.distanceTo(rayTmp));
     if (hit < distance) { distance = hit; victim = z; }
   }
+  // Find the nearest capsule before marching the world: Infinity is valid for unlimited damage traces,
+  // but must never reach raycastWorld's stepping loop. Empty rays only need to clear the map diagonal.
+  const worldDistance = raycastWorld(start, dir, Number.isFinite(distance) ? distance : CONFIG.MAP.size * Math.SQRT2);
+  if (worldDistance < distance) { distance = worldDistance; victim = null; }
   return { distance, victim };
 }
 // A thrown plant ability object (EMPeach, Time Snare orb, Goop): arc toward a point, clamped to range
@@ -10962,7 +10972,7 @@ function fireOrangeBeam(h) {
   const c = h.cit, W = h.weapon;
   if (c.ball || c.overheated > 0) return;
   const { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
-  const { distance, victim } = rayZombie(start, dir, W.range, W.kernelRadius);
+  const { distance, victim } = rayZombie(start, dir, Infinity, W.kernelRadius);
   c.beamEnd.copy(start).addScaledVector(dir, distance);
   if (victim) {
     const k = THREE.MathUtils.clamp((distance - W.falloffStart) / (W.falloffEnd - W.falloffStart), 0, 1);
@@ -10971,7 +10981,7 @@ function fireOrangeBeam(h) {
   } else {
     const shield = allStarShieldAt(c.beamEnd); if (shield) damageAllStarShield(shield, W.damage);
   }
-  for (let i = 0; i < 3; i++) spawnParticle('spark', i ? CIT.fx.beamColor : 0xffe7a8, c.beamEnd, rand3(6, 2).addScaledVector(dir, -3),
+  if (victim || distance < W.range) for (let i = 0; i < 3; i++) spawnParticle('spark', i ? CIT.fx.beamColor : 0xffe7a8, c.beamEnd, rand3(6, 2).addScaledVector(dir, -3),
     { life: 0.3, size: 0.55, gravity: 6, additive: true });
   c.beamT = W.fireRate * 1.6; c.coolT = W.coolDelay;
   c.heat = Math.min(1, c.heat + W.heatPerTick);
@@ -10992,14 +11002,17 @@ function drawCitronBeam(h, dt) {
   if (!on) { if (c.light) { freeFxLight(c.light); c.light = null; } return; }
   h.mesh.updateMatrixWorld(true);
   const start = h.corn.arms[0].muzzle.getWorldPosition(new THREE.Vector3()), dir = h.aimPoint.clone().sub(start).normalize();
-  const { distance } = rayZombie(start, dir, h.weapon.range, h.weapon.kernelRadius);
+  const { distance, victim } = rayZombie(start, dir, h.weapon.range, h.weapon.kernelRadius);
   const end = start.clone().addScaledVector(dir, distance), F = CIT.fx, flick = 0.85 + Math.random() * 0.3, heat = 1 + c.heat * 0.6;
   B.g.position.copy(start); B.g.lookAt(end);
   B.core.scale.set(F.coreWidth * flick * heat, F.coreWidth * flick * heat, distance);
   B.glow.scale.set(F.glowWidth * flick, F.glowWidth * flick, distance);
   B.impact.position.copy(end); B.impact.scale.setScalar(0.32 * flick);
   B.spot.position.copy(end); B.spot.scale.setScalar(0.13 * flick);
-  c.light ||= takeFxLight(F.beamColor, 0, 7);
+  const hit = !!victim || distance < h.weapon.range;
+  B.impact.visible = B.spot.visible = hit;
+  if (!hit && c.light) { freeFxLight(c.light); c.light = null; }
+  if (hit) c.light ||= takeFxLight(F.beamColor, 0, 7);
   if (c.light) { c.light.position.copy(end).addScaledVector(dir, -0.4); c.light.intensity = F.impactLight * flick; }
 }
 // ---- Peel Shield ----
@@ -11262,7 +11275,7 @@ function fireMagicThistle(h) {
   if (r.enigma > 0 || r.pending) return;
   const { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
   const mesh = THISTLE_TEMPLATE.clone(); mesh.position.copy(start); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); scene.add(mesh);
-  thistles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: W.kernelLife, owner: h, W, target: roseLockTarget(h, 0), trailT: 0 });
+  thistles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: h, W, target: roseLockTarget(h, 0), trailT: 0 });
   h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   muzzleFx(arm, start, 0.6);
   if (!h.isAI) { addCameraRecoil(W.recoilKick); addShake(0.025); }

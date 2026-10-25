@@ -4,8 +4,8 @@ Cactus is a playable, swappable 125-HP sniper. The procedural model follows the 
 
 ## Controls and mechanics
 
-- Spike Shot: 12 rounds, 25 body / 30 critical damage, two-second reload, precise scoped fire with reduced aiming sensitivity. Hits resolve instantly against the nearest enemy capsule or solid cover, up to 340 m. A soft smoke wake appears along the complete muzzle-to-impact path on the same frame, then expands, drifts and fades; there is no travelling Spike Shot mesh. Garlic Drone needles retain distance-based collision stepping.
-- Q Potato Mine: three stored charges, one replenishes every 30 seconds. Mines visibly arm, trigger near zombies, take 10 HP of enemy fire and deal up to 175 area damage. At most four placed mines per Cactus.
+- Spike Shot: 12 rounds, 32 body / 56 critical damage, two-second reload, precise scoped fire with reduced aiming sensitivity. Hits resolve instantly against the nearest enemy capsule or solid cover, up to 340 m. A soft smoke wake appears along the complete muzzle-to-impact path on the same frame, then expands, drifts and fades; there is no travelling Spike Shot mesh. Garlic Drone needles retain distance-based collision stepping.
+- Q Potato Mine: three stored charges, one replenishes every 24 seconds. Mines visibly arm, trigger near zombies, take 10 HP of enemy fire and deal up to 175 area damage. At most four placed mines per Cactus.
 - E Garlic Drone: remotely pilot with WASD; Space ascends, Ctrl descends, LMB fires needles, Q calls a delayed Corn Strike, E returns. The five-HP drone has a limited flight time and an overheating weapon. The grounded Cactus remains vulnerable. Death or control handoff ends the drone safely.
 - F Tallnut Battlement: four stored charges, 30-second replenishment, 200-HP destructible cover. Blocks characters and shots; zombies attack obstructing walls. Placement checks terrain, slope, props and allies. The rigid battlement seats on the highest sampled edge of an allowed slope.
 

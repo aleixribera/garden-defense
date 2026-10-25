@@ -8,7 +8,7 @@ bowls through packs. Code: section "Citron combat" (`index.html`), model in "Cit
 | Slot | GW2 (source) | Garden Defense |
 |---|---|---|
 | Health | 200 | 200 |
-| Primary | Orange Beam: continuous laser, infinite ammo, overheats when held; 400 ticks/min, 2–9 dmg with falloff | Hitscan beam tick every 0.15 s (400/min), 12 → 6 dmg (16–42 m falloff), heat 5.2 %/tick (~2.9 s of fire), 2.2 s overheat lockout, cools after 0.3 s |
+| Primary | Orange Beam: continuous laser, infinite ammo, overheats when held; 400 ticks/min, damage falls with range | Hitscan tick every 0.15 s, 13 → 7 dmg (16–42 m falloff), no damage-range cutoff; drawing capped at 58 m. Heat 4.5 %/tick (~3.3 s of fire), 2.2 s overheat lockout, cools after 0.3 s |
 | Q EMPeach | 36 s; stuns every zombie in a medium area, 10 + 5/s, Z-Mechs take up to 60 | 26 s; lobbed peach bursts on contact: 8 m stun 3.5 s (bosses 1.2 s), 20 dmg, ×5 vs machines (Z-Mech, turrets, Mecha); lightning arcs to every victim |
 | E Citron Ball | instant; fast, no attacks; Spin Dash (charge + launch, 50 to the unaware) | toggle (2 s re-roll cooldown); 2.05× speed, rams for 14 dmg + knockback; hold LMB to charge a Spin Dash (0.75 s), release to launch at up to 30 m/s for up to 65 dmg + big knockback; bosses stop the dash |
 | F Peel Shield | 30 s, up to 30 s, absorbs 75; can shoot through it | 24 s (starts when lowered); up to 15 s, absorbs 160 from the front ±60°, destroys enemy projectiles that reach it, 0.72× move speed; keep firing through it |
@@ -23,3 +23,5 @@ within 10 m (or a boss close), lowers it once things calm down; EMPeaches packs 
 
 Sources: [Citron (PvZ: GW2)](https://plantsvszombies.wiki.gg/wiki/Citron_(PvZ:_GW2)),
 [GamingTrend class preview](https://gamingtrend.com/feature/previews/plants-vs-zombies-garden-warfare-2-get-to-know-the-new-classes).
+
+Current roster tuning, measured damage and detailed GW2 weapon references: [balance audit](balance.md).

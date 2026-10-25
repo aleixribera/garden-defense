@@ -9,15 +9,15 @@ The shoulder camera is offset for her broad crown so it stays clear of the retic
 
 ## Controls and kit
 
-- Sun Pulse: automatic primary, 50 shots, 2 s reload, distance falloff and critical hits.
-- Q: toggle Heal Beam on an allied plant. Movement and primary fire remain available.
+- Sun Pulse: 10 damage every 0.14 s, 50 shots, 2 s reload, 30–65 m falloff to 6 damage and critical hits.
+- Q: toggle Heal Beam (14 HP/s) on an allied plant. Movement and primary fire remain available.
   The tether breaks on death, blocked sight, distance or its usage limit. It cannot heal its owner.
 - E: root for Sunbeam, with a separate 100-charge magazine. Hold fire to use the beam;
   E or Space uproots. The 30 s cooldown starts on exit. World surfaces clip the beam.
 - F: place a destructible Heal Flower. Over 30 s it produces 12 groups of three
-  sundrops; each collected sun restores 5 HP. Injured allies and the owner can collect them.
+  sundrops; each collected sun restores 7 HP. Injured allies and the owner can collect them.
 - Sunflower revives in 3 s rather than the shared 5 s. Revived health remains the
-  project's configured half-health policy; the squad's 8 s respawn rule is unchanged.
+  project's configured half-health policy; the squad respawns after 20 s.
 
 ## Researched behavior and implementation
 

@@ -69,7 +69,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       t.toggleHealBeam(h);
       const ownHp = h.hp;
       for (let i = 0; i < 60; i++) t.updateSunflower(h, 1 / 60);
-      results.healingRate = Math.abs(ally.hp - 50) < 0.001 && h.hp === ownHp && h.sun.healTarget === ally;
+      results.healingRate = Math.abs(ally.hp - (40 + h.abilities.shuckShot.rate)) < 0.001 && h.hp === ownHp && h.sun.healTarget === ally;
       t.fireSunPulse(h); results.shootWhileHealing = h.ammo === 49 && t.pulses.length === 1 && h.sun.healTarget === ally;
       ally.mesh.position.z = -50; t.updateSunflower(h, 1 / 60);
       results.breakRange = !h.sun.healTarget && !h.sun.healFx.visible;

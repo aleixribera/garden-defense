@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.26.1)
+## Current state (v1.27.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -28,6 +28,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - Heroes: data in `CONFIG.PLANTS`, class tuning in `CONFIG.SUNFLOWER` / `CONFIG.PEASHOOTER` / `CONFIG.cactus`,
   Corn in `CONFIG.weapon` / `CONFIG.abilities` / `CONFIG.TEAMMATE_AI`. Docs per hero in `docs/*.md`. AI Cactus fortifies
   the statue with mines/walls (`cactus.ai.fortify`). Plant bullets fly until they hit something or leave the map.
+- Roster balance: GW2 references, role budgets and measured before/after sustained damage in `docs/balance.md`.
+  Citron damage traces have no range cutoff (cover still blocks); `weapon.range` limits its drawing only.
+  Regression: `tests/balance.cjs` (all seven primaries + solo AI fights, range, cover and melee downtime).
 - Citron (tank: heat beam, EMPeach, Citron Ball + Spin Dash, Peel Shield), Rose (homing thistles, Goatify, Time Snare,
   Arcane Enigma) and Chomper (bite / swallow from behind + chew, Goop, Burrow, Spikeweed): `CONFIG.CITRON` / `ROSE` /
   `CHOMPER`, sections "<Name> combat" + the shared "New plant kits" (zombie status `z.pfx` via `plantStatus`: slow, goop,
