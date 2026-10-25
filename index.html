@@ -409,7 +409,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.27.0';
+const VERSION = 'v1.27.1';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -849,19 +849,19 @@ const CONFIG = {
   },
   ZOMBIE_TYPES: {
     shambler: {
-      hp: 50, speed: 3.5, damage: 10, attackCooldown: 1.0,
+      hp: 50, speed: 3.5, damage: 8, attackCooldown: 1.0,
       aggroRange: 15, deaggroRange: 25, targetPreference: 'statue',
       radius: 0.6, height: 1.2, color: 0x6a8f3a, behavior: 'melee',
     },
     sprinter: {
-      hp: 25, speed: 8, damage: 6, attackCooldown: 0.6,
+      hp: 25, speed: 8, damage: 5, attackCooldown: 0.6,
       aggroRange: 25, deaggroRange: 34, targetPreference: 'player',
       radius: 0.45, height: 0.9, color: 0xe0c020, behavior: 'melee',
       weave: { amp: 0.45, freq: 3.2 },   // side-to-side wobble while running
       lunge: { range: 4, speed: 17, time: 0.25, cooldown: 2.5 },
     },
     plated: {
-      hp: 300, speed: 2.2, damage: 20, attackCooldown: 1.5,
+      hp: 240, speed: 2.2, damage: 15, attackCooldown: 1.5,
       aggroRange: 6, deaggroRange: 12, targetPreference: 'statue',
       radius: 0.9, height: 1.6, color: 0x5a6f7f, behavior: 'melee', knockbackResist: 0.85,
       frontArc: 0.5,                     // cos of half-angle that counts as "front" (0.5 = ±60°)
@@ -870,7 +870,7 @@ const CONFIG = {
       weakPointMult: 1.5,                // all plates gone: front hits strike the glowing core
     },
     spitter: {
-      hp: 40, speed: 3, damage: 8, attackCooldown: 2.0,
+      hp: 40, speed: 3, damage: 6, attackCooldown: 2.0,
       aggroRange: 20, deaggroRange: 28, targetPreference: 'statue', reachesHighGround: true,
       radius: 0.55, height: 1.1, color: 0x9a40c0, behavior: 'ranged',
       range: 18,               // stops this far from its target (with a clear shot) and fires
@@ -881,9 +881,9 @@ const CONFIG = {
       hp: 35, speed: 6.5, damage: 0, attackCooldown: 0,
       aggroRange: 0, deaggroRange: 0, targetPreference: 'statueOnly',
       radius: 0.7, height: 0.6, color: 0xd03020, behavior: 'bomber',
-      explosionDamage: 150,    // statue damage on contact
+      explosionDamage: 100,    // statue damage on contact
       explosionRadius: 5,      // player within this also takes playerExplosionDamage
-      playerExplosionDamage: 40,
+      playerExplosionDamage: 30,
       beepRange: 45,           // the hero hears the beeping within this
     },
     banner: {
@@ -891,19 +891,19 @@ const CONFIG = {
       aggroRange: 0, deaggroRange: 0, targetPreference: 'none',
       radius: 0.5, height: 1.0, color: 0xf08aa0, behavior: 'banner',
       buffRadius: 8,           // allies inside this circle are buffed
-      speedMult: 1.4, damageMult: 1.5,
+      speedMult: 1.25, damageMult: 1.3,
       backOffset: 8,           // walking metres it hangs behind the pack average
       fleeRange: 10,           // runs from a visible hero inside this
     },
     climber: {
-      hp: 45, speed: 4, damage: 9, attackCooldown: 0.9,
+      hp: 45, speed: 4, damage: 7, attackCooldown: 0.9,
       aggroRange: 35, deaggroRange: 45, targetPreference: 'highGround', canClimb: true, reachesHighGround: true,
       radius: 0.5, height: 1.0, color: 0x3a6a6a, behavior: 'melee',
       climbSpeed: 3,           // vertical metres per second up cliffs and props
       highGround: 2.5,         // hero feet this far above the climber's feet counts as high ground
     },
     howler: {
-      hp: 20, speed: 7, damage: 4, attackCooldown: 0.8,
+      hp: 20, speed: 7, damage: 3, attackCooldown: 0.8,
       aggroRange: 40, deaggroRange: 55, targetPreference: 'player', noLos: true,
       radius: 0.45, height: 0.9, color: 0xe08a30, behavior: 'howler',
       scream: { range: 14, windup: 0.8, radius: 30, cooldown: 7 },
@@ -1001,13 +1001,13 @@ const CONFIG = {
     // BOSSES — they break the shared rules instead of being plain health sponges.
     miniBoss: {
       name: 'Gargantuar', boss: true,
-      hp: 6000, speed: 2.6, damage: 40, attackCooldown: 1.5,
+      hp: 4800, speed: 2.6, damage: 40, attackCooldown: 1.5,
       aggroRange: 90, deaggroRange: 110, targetPreference: 'heroFirst', ignoreLeash: true, noLos: true,
       reachesHighGround: true, radius: 1.35, height: 3.8, color: 0x829166, behavior: 'gargantuar', knockbackResist: 1,
     },
     finalBoss: {
       name: 'Mecha Gargantuar', boss: true, mechanical: true,
-      hp: 6400, speed: 2.5, damage: 40, attackCooldown: 2.8,
+      hp: 5100, speed: 2.5, damage: 40, attackCooldown: 2.8,
       aggroRange: 90, deaggroRange: 110, targetPreference: 'heroFirst', ignoreLeash: true, noLos: true,
       reachesHighGround: true, radius: 2.15, height: 5.1, color: 0x713e3d, behavior: 'mecha', knockbackResist: 1,
     },
@@ -1017,7 +1017,7 @@ const CONFIG = {
     armorMult: 0.35, heavyMult: 0.7, headHeight: 6.25,
     turnSpeed: 2.4, alignAngle: 0.2, recovery: 1.25, stepDistance: 2.4,
     initialCooldown: { smash: 2, charge: 4, pulse: 2, bomb: 7 },
-    smash: { range: 7, reach: 2.6, radius: 5.5, windup: 1.2, strikeTime: 0.22, chargeWindupMult: 0.65, holdRangeMult: 0.8, damage: 40, statueDamage: 55, knock: 13, cooldown: 3.2 },
+    smash: { range: 7, reach: 2.6, radius: 5.5, windup: 1.2, strikeTime: 0.22, chargeWindupMult: 0.65, holdRangeMult: 0.8, damage: 40, statueDamage: 40, knock: 13, cooldown: 3.2 },
     charge: { minRange: 10, maxRange: 32, windup: 1.45, speed: 19, maxDist: 30, stopRange: 5.5, cooldown: 11, recovery: 2.2 },
     pulse: { range: 60, windup: 0.9, interval: 0.26, count: 3, speed: 36, radius: 0.38, damage: 12, cooldown: 3.6, collisionStep: 0.25 },
     bomb: { minRange: 9, range: 52, windup: 1.65, flightTime: 1.3, gravity: 22, fuse: 4, radius: 7, damage: 30, cooldown: 13, bounce: 0.25 },
@@ -1026,7 +1026,7 @@ const CONFIG = {
   // Gargantuar: GW2 attack identities; timings, movement and encounter HP adapted to this map.
   GARGANTUAR: {
     slam: { range: 4.6, windup: 0.8, strike: 0.19, recover: 0.85, cooldown: 1.65,
-      reach: 2.5, radius: 2.75, damage: 40, statueDamage: 40, knock: 12, lift: 6, vertical: 3.2 },
+      reach: 2.5, radius: 2.75, damage: 40, statueDamage: 30, knock: 12, lift: 6, vertical: 3.2 },
     charge: { range: [9, 32], windup: 2, speed: 12, duration: 4, cooldown: 9,
       arrive: 2.7, nodeReach: 1.2, stuckTime: 0.6, minProgress: 0.08 },
     imp: { range: [10, 65], windup: 1.25, recover: 0.8, cooldown: 7, firstDelay: 3,
@@ -1059,14 +1059,14 @@ const CONFIG = {
     // Pack escorts: each pack of a wave may bring agents that spawn escortDelay s after the pack's burst and guard it.
     // chance = per pack (+ chancePerWave each wave); at most WAVES[i].agentCap per wave (more with more plants).
     // A pack that rolls an escort brings minPerPack agents, then keeps adding one more while a moreChance roll passes.
-    escort: { delay: 3, chance: 0.35, chancePerWave: 0.04, minPerPack: 2, moreChance: 0.55, maxPerPack: 8,
-              capMult: 2, capPerHero: 0.35,
+    escort: { delay: 3, chance: 0.25, chancePerWave: 0.03, minPerPack: 1, moreChance: 0.45, maxPerPack: 8,
+              capMult: 1.5, capPerHero: 0.35,
               followDist: 4,       // guards trail the pack's center by this much (behind it, toward its spawn)
               engageRange: 22,     // a plant this close to the pack or the guard breaks guard and starts the hunt
               // Lively escorts: each guard roams its own drifting orbit around the pack (scouting ahead, sweeping
               // flanks, dropping back) instead of standing on one spot; re-picks radius/side every roamTime s.
               roamRadius: [3, 10], roamTime: [1.5, 4], spin: [0.25, 0.7], scoutChance: 0.3, scoutDist: 9 },
-    damageMult: 0.42,            // global nerf on every agent's weapon damage
+    damageMult: 0.35,            // global nerf on every agent's weapon damage
   },
   // Super Brainz (zombie agent): Garden Warfare 2 kit, every number under the plants' (adapted, not GW2 constants)
   SUPER_BRAINZ: {
@@ -1250,7 +1250,7 @@ const CONFIG = {
     combat: { preferRange: [8, 16], strafeSwitch: [1, 2.6], switchChance: 0.6,
       strafeWeight: 0.55, advanceWeight: 1.2, backoffWeight: 1.2, dodgeRadius: 5, dodgeWeight: 1.5 },
   },
-  ZOMBIE_SCALE_PER_HERO: 0.6,   // each active hero beyond the first adds this fraction to every non-boss zombie count
+  ZOMBIE_SCALE_PER_HERO: 0.4,   // each active hero beyond the first adds this fraction to every non-boss zombie count
   // Difficulty presets (squad menu, locked for the match). Multipliers over the base tuning:
   //   zombieHp - damage a zombie needs to die · zombieDamage - hits on plants · statueDamage - hits on the garden
   //   count - non-boss zombies per pack (bosses stay single)
@@ -1376,8 +1376,8 @@ const CONFIG = {
   packCluster: 0.45,           // fraction of a pack that spawns around a shared anchor; the rest anywhere in the area
   packAnchorRadius: 14,        // m: the clustered part's scatter around the anchor
   spawnBurst: 1.5,              // seconds over which one pack's zombies appear (staggered clump)
-  packDelayTighten: 0.02,       // each wave shortens the hidden pack timers by this fraction…
-  packDelayMin: 0.8,            // …down to this multiplier (wave data already ramps the pacing)
+  packDelayTighten: 0.01,       // each wave shortens the hidden pack timers by this fraction…
+  packDelayMin: 0.9,            // …down to this multiplier (wave data already ramps the pacing)
   waveCountdown: 5,           // seconds of countdown before each wave (banner, beacons, ground arrows, HUD arrow)
   incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
   skullTime: 20,                // the ghost skull marks where a pack spawned for this many seconds
@@ -1500,8 +1500,8 @@ const CONFIG = {
     options: [
       { key: 'gargantuar', label: 'Gargantuar',       weight: [3, 2], zombies: { miniBoss: 1 } },
       { key: 'mecha',      label: 'Mecha Gargantuar', weight: [1, 3], zombies: { finalBoss: 1 } },
-      { key: 'agents',     label: 'Agent Squad',      weight: [2, 2], agents: [4, 6] },
-      { key: 'mixed',      label: 'Mixed Pack',       weight: [2, 2], zombies: { plated: 3, bomber: 2, howler: 1, banner: 1 }, agents: [2, 3] },
+      { key: 'agents',     label: 'Agent Squad',      weight: [2, 2], agents: [3, 4] },
+      { key: 'mixed',      label: 'Mixed Pack',       weight: [2, 2], zombies: { plated: 2, bomber: 1, howler: 1, banner: 1 }, agents: [1, 2] },
     ],
   },
   // Extraction finale after the last wave: a landing zone opens out in the map; the squad runs there and holds it
@@ -1512,10 +1512,10 @@ const CONFIG = {
     hold: 30,                // s of one plant inside to fill the charge...
     perExtraPlant: 0.35,     // ...each extra plant inside adds this much speed
     timeLimit: 180,          // s: the rescue leaves without you (defeat)
-    interval: 3.2,           // s between horde groups
-    group: [4, 7],           // zombies per group
-    maxAlive: 70,            // no new groups above this many living zombies
-    agentChance: 0.18,       // per group: one tactical agent comes along
+    interval: 4,             // s between horde groups
+    group: [3, 6],           // zombies per group
+    maxAlive: 50,            // no new groups above this many living zombies
+    agentChance: 0.12,       // per group: one tactical agent comes along
     mix: ['shambler', 'shambler', 'shambler', 'sprinter', 'sprinter', 'plated', 'spitter', 'bomber', 'climber', 'howler', 'banner'],
     aggroRange: 120,         // the finale horde hunts plants (no sight needed) instead of the statue
   },

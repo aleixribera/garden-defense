@@ -106,3 +106,28 @@ beam uptime, and Chomper's contact power has a visible health cost. No assertion
 
 Validation covered all 17 short browser suites and the additional live Cactus suite. Healing and Cactus damage
 assertions now follow the revised tuning; their range, cover, timing, cleanup and control assertions remain intact.
+
+## Wave difficulty — v1.27.1
+
+Playtesting found the match too hard (and potted plants and garden repairs are gone). This pass eases the
+zombie side only; plant tuning and the difficulty presets are unchanged (Normal stays the 1× reference).
+
+| Lever | Before | After |
+|---|---:|---:|
+| Extra zombies per extra plant (`ZOMBIE_SCALE_PER_HERO`) | +60% | +40% (4 plants: 2.8× → 2.2× packs) |
+| Pack timer tightening per wave / floor | 2% / 0.8× | 1% / 0.9× |
+| Melee damage: shambler / sprinter / plated / climber / howler | 10 / 6 / 20 / 9 / 4 | 8 / 5 / 15 / 7 / 3 |
+| Spitter glob | 8 | 6 |
+| Plated health | 300 | 240 |
+| Bomber: garden / plant blast | 150 / 40 | 100 / 30 |
+| Banner buff: speed / damage | 1.4× / 1.5× | 1.25× / 1.3× |
+| Agent weapon damage (`AGENTS.damageMult`) | 0.42 | 0.35 |
+| Agent escorts: pack chance (+per wave) / min per pack / more chance / cap mult | 35% (+4%) / 2 / 55% / 2 | 25% (+3%) / 1 / 45% / 1.5 |
+| Gargantuar / Mecha health | 6000 / 6400 | 4800 / 5100 |
+| Boss hits on the garden: Gargantuar slam / Mecha smash | 40 / 55 | 30 / 40 |
+| Boss slot: Agent Squad / Mixed Pack | 4–6 agents / 3 plated, 2 bombers, 2–3 agents | 3–4 / 2 plated, 1 bomber, 1–2 |
+| Finale horde: group interval / size / max alive / agent chance | 3.2 s / 4–7 / 70 / 18% | 4 s / 3–6 / 50 / 12% |
+
+Wave composition (`CONFIG.WAVES`) and the finale hold time are unchanged, so every wave still introduces the same
+enemies in the same order; there are simply fewer of them with a full squad, they arrive a little slower late in the
+match, and each hit on the plants and the garden costs less.

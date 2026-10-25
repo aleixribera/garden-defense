@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.27.0)
+## Current state (v1.27.1)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -86,6 +86,7 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   `advanceQuietPack` shortens quiet gaps only for a healthy squad; gold marker is prewarmed. Test: `tests/engagement.cjs`.
 - Difficulty presets `CONFIG.DIFFICULTY` (`DIFF()`, locked per match in `state.difficulty`): zombieHp (scales hits in
   `damageZombie`), zombieDamage (`damageHero`), statueDamage (per-frame statue loss in `loop`), count (`scaledCount`).
+  Wave tuning was eased zombie-side in v1.27.1 (Normal = 1×; levers in docs/balance.md "Wave difficulty").
 - Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, music, camera motion, FOV, quality;
   menu + Esc pause panel; systems register appliers with `onSettings()`. Focus loss pauses and clears input.
 - Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses,
