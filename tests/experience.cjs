@@ -93,7 +93,7 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
     assert.ok(r.center[3] > 0, 'radar draws the player marker');
     console.log('PASS: hit arc toward the source, garden-under-attack alert + statue flash, radar drawn');
 
-    // --- Statue states: the hat tip breaks off under half health and comes back with repairs; ally bars hide up close
+    // --- Statue states: the hat tip breaks off under half health and resets at full health; ally bars hide up close
     r = await page.evaluate(async () => {
       const g = __game, wait = () => new Promise(res => setTimeout(res, 120)), out = {};
       g.state.statueHp = 400; g.state.statueSeen = 400; await wait(); out.low = g.gardenStatue.tip.visible;

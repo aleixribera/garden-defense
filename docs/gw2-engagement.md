@@ -35,9 +35,9 @@ optional activities over the main fight. A separate online social hub would requ
 | Encounter variation | Mixed horde, tactical agents, random routes and boss slots | Sprint Convention, Bucket Brigade and Spit Take remix selected waves, with a tactical hint and preview. |
 | Contribution beyond kills | Healing, reviving, per-slot statistics | Assist and actual-healing credit, support XP, revive XP, and support-aware MVP scoring. |
 | Immediate recognition | Hit/kill markers, damage numbers, sounds, animation and callouts | Bounded reward feed, per-hero timed vanquish chains and level-up feedback. |
-| Longer goals | Match summary and coins | Saved per-class XP, ten mastery levels, titles, victory count and bonus medals; current progress in menu and HUD. |
-| Tension and release | Pack timing, shops, boss waves, extraction | Healthy squads advance quiet packs; bosses, agents, garden danger, injuries and fallen allies preserve breathing room. |
-| Risk and reward | Leave home to fight; buy defenses between waves | Supplies draw one volunteer away, are contested by enemies, and reward shared coins and controlled-plant XP. |
+| Longer goals | Match summary | Saved per-class XP, ten mastery levels, titles, victory count and bonus medals; current progress in menu and HUD. |
+| Tension and release | Pack timing, countdowns, boss waves, extraction | Healthy squads advance quiet packs; bosses, agents, garden danger, injuries and fallen allies preserve breathing room. |
+| Risk and reward | Leave home to fight; keep the garden protected | Supplies draw one volunteer away, are contested by enemies, and reward controlled-plant XP. |
 | Readable spatial decisions | Heightfield, cover, routes, radar, attack directions | Gold objective outline, world label, distance/bearing, countdown and capture progress. |
 | Personality and team spectacle | Procedural art, gnome garden, class animations, music | Playful wave identities and chain celebrations reuse the existing audiovisual vocabulary. |
 
@@ -46,7 +46,7 @@ optional activities over the main fight. A separate online social hub would requ
 All new tuning is in `CONFIG.engagement`. Sidegrades multiply a fresh copy of the base primary weapon, never an already
 modified copy; health and abilities remain intact. Corn trades cadence/ammo for impact; Peashooter trades individual
 impact for rate/ammo; Sunflower trades cadence/ammo for accurate heavy pulses; Cactus trades damage/precision for follow-up
-shots. Pots retain their existing weapon balance. Loadouts persist through respawns and control switches within a match.
+shots. Loadouts persist through respawns and control switches within a match.
 
 Mastery records only the currently player-controlled hero’s contributions locally; AI companions earn no XP, including
 when they share the player’s class. Switching control changes which hero can earn XP. XP rewards kills, qualifying recent assists, effective
@@ -55,12 +55,12 @@ No daily attendance requirement, decay, randomized purchases, or time-limited un
 batched and flushed on level-ups, wave clears, match end and hiding/leaving the page. Unavailable storage leaves play functional.
 
 Themes replace only part of ordinary shambler packs. Counts stay unchanged; original wave data and boss packs stay intact.
-Types respect their normal introduction wave. Boss slots, extraction, potted defenses, existing music and weapon feedback
+Types respect their normal introduction wave. Boss slots, extraction, existing music and weapon feedback
 already express the relevant GW2 principles and are preserved.
 
-Bonuses pay once, with a modest shared-wallet reward and XP for the currently controlled plant. Supply positions must
+Bonuses pay once, with XP for the currently controlled plant. Supply positions must
 have connected navigation and an actual path; only one healthy non-medic AI volunteers, and garden danger takes priority.
-Bounties mark an existing enemy instead of adding an unbudgeted pack. Repair cannot reverse a failed guard objective.
+Bounties mark an existing enemy instead of adding an unbudgeted pack. A failed guard objective stays failed.
 The reusable gold marker is built and compiled behind the loading screen, with no new lights or runtime shader variants.
 
 ## Verification and remaining judgment
@@ -68,7 +68,7 @@ The reusable gold marker is built and compiled behind the loading screen, with n
 `tests/engagement.cjs` exercises sidegrade lifecycle, assists, capped effective healing, revives, chain timing, persistence,
 theme invariants, objective payouts/failures, contested capture, AI volunteering, safe pacing, and the real menu loading gate.
 It saves menu and gameplay views to `docs/engagement-menu.png` and `docs/engagement.png`. Existing browser regressions cover
-economy, combat, squad ownership, awareness, bosses and complete match flow.
+countdowns, combat, squad ownership, awareness, bosses and complete match flow.
 
 Validation result: all 21 browser suites passed (run in groups), including the ten-wave autoplay match and extraction.
 The engagement suite also checks bounded Z-Mech damage credit through ejection, support MVP scoring, rematch loadouts,

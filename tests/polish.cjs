@@ -119,7 +119,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     });
     assert.equal(r.phase, 'countdown'); assert.match(r.text, /Wave 1 cleared/i);
     assert.equal(r.bannerEarly, 'none'); assert.equal(r.bannerLate, 'block');
-    console.log('PASS: wave cleared call-out, then the shop banner');
+    console.log('PASS: wave cleared call-out, then the countdown banner');
 
     // --- Music setting: slider + persisted
     r = await page.evaluate(() => {

@@ -1,6 +1,6 @@
 # Player experience audit (v1.22.0)
 
-A full pass over the game as a player meets it: menu, first wave, the fight, the shop, falling, bosses, the finale.
+A full pass over the game as a player meets it: menu, first wave, the fight, wave breaks, falling, bosses, the finale.
 Findings first, then what changed. Tuning lives in `CONFIG.art`, `CONFIG.hudAware`, `CONFIG.tips` and `CONFIG.hurry`.
 Test: `tests/experience.cjs` (renders `docs/experience.png` and `docs/world-court.png`).
 
@@ -26,8 +26,8 @@ Test: `tests/experience.cjs` (renders `docs/experience.png` and `docs/world-cour
   turning windmill, gate pillars, lookout), instanced trees, boulders, gravestones, grass tufts (hidden on Low quality)
   and flowers, a gradient sky dome with clouds. Static props are merged by material (~100 draw calls total).
 - **Garden statue**: a painted gnome on a stone plinth. It flashes and chips on hits, its paint grimes with damage,
-  the hat tip breaks off below 50% (back after repairs) and it leans below 25%.
-- **Awareness** (section "Situational awareness", `CONFIG.hudAware`): rotating radar (garden, squad, pots, horde,
+  the hat tip breaks off below 50% (reset for each match) and it leans below 25%.
+- **Awareness** (section "Situational awareness", `CONFIG.hudAware`): rotating radar (garden, squad, horde,
   agents, bosses, active spawn areas, landing zone; off-range threats on the rim; garden attackers flash), red hit arcs
   around the crosshair pointing at the source (`damageHero(h, amount, src)`), a pulsing "Garden under attack" banner
   with an arrow + distance, and pips over the last zombies of a wave.
@@ -36,7 +36,7 @@ Test: `tests/experience.cjs` (renders `docs/experience.png` and `docs/world-cour
   AI squad: ~95 s → ~50 s.
 - **Onboarding**: plant cards in the squad picker (role, pitch, Q/E/F kit), ability names under the ability bar, `H`
   help panel with the controlled plant's full kit and the controls, one-time contextual tips (start, abilities,
-  switching, garden attack, revive, downed, shop, boss, extraction) remembered in localStorage.
+  switching, garden attack, revive, downed, boss, extraction) remembered in localStorage.
 - **HUD/flow**: world bars keep a steady screen size and hide beside the camera; pause menu "Abandon match"; after
   loading the button reads "Click to start"; the menu scrolls instead of clipping.
 
@@ -48,7 +48,7 @@ Menu preview: [polish-menu.png](polish-menu.png).
 | Area | Problem found | Change |
 | --- | --- | --- |
 | Camera | AI companions follow you and often stand between the camera and your plant: a corn cob or sunflower petals filled half the screen. | Allies crossing the camera → crosshair or camera → plant line (or on the lens) hide until they step aside; their health bar stays (`hideBlockingAllies`, `CONFIG.camera.allyBlock`). |
-| Audio | No music at all: long shop breaks and big fights had the same sound bed. | Adaptive procedural score (section "Music", `CONFIG.music`): calm marimba + pad in the countdown/shop, bass + drums in a wave (full kit when zombies are near you), minor key + brass + toms for bosses and the extraction. New **Music** volume setting. |
+| Audio | No music at all: long shop breaks and big fights had the same sound bed. | Adaptive procedural score (section "Music", `CONFIG.music`): calm marimba + pad during countdowns, bass + drums in a wave (full kit when zombies are near you), minor key + brass + toms for bosses and the extraction. New **Music** volume setting. |
 | Feedback | Every hit by every plant spawned a full-size number (DOM node created and destroyed per hit): AI hits cluttered the view. | Your numbers are bigger and pop/drift, kills are biggest, allies' hits are small and dim (culled past 45 m); nodes are pooled and capped at 48. |
 | Pacing beats | Wave start and wave clear were a horn and a banner that just vanished. | "HERE THEY COME!" / "WAVE N CLEARED" / boss-name call-outs on a dark band; the next-wave banner waits for the clear call-out; the banner title pops in. |
 | HUD | Cooldown numbers sat on a full-brightness emoji; Cactus charges ("3 / 3") covered its icons. Every HUD label was rewritten every frame. | Cooling icons dim; Cactus charges are a corner badge; a slot pops when it comes off cooldown. HUD text/HTML only touches the DOM when the value changes. |

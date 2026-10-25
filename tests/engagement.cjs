@@ -5,7 +5,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
-const expose = 'window.__engagementTest = { updateWaves, updateZombies, updateHud, updateCamera, respawnHero, mvpIndex, boardZMech };';
+const expose = 'window.__engagementTest = { updateWaves, updateZombies, updateHud, updateCamera, respawnHero, mvpIndex, boardZMech, removeDeadZombies, resetGame };';
 const html = source.replace(/loop\(\);\s*<\/script>\s*<\/body>/, expose + '</script></body>');
 assert.ok(html.includes(expose));
 const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
@@ -21,6 +21,39 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     const boot = async () => { await page.goto(url); await page.waitForFunction(() => window.__engagementTest, null, { timeout: 90000 }); };
     await boot();
     assert.ok((await page.evaluate(() => Object.values(__game.mastery.plants))).every(xp => xp === 0), 'prewarming earns no mastery');
+
+    const waves = await page.evaluate(() => {
+      const g = __game, t = __engagementTest, transitions = [];
+      g.state.statueHp -= 100;
+      const hp = g.state.statueHp;
+      for (let i = 0; i < g.CONFIG.WAVES.length; i++) {
+        g.beginCountdown(i);
+        const countdown = g.state.waveTimer;
+        for (const code of ['KeyC', 'KeyZ', 'KeyJ', 'Enter']) {
+          dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+          dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
+        }
+        const unchanged = g.state.statueHp === hp && g.state.waveTimer === countdown;
+        t.updateWaves(countdown);
+        const active = g.state.phase === 'active' && g.state.spawnQueue.length > 0;
+        const z = g.spawnZombie('shambler');
+        g.damageZombie(z, 1e6, z.mesh.position, false, true, g.player);
+        t.removeDeadZombies();
+        g.state.spawnQueue.length = 0;
+        t.updateWaves(0);
+        transitions.push({ countdown, unchanged, active, next: g.state.phase, hp: g.state.statueHp });
+      }
+      const removed = !('coins' in g.state) && !('shopChoice' in g.state) &&
+        !g.CONFIG.economy && !g.CONFIG.POTS && !g.potSpots && !g.TIPS.shop &&
+        !document.querySelector('#coinLine, #coinNum, #shopPrompt');
+      t.resetGame();
+      return { transitions, removed, hp, countdown: g.CONFIG.waveCountdown, resetHp: g.state.statueHp, maxHp: g.CONFIG.statue.hp };
+    });
+    assert.ok(waves.removed, 'currency, shop and potted plants are removed');
+    assert.ok(waves.transitions.every(w => w.countdown === waves.countdown && w.unchanged && w.active && w.hp === waves.hp));
+    assert.deepEqual(waves.transitions.map(w => w.next), [...Array(9).fill('countdown'), 'extract']);
+    assert.equal(waves.resetHp, waves.maxHp);
+    console.log('PASS: all ten waves use regular countdowns, garden damage persists, removed shop keys do nothing, extraction and rematch still work');
 
     let result = await page.evaluate(() => {
       const g = __game, t = __engagementTest;
@@ -127,15 +160,15 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     result = await page.evaluate(() => {
       const g = __game, E = g.CONFIG.engagement, O = E.objectives;
       g.beginCountdown(0); g.startWave(0);
-      const coins = g.state.coins, xpBefore = g.state.stats.match.map(s => s.xp);
-      g.clearWaveRewards(); const paid = g.state.coins - coins;
+      const xpBefore = g.state.stats.match.map(s => s.xp);
+      g.clearWaveRewards();
       const xpPaid = g.state.stats.match.map((s, i) => s.xp - xpBefore[i]);
-      const once = g.state.coins; g.clearWaveRewards(); g.finishBonus(true);
-      const idempotent = once === g.state.coins;
+      const once = g.state.stats.match.map(s => s.xp); g.clearWaveRewards(); g.finishBonus(true);
+      const idempotent = once.every((xp, i) => xp === g.state.stats.match[i].xp);
       g.beginCountdown(0); g.startWave(0); g.state.statueHp -= O.protectLoss + 1; g.updateEngagement(0.1);
       const protectFail = g.state.engagement.objective.status;
       g.state.statueHp = g.CONFIG.statue.hp; g.updateEngagement(0.1); g.clearWaveRewards();
-      const repairNoUndo = g.state.engagement.objective.status;
+      const guardStaysFailed = g.state.engagement.objective.status;
       g.beginCountdown(1); g.startWave(1); g.updateEngagement(10000); g.clearWaveRewards();
       const blitzFail = g.state.engagement.objective.status;
       g.beginCountdown(3); g.startWave(3);
@@ -143,13 +176,13 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       const z = g.spawnZombie('shambler'); g.updateEngagement(0.1);
       const assigned = g.state.engagement.objective.target === z;
       g.damageZombie(z, 1e6, z.mesh.position, false, true, g.player);
-      return { paid, expected: O.coins, xpPaid, expectedXp: E.xp.wave + E.xp.objective, playerSlot: g.player.squadIndex,
-        idempotent, protectFail, repairNoUndo, blitzFail, assigned, bounty: g.state.engagement.objective.status };
+      return { xpPaid, expectedXp: E.xp.wave + E.xp.objective, playerSlot: g.player.squadIndex,
+        idempotent, protectFail, guardStaysFailed, blitzFail, assigned, bounty: g.state.engagement.objective.status };
     });
-    assert.equal(result.paid, result.expected); assert.ok(result.idempotent);
+    assert.ok(result.idempotent);
     assert.deepEqual(result.xpPaid, result.xpPaid.map((_, i) => i === result.playerSlot ? result.expectedXp : 0),
       'wave and objective XP go only to the controlled plant');
-    assert.equal(result.protectFail, 'missed'); assert.equal(result.repairNoUndo, 'missed'); assert.equal(result.blitzFail, 'missed');
+    assert.equal(result.protectFail, 'missed'); assert.equal(result.guardStaysFailed, 'missed'); assert.equal(result.blitzFail, 'missed');
     assert.ok(result.assigned); assert.equal(result.bounty, 'complete');
     console.log('PASS: bonus payouts happen once; damage / timeout failures stay optional; the real wanted kill completes its bounty');
 

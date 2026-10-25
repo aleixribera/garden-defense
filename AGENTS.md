@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.26.0)
+## Current state (v1.26.1)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -59,10 +59,7 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   (`heroAction` → `JH.gestures`); agents flinch away from hits, pop in on spawn and leave a toppling corpse
   (`agentCorpse`, deferred dispose) whose rig joints, found by ref name at spawn (`collectLimpJoints`), spring into a
   per-class `JA.deathPose` and flop on landing. Agent offsets are undone before behaviors (`unJuiceAgent`). Test: `tests/animation.cjs`.
-- Garden Ops economy (`CONFIG.economy`, `CONFIG.POTS`, section "Garden Ops economy", docs/economy.md): kills drop
-  instanced coins (shared wallet, magnet pickup, swept on wave clear); between waves the countdown is a 30 s shop
-  (C buy, Z cycle, Enter ready): pots on 8 spots around the statue (Peashooter/Kernel reuse hero weapons, Snapdragon
-  fire cone, Chomper swallow) and statue repair. Test: `tests/economy.cjs`.
+- Between waves: regular `CONFIG.waveCountdown` countdown; no shop, potted plants, garden repairs or currency.
 - World art (section "World art", `CONFIG.art`): visual only over the grey-box collision (terrain painted by vertex
   colours + detail map, cliff strata in the ground shader, dressed props merged by material via `bakeRig`, instanced
   trees/rocks/graves/tufts/flowers, sky dome). The garden statue is a gnome (`gardenStatue`; hit flash, grime, hat tip
@@ -82,17 +79,17 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   between-waves summary (`showWaveSummary`, under the countdown banner) and end-of-match table (`showMatchStats`).
 - Engagement (`CONFIG.engagement`, docs/gw2-engagement.md): menu weapon sidegrades; saved class mastery (XP only for the currently controlled plant; levels/titles,
   no power gating); assists, healing/revive XP and per-hero vanquish chains; themed waves remix base packs; optional guard,
-  timed clear, supply-circle and bounty bonuses pay shared coins + controlled-plant XP. One AI helps supplies unless home needs it.
+  timed clear, supply-circle and bounty bonuses award controlled-plant XP. One AI helps supplies unless home needs it.
   `advanceQuietPack` shortens quiet gaps only for a healthy squad; gold marker is prewarmed. Test: `tests/engagement.cjs`.
 - Difficulty presets `CONFIG.DIFFICULTY` (`DIFF()`, locked per match in `state.difficulty`): zombieHp (scales hits in
   `damageZombie`), zombieDamage (`damageHero`), statueDamage (per-frame statue loss in `loop`), count (`scaledCount`).
 - Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, music, camera motion, FOV, quality;
   menu + Esc pause panel; systems register appliers with `onSettings()`. Focus loss pauses and clears input.
 - Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses,
-  M map, K stress horde, J coins. Normal play: 1–4 take a plant, H help.
+  M map, K stress horde. Normal play: 1–4 take a plant, H help.
   `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright). `npm test` = the short tests in
   pairs (~3.5 min); `npm run test:full` adds the slow real-time runs listed in `SLOW` (tests/run-all.cjs: boss-finale,
-  economy, experience, full-match, polish, cactus). Keep new tests short (one boot, simulated steps, no real-time waits).
+  experience, full-match, polish, cactus). Keep new tests short (one boot, simulated steps, no real-time waits).
 
 ## Code rules
 - All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.

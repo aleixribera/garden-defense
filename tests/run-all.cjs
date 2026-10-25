@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Whole matches / long real-time scenarios (1.5–6 min each): opt-in only
-const SLOW = ['boss-finale', 'economy', 'experience', 'full-match', 'polish', 'cactus'];
+const SLOW = ['boss-finale', 'experience', 'full-match', 'polish', 'cactus'];
 const args = process.argv.slice(2), full = args.includes('--full'), only = args.filter(a => !a.startsWith('--'));
 const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.cjs') && f !== path.basename(__filename))
   .filter(f => only.length ? only.some(name => f.startsWith(name)) : full || !SLOW.includes(f.replace(/\.cjs$/, ''))).sort();
