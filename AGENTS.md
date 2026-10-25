@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.29.0)
+## Current state (v1.29.1)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -73,7 +73,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Audit + rationale: docs/experience.md. Test: `tests/experience.cjs`.
 - Camera (`CONFIG.camera`): plant sits low-left (`shoulder`, `lift`); `clearZone` slides the shoulder out if the
   plant's silhouette reaches the crosshair; allies blocking the camera hide (`hideBlockingAllies`, `allyBlock`).
-  Human jumps have landing buffering / ledge grace (`CONFIG.movement`). Test: `tests/controls.cjs`.
+  Walls/cover (`camera.walls`, `placeCameraBoom` + `freeFraction`): shoulder and boom sweep `solidAt` (no zombie
+  shields), snap in / ease out, keep a clear line to the plant, shrink together; own plant hides when the lens is on it.
+  Human jumps have landing buffering / ledge grace (`CONFIG.movement`). Tests: `tests/controls.cjs`, `tests/camera-walls.cjs`.
 - Music (section "Music" inside the audio module, `CONFIG.music`): procedural 16-step sequencer; mode calm / combat /
   boss / off from match state fades layer gains. Music volume setting. Feedback: `callout()` for wave start / clear /
   boss, pooled damage numbers (`spawnPopup` style: yours / 'minor' allies / 'kill'). HUD writes go through

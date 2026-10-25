@@ -444,7 +444,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.29.0';
+const VERSION = 'v1.29.1';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -841,7 +841,7 @@ const CONFIG = {
   },
   spectator: { distance: 12, minDistance: 4, maxDistance: 36, zoomSpeed: 0.012, height: 1.4,
     pitch: 0.35, minPitch: -0.8, maxPitch: 1.35, follow: 8, flySpeed: 18, fastMult: 3,
-    groundClearance: 0.8, maxHeight: 100, collisionMargin: 0.4, collisionSteps: 24,
+    groundClearance: 0.8, maxHeight: 100, collisionMargin: 0.4,
     aimFollow: 10,       // plant view: how fast the camera eases onto the watched plant's aim (1/s)
     minAimDistance: 2 }, // closer aim points are ignored (the plant's facing is used instead)
   camera: {
@@ -864,6 +864,10 @@ const CONFIG = {
     lowHp: 0.35,                      // below this hp fraction the screen edges pulse red
     // Allies standing between the camera and your plant (or right on the lens) hide until they step aside
     allyBlock: { pad: 0.45, near: 1.6, hold: 0.25 },   // m added to their radius, m from the lens, s before reappearing
+    // Walls / cover: the shoulder and the camera boom stop `pad` m short of any prop (keeps the near plane out of
+    // it), snap in at once and ease back out at `easeOut` (1/s); your own plant hides once the lens is within
+    // `selfPad` m of its body (backed into a wall it would fill half the screen)
+    walls: { pad: 0.3, step: 0.2, easeOut: 5, selfPad: 0.45 },
   },
   // Zombie roster. Shared fields:
   //   hp, speed, damage, attackCooldown (s), aggroRange / deaggroRange (hero chase hysteresis),
@@ -7295,10 +7299,11 @@ function groundAt(x, z, feetY = Infinity, rad = 0) {
   for (const o of OBSTACLES) if (o.top > h && o.top <= feetY + MAP.stepUp && inFootprint(o, x, z, rad * 0.5)) h = o.top;
   return h;
 }
-// Point is inside terrain or a solid prop (projectiles, camera)
-function solidAt(p, pad = 0) {
+// Point is inside terrain or a solid prop (projectiles, camera). The camera passes `shields = false`: a zombie's
+// moving Dummy Shield would yank the view around.
+function solidAt(p, pad = 0, shields = true) {
   if (cactusWallAt(p, pad)) return true;
-  if (allStarShieldAt(p, pad)) return true;   // All-Star Dummy Shield stops plant shots
+  if (shields && allStarShieldAt(p, pad)) return true;   // All-Star Dummy Shield stops plant shots
   if (p.y < heightAt(p.x, p.z) + pad) return true;
   for (const o of OBSTACLES) if (p.y < o.top + pad && p.y > o.base - 1 && inFootprint(o, p.x, p.z, pad)) return true;
   return hitsStatue(p, pad);
@@ -23296,17 +23301,57 @@ function updateSpectatorCamera(dt) {
     if (!spectator.pivot || spectator.pivot.distanceToSquared(target) > C.maxDistance * C.maxDistance) spectator.pivot = target.clone();
     spectator.pivot.lerp(target, 1 - Math.exp(-dt * C.follow));
     const offset = forward.clone().multiplyScalar(-spectator.distance), pivot = spectator.pivot;
-    let reach = 1;
-    for (let i = 1; i <= C.collisionSteps; i++) {
-      if (solidAt(pivot.clone().addScaledVector(offset, i / C.collisionSteps), C.collisionMargin)) { reach = (i - 1) / C.collisionSteps; break; }
-    }
-    camera.position.copy(pivot).addScaledVector(offset, reach);
+    camera.position.copy(pivot).addScaledVector(offset, freeFraction(pivot, offset, C.collisionMargin));
     camera.position.y = Math.max(camera.position.y, heightAt(camera.position.x, camera.position.z) + C.groundClearance);
     camera.lookAt(pivot);
   }
   if (camera.fov !== CONFIG.camera.fov) { camera.fov = CONFIG.camera.fov; camera.updateProjectionMatrix(); }
   hideBlockingAllies(null, dt);
   sun.position.copy(camera.position).add(SUN_OFFSET); sun.target.position.copy(camera.position);
+}
+// Camera vs walls / cover (tuning CONFIG.camera.walls). Props are solidAt() without zombie shields.
+const _boomSide = new THREE.Vector3(), _boomProbe = new THREE.Vector3(), _boomLine = new THREE.Vector3();
+// Fraction (0..1) of the segment from → from + vec that stays `pad` clear of props: coarse march, then bisection
+// (continuous, so sliding along a wall never steps the camera)
+function freeFraction(from, vec, pad) {
+  const n = Math.max(2, Math.ceil(vec.length() / CONFIG.camera.walls.step));
+  const hit = t => solidAt(_boomProbe.copy(from).addScaledVector(vec, t), pad, false);
+  let lo = 0;
+  for (let i = 1; i <= n; i++) {
+    if (!hit(i / n)) { lo = i / n; continue; }
+    let hi = i / n;
+    for (let k = 0; k < 6; k++) { const m = (lo + hi) / 2; if (hit(m)) hi = m; else lo = m; }
+    return lo;
+  }
+  return 1;
+}
+// Boom: eye (top of the plant) → along `shoulder` (right + up) to the look point → along `offset` to the lens.
+// The shoulder fraction (state.cam.side) and boom fraction (state.cam.reach) pull in at once and ease back out;
+// the lens also keeps a clear line to the eye, so a corner between them can't hide your plant, and a shortened boom
+// shrinks the shoulder with it so the plant stays in frame. Returns the look point.
+const _boomTarget = new THREE.Vector3();
+function placeCameraBoom(eye, shoulder, offset, dt, snap) {
+  const W = CONFIG.camera.walls, cs = state.cam, k = snap ? 1 : 1 - Math.exp(-dt * W.easeOut);
+  const ease = (prev, want) => prev === undefined || want < prev ? want : prev + (want - prev) * k;
+  const target = _boomTarget;
+  const seesEye = r => freeFraction(eye, _boomLine.copy(target).addScaledVector(offset, r).sub(eye), W.pad * 0.5) === 1;
+  const boomReach = s => {
+    target.copy(eye).addScaledVector(shoulder, s);
+    let reach = freeFraction(target, offset, W.pad);
+    if (reach > 0 && !seesEye(reach)) {
+      let lo = 0, hi = reach;   // at 0 the lens sits on the look point, whose path from the eye is already clear
+      for (let i = 0; i < 6; i++) { const m = (lo + hi) / 2; if (seesEye(m)) lo = m; else hi = m; }
+      reach = lo;
+    }
+    return reach;
+  };
+  // Shoulder ≤ boom fraction keeps the plant where it sits on screen in the open, just closer
+  let s = freeFraction(eye, shoulder, W.pad), reach = boomReach(s);
+  if (reach < s) reach = boomReach(s = reach);
+  cs.side = ease(cs.side, s);
+  if (cs.side !== s) reach = boomReach(cs.side);   // still easing out: the boom follows the shoulder it really uses
+  cs.reach = ease(cs.reach, reach);
+  return target.clone();
 }
 function updateCamera(dt) {
   if (spectator.active && spectator.view !== 'plant') { updateSpectatorCamera(dt); return; }
@@ -23328,7 +23373,8 @@ function updateCamera(dt) {
 
   // Smoothed pivot: snaps on (re)spawn / teleports, otherwise catches up (softer vertically)
   const want = playerMesh.position.clone().add(new THREE.Vector3(0, c.height, 0));
-  if (!cs.pivot || cs.pivot.distanceToSquared(want) > 25) cs.pivot = want.clone();
+  const snapped = !cs.pivot || cs.pivot.distanceToSquared(want) > 25;
+  if (snapped) cs.pivot = want.clone();
   const kf = 1 - Math.exp(-dt * c.follow), ky = 1 - Math.exp(-dt * c.followY * (z > 0.5 ? 2 : 1));
   cs.pivot.x += (want.x - cs.pivot.x) * kf;
   cs.pivot.z += (want.z - cs.pivot.z) * kf;
@@ -23348,21 +23394,19 @@ function updateCamera(dt) {
   const bobY = Math.abs(Math.sin(cs.bob)) * c.bob * cs.bobAmp * motion, bobX = Math.sin(cs.bob) * c.bobSide * cs.bobAmp * motion;
 
   const shoulder = h.type === 'sunflower' ? THREE.MathUtils.lerp(CONFIG.SUNFLOWER.camera.shoulder, CONFIG.SUNFLOWER.camera.aimShoulder, z) : c.shoulder;
-  const target = cs.pivot.clone().addScaledVector(right, shoulder + (cs.clear || 0) + bobX);
-  target.y += bobY + cs.land * motion + c.lift;
   const offset = new THREE.Vector3(
     Math.sin(state.yaw) * Math.cos(pitch) * dist,
     Math.sin(pitch) * dist,
     Math.cos(state.yaw) * Math.cos(pitch) * dist
   );
-  // Don't let the camera clip into the statue: march out from the pivot and stop just before the box
-  const margin = 0.3;
-  let reach = 1;
-  for (let i = 1; i <= 24; i++) {
-    const p = tmp.copy(target).addScaledVector(offset, i / 24);
-    if (solidAt(p, margin)) { reach = (i - 1) / 24; break; }
-  }
-  camera.position.copy(target).addScaledVector(offset, reach);
+  // Walls and cover: slide the shoulder in if a prop is on the right, then pull the boom in if one is behind
+  const eye = cs.pivot.clone();
+  eye.y += bobY + cs.land * motion;
+  if (solidAt(eye, 0, false)) eye.copy(want);   // the lagging pivot clipped a ledge mid-jump: use the plant itself
+  const boomShoulder = _boomSide.copy(right).multiplyScalar(shoulder + (cs.clear || 0) + bobX);
+  boomShoulder.y = c.lift;
+  const target = placeCameraBoom(eye, boomShoulder, offset, dt, snapped);
+  camera.position.copy(target).addScaledVector(offset, cs.reach);
 
   // Trauma shake (squared falloff): positional jitter + rotation, each axis a mix of two sines
   state.shake = Math.max(0, state.shake - dt * 1.8);
@@ -23419,7 +23463,11 @@ function hideBlockingAllies(target, dt) {
   for (const h of heroes) {
     if (!h.active) continue;
     const root = h.corn.root;
-    if (h === player) { root.visible = true; h.camHidden = 0; continue; }
+    if (h === player) {   // a wall can push the lens into your own plant: hide it rather than fill the view
+      const p = h.mesh.position, pad = CONFIG.camera.walls.selfPad;
+      root.visible = Math.hypot(cam.x - p.x, cam.z - p.z) > h.stats.radius + pad || Math.abs(cam.y - p.y) > h.centerY + pad;
+      h.camHidden = 0; continue;
+    }
     const r = h.stats.radius + B.pad, p = h.mesh.position;
     const blocks = p.distanceTo(cam) < B.near || nearCameraLine(p, target, r) || nearCameraLine(p, playerMesh.position, r);
     h.camHidden = blocks ? B.hold : Math.max(0, (h.camHidden || 0) - dt);
