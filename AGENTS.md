@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.29.1)
+## Current state (v1.29.2)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -51,7 +51,10 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   (`CONFIG.FINALE`, phase `'extract'`): hold a random landing zone until charged under a plant-hunting horde (120 s solo,
   240 s deadline); AI plants path there (`finaleSteer`). Test: `tests/boss-finale.cjs`. Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
 - Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static statue flow fields, A* for AI plants.
-  Spawn areas (`CONFIG.SPAWN_POINTS`: center, `r`, `minStatue`) — zombies appear anywhere inside; packs roll a random
+  Ramps start exactly on their plateau edge (else a lip blocks nav); sides blend like cliffs (`rampEdge`). Nav steps are
+  symmetric (4 sub-step slope test); `NAV.ledge` marks cells beside a drop, which zombie routes, lanes and `findPath`
+  avoid (`ledgeCost`). `constrainZombie` refuses steps onto ground steeper than walkable, so only knockback, jumps or
+  an already-slipping zombie go over a ledge. Test: `tests/terrain.cjs`. Spawn areas (`CONFIG.SPAWN_POINTS`: center, `r`, `minStatue`) — zombies appear anywhere inside; packs roll a random
   area (`randomPackSpawns`), part of a pack clusters on an anchor. Waves are data in `CONFIG.WAVES`.
 - Zombie routing (`ZROUTE`, section "Zombie routing", tuning `CONFIG.AI.path` / `AI.life`): no fixed lanes; each zombie
   plans its own A* route (cost = length × personal noise + shared traffic + jams + cactus walls, heuristic = statue
