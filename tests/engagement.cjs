@@ -158,51 +158,22 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     console.log('PASS: special waves preserve enemy counts, introduction order, base data and boss slots');
 
     result = await page.evaluate(() => {
-      const g = __game, E = g.CONFIG.engagement, O = E.objectives;
+      const g = __game, E = g.CONFIG.engagement;
       g.beginCountdown(0); g.startWave(0);
-      const xpBefore = g.state.stats.match.map(s => s.xp);
+      const before = g.state.stats.match.map(s => s.xp);
       g.clearWaveRewards();
-      const xpPaid = g.state.stats.match.map((s, i) => s.xp - xpBefore[i]);
-      const once = g.state.stats.match.map(s => s.xp); g.clearWaveRewards(); g.finishBonus(true);
+      const paid = g.state.stats.match.map((s, i) => s.xp - before[i]);
+      const once = g.state.stats.match.map(s => s.xp); g.clearWaveRewards();
       const idempotent = once.every((xp, i) => xp === g.state.stats.match[i].xp);
-      g.beginCountdown(0); g.startWave(0); g.state.statueHp -= O.protectLoss + 1; g.updateEngagement(0.1);
-      const protectFail = g.state.engagement.objective.status;
-      g.state.statueHp = g.CONFIG.statue.hp; g.updateEngagement(0.1); g.clearWaveRewards();
-      const guardStaysFailed = g.state.engagement.objective.status;
-      g.beginCountdown(1); g.startWave(1); g.updateEngagement(10000); g.clearWaveRewards();
-      const blitzFail = g.state.engagement.objective.status;
-      g.beginCountdown(3); g.startWave(3);
-      g.zombies.forEach(z => { z.dead = true; });
-      const z = g.spawnZombie('shambler'); g.updateEngagement(0.1);
-      const assigned = g.state.engagement.objective.target === z;
-      g.damageZombie(z, 1e6, z.mesh.position, false, true, g.player);
-      return { xpPaid, expectedXp: E.xp.wave + E.xp.objective, playerSlot: g.player.squadIndex,
-        idempotent, protectFail, guardStaysFailed, blitzFail, assigned, bounty: g.state.engagement.objective.status };
+      for (let i = 0; i < g.CONFIG.WAVES.length; i++) { g.beginCountdown(i); g.startWave(i); g.updateEngagement(0.1); }
+      __engagementTest.updateHud(0);
+      return { paid, expected: E.xp.wave, slot: g.player.squadIndex, idempotent,
+        removed: !E.objectives && !('objective' in g.state.engagement) && !g.bonusMarker &&
+          !document.querySelector('#bonusTarget') && !document.getElementById('opsHud').textContent.includes('Optional bonus') };
     });
-    assert.ok(result.idempotent);
-    assert.deepEqual(result.xpPaid, result.xpPaid.map((_, i) => i === result.playerSlot ? result.expectedXp : 0),
-      'wave and objective XP go only to the controlled plant');
-    assert.equal(result.protectFail, 'missed'); assert.equal(result.guardStaysFailed, 'missed'); assert.equal(result.blitzFail, 'missed');
-    assert.ok(result.assigned); assert.equal(result.bounty, 'complete');
-    console.log('PASS: bonus payouts happen once; damage / timeout failures stay optional; the real wanted kill completes its bounty');
-
-    result = await page.evaluate(() => {
-      const g = __game, O = g.CONFIG.engagement.objectives;
-      g.state.statueHp = g.CONFIG.statue.hp; g.beginCountdown(2); g.startWave(2);
-      g.zombies.forEach(z => { z.dead = true; });
-      const o = g.state.engagement.objective, p = g.player, pos = o.pos;
-      p.mesh.position.set(pos.x, pos.y + p.centerY, pos.z); p.feet = pos.y;
-      const z = g.spawnZombie('shambler'); z.mesh.position.set(pos.x, pos.y + z.def.height / 2, pos.z);
-      g.updateEngagement(2); const contested = o.contested && o.progress === 0;
-      z.dead = true; g.updateEngagement(O.rallyHold + 0.1);
-      const complete = o.status, reachable = Number.isFinite(g.STATUE_FIELD[g.NAV.cellOf(pos.x, pos.z)]);
-      g.beginCountdown(2); g.startWave(2); const volunteer = g.heroes.find(h => h.isAI && h.type !== 'sunflower');
-      g.bonusSteer(volunteer, 0.1); const helping = volunteer.input.move.length() > 0;
-      g.state.gardenAlert = { t: 10 }; volunteer.input.move.set(0, 0, 0); g.bonusSteer(volunteer, 0.1);
-      return { contested, complete, reachable, helping, homeFirst: volunteer.input.move.length() === 0, marker: !!g.bonusMarker.geometry };
-    });
-    assert.ok(result.contested && result.reachable && result.helping && result.homeFirst && result.marker); assert.equal(result.complete, 'complete');
-    console.log('PASS: supply circles are reachable, contestable and capturable; the AI volunteers while respecting a garden emergency');
+    assert.ok(result.idempotent && result.removed);
+    assert.deepEqual(result.paid, result.paid.map((_, i) => i === result.slot ? result.expected : 0));
+    console.log('PASS: wave XP pays once to the controlled plant; all ten waves run without bonus missions or markers');
 
     result = await page.evaluate(() => {
       const g = __game, P = g.CONFIG.engagement.pacing;

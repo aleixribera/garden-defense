@@ -78,15 +78,26 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       out.arrived = arrived.size; out.total = all.length; out.walkSeconds = tSec; out.stalls = stalls; out.worstFrameMs = +worst.toFixed(2);
       out.stats = { ...R.stats };
       check(arrived.size >= all.length * 0.95, `the horde reaches the statue (${arrived.size}/${all.length} in ${tSec} s)`);
-      // Re-plan when shoved far off the route
+      // Re-plan when shoved far off the route. A fixed-axis shove can land along the old path, so choose
+      // connected open ground that is actually beyond the off-route threshold from every old route cell.
       T.resetGame(); for (const h of g.heroes) h.active = false;
       const z = g.spawnZombie('shambler', 'choke');
       step(60);
       check(!!z.nav.path, 'single zombie planned');
       const before = z.nav.path;
-      z.mesh.position.x += 0; z.mesh.position.z += 20; z.prevX = z.mesh.position.x; z.prevZ = z.mesh.position.z;
-      step(20);
-      check(z.nav.path && z.nav.path !== before, 'knocked 20 m off its route → planned a new one');
+      let shove = null, shoveDistance = Infinity;
+      for (let cell = 0; cell < g.NAV.open.length; cell++) {
+        if (!g.NAV.open[cell] || !Number.isFinite(g.STATUE_FIELD[cell])) continue;
+        const x = cx(cell % N), zz = cx(Math.floor(cell / N)), distance = Math.hypot(x - z.mesh.position.x, zz - z.mesh.position.z);
+        if (distance < 20 || distance > 30 || distance >= shoveDistance) continue;
+        if (Array.from(before).some(k => Math.hypot(x - cx(k % N), zz - cx(Math.floor(k / N))) <= g.CONFIG.AI.path.offRoute + 2)) continue;
+        shove = { x, z: zz }; shoveDistance = distance;
+      }
+      check(!!shove, 'fixture has reachable ground away from the old route');
+      z.mesh.position.y += g.heightAt(shove.x, shove.z) - g.heightAt(z.mesh.position.x, z.mesh.position.z);
+      z.mesh.position.x = shove.x; z.mesh.position.z = shove.z; z.prevX = shove.x; z.prevZ = shove.z;
+      for (let i = 0; i < 120 && (!z.nav.path || z.nav.path === before); i++) step(1);
+      check(z.nav.path && z.nav.path !== before, 'knocked off its route onto open ground → planned a new one');
       // A cactus wall raised across the route → the zombie re-plans around it
       T.resetGame(); for (const h of g.heroes) h.active = false;
       const w0 = g.spawnZombie('shambler', 'climb');

@@ -47,13 +47,15 @@
   #gardenBox .hbar { height: 12px; --c: var(--garden); }
   #waveLine { margin-top: 7px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #waveLine b { color: var(--text); font-weight: 700; }
+  #killCounter { display: flex; justify-content: center; align-items: baseline; gap: 8px; margin-top: 9px;
+    padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+  #killCount { color: var(--accent); font-size: 24px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+  #squadKillTotal { margin-left: 8px; color: var(--dim); font-size: 10px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   #opsHud { position: fixed; top: 22px; left: 20px; width: min(265px, 25vw); pointer-events: none; font-size: 12px; line-height: 1.55; }
   #opsHud b { color: var(--accent); } #opsHud .muted { color: var(--dim); }
-  #opsHud .goal { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
   #masteryHud { margin-top: 7px; font-size: 11px; color: var(--accent); }
   #masteryHud progress { display: block; width: 100%; height: 5px; margin-top: 4px; accent-color: var(--accent); }
   #rewardFeed { position: fixed; right: 22px; top: 240px; max-width: 290px; pointer-events: none; text-align: right; font-size: 12px; line-height: 1.8; text-shadow: 0 2px 4px #000; color: #ffe897; }
-  #bonusTarget { position: fixed; transform: translate(-50%, -100%); pointer-events: none; color: #ffe897; background: rgba(30,23,4,.8); padding: 4px 9px; border-radius: 10px; font-size: 11px; display: none; }
   .plantCard .mastery { display: block; margin: 7px 0; color: #ffe897; font-size: 11px; }
   .loadoutPick { margin-top: 8px; } .loadoutPick select { font-size: 12px !important; }
   body.preMatch #opsHud, body.preMatch #rewardFeed { visibility: hidden; }
@@ -70,13 +72,13 @@
   #playerHpNum small { font-size: 13px; color: var(--dim); font-weight: 600; }
   /* Squad cards: icon + name + hp; a fallen plant's card dims and shows a draining respawn bar + countdown */
   #squadHud { margin-bottom: 10px; display: grid; gap: 6px; }
-  .squadMember { display: grid; grid-template-columns: 26px 1fr; column-gap: 8px; align-items: center; padding: 6px 10px;
+  .squadMember { display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: 8px; align-items: center; padding: 6px 10px;
                  border-radius: 9px; background: var(--panel); box-shadow: inset 3px 0 0 var(--mate), inset 0 0 0 1px var(--line); }
   .squadMember .icon { grid-row: span 2; font-size: 18px; text-align: center; }
-  .squadMember .row { margin-bottom: 3px !important; }
+  .squadMember .row { margin-bottom: 3px !important; min-width: 0; gap: 6px; }
   .squadMember .hbar { height: 5px; --c: var(--mate); }
-  .squadMember .label { font-size: 10px; letter-spacing: 1px; color: var(--text); }
-  .squadMember .num { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .squadMember .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; letter-spacing: 1px; color: var(--text); }
+  .squadMember .num { flex-shrink: 0; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
   .squadMember.controlled { box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px rgba(255,216,74,0.35); }
   .squadMember.fallen { opacity: 0.85; }
   .squadMember.fallen .icon { filter: grayscale(1); opacity: 0.6; }
@@ -148,6 +150,23 @@
   #matchButton:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
   #matchButton:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #b08a14, 0 4px 10px rgba(0,0,0,0.35); }
   #matchButton:disabled { cursor: progress; filter: saturate(0.6) brightness(0.92); }
+  #watchButton { margin-top: 12px; padding: 4px 10px; background: none; border: 0; color: var(--dim);
+    font: inherit; font-size: 11px; cursor: pointer; opacity: 0.65; }
+  #watchButton:hover, #watchButton:focus-visible { opacity: 1; color: var(--accent); text-decoration: underline; }
+  body.loading #watchButton, body.paused #watchButton { display: none; }
+  #spectatorHud { display: none; position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    width: min(530px, 60vw); text-align: center; pointer-events: none; font-size: 11px; line-height: 1.7; }
+  #spectatorHud b { color: var(--accent); letter-spacing: 2px; font-size: 12px; }
+  #spectatorHud .muted { color: var(--dim); }
+  #spectatorSettings { display: none; align-items: center; gap: 12px; margin-bottom: 18px; font-size: 12px; }
+  body.spectating #spectatorHud { display: block; }
+  body.spectating #spectatorSettings { display: flex; }
+  body.preMatch #spectatorHud, body.loading #spectatorSettings { display: none; }
+  body.spectating #abilities, body.spectating #ammo, body.spectating #crosshair, body.spectating #hitmarker,
+  body.spectating #hitDirs, body.spectating #vignette, body.spectating #hurtTint, body.spectating #speedFx,
+  body.spectating #targetHint, body.spectating #revive, body.spectating #tip, body.spectating #cactusScope,
+  body.spectating #droneHud, body.spectating #roseLock, body.spectating #chompHint, body.spectating #stinkFx,
+  body.spectating #masteryHud { display: none !important; }
   #difficultyPick { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; font-size: 12px;
     color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
   #overlay select { font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 8px; font-size: 13px; }
@@ -276,6 +295,8 @@
   #targetHint { position: fixed; bottom: 96px; width: 100%; text-align: center; color: var(--accent); font-size: 13px; font-weight: 700;
                 letter-spacing: 1px; text-shadow: 0 1px 4px rgba(0,0,0,0.8); pointer-events: none; display: none; }
   @media (max-width: 700px) { #heroes { width: 180px; left: 16px; } #abilities { bottom: 90px; } #ammo { right: 16px; } }
+  @media (max-width: 1000px) { #spectatorHud { left: auto; right: 12px; transform: none; width: calc(100vw - 310px); } }
+  @media (max-width: 700px) { #spectatorHud { width: calc(100vw - 220px); } }
   #cactusScope { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 2;
     background: radial-gradient(circle at 50% 50%, transparent 0 29vh, rgba(12,24,9,.15) 34vh, rgba(4,10,4,.75) 65vh); }
   #cactusScope::before { content: ''; position: absolute; left: 50%; top: 50%; width: 58vh; height: 58vh;
@@ -334,6 +355,10 @@
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
     </div>
     <div id="waveLine"></div>
+    <div id="killCounter" title="Match vanquishes for the currently controlled plant, plus the squad total">
+      <span aria-hidden="true">☠</span><span id="killCount">0</span><span>VANQUISHES</span>
+      <span id="squadKillTotal">Squad: <span id="squadKillCount">0</span></span>
+    </div>
     <div class="hbox" id="bossHud">
       <div class="row"><span class="label" id="bossName">Boss</span><span class="num" id="bossNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
@@ -367,7 +392,7 @@
 <div id="laneArrow"><div class="arrow">&#x2B06;</div><div class="label"></div></div>
 <div id="message"></div>
 <div id="callout"></div>
-<div id="opsHud" class="panel"></div><div id="rewardFeed" role="status" aria-live="polite"></div><div id="bonusTarget"></div>
+<div id="opsHud" class="panel"></div><div id="rewardFeed" role="status" aria-live="polite"></div>
 <div id="sunflowerStatus" role="status"></div>
 <div id="cactusScope"></div><div id="droneHud"></div>
 <canvas id="radar"></canvas>
@@ -379,6 +404,11 @@
 <div id="tip"></div>
 <div id="roseLock"></div><div id="chompHint"></div><div id="fps"></div>
 <div id="version"></div>
+<div id="spectatorHud" class="panel"><b id="spectatorMode">SPECTATING</b><div id="spectatorName"></div>
+  <div class="muted">Mouse · look &nbsp; Wheel · zoom &nbsp; Tab / [ ] / 1–4 · plant</div>
+  <div class="muted">F · free / follow &nbsp; R · reset view &nbsp; Esc · pause &amp; camera settings</div>
+  <div id="spectatorFreeHelp" class="muted" hidden>WASD · fly &nbsp; E / Space · up &nbsp; Q / Ctrl · down &nbsp; Shift · faster</div>
+</div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
   <div id="squadPicker"><h2>Choose your squad</h2>
     <p>Choose your plant and up to three autonomous companions. Random picks never repeat a squad plant.<br>Each plant keeps its health, ammo and cooldowns when you switch.</p>
@@ -394,8 +424,11 @@
     <label>Quality <select id="setQuality" aria-label="Quality"></select></label>
     <label>Camera motion <output id="setMotionOut"></output><input type="range" id="setMotion" min="0" max="1" step="0.1"></label>
   </div>
+  <div id="spectatorSettings"><label>Watch <select id="spectatorSelect" aria-label="Plant to spectate"></select></label>
+    <button class="ghostButton" id="spectatorCameraButton">FREE CAMERA</button></div>
   <div id="loadBar"><i></i></div>
   <button id="matchButton">DEFEND THE GARDEN</button>
+  <button id="watchButton" title="Let every selected plant play itself while you watch">◉ Watch squad</button>
   <div id="pauseActions"><button class="ghostButton" id="abandonButton">ABANDON MATCH</button></div>
   <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · 1–4 or Tab switch plants · Hold X near a downed ally to revive · H help · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
 
@@ -409,7 +442,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.27.1';
+const VERSION = 'v1.28.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -506,7 +539,7 @@ const CONFIG = {
       // range caps the drawing only; damage traces have no distance cutoff (cover still blocks them).
       weapon: { fireRate: 0.15, damage: 13, minDamage: 7, falloffStart: 16, falloffEnd: 42, range: 58, clip: 1, reloadTime: 0.1,
         kernelRadius: 0.16, spread: 0.006, aimSpread: 0.002, bloomPerShot: 0, bloomMax: 0, bloomRecovery: 1, recoilKick: 0.0011,
-        heatPerTick: 0.045, cooling: 0.55, coolDelay: 0.3, overheatTime: 2.2 },
+        heatPerTick: 0.03, cooling: 0.55, coolDelay: 0.3, overheatTime: 2.2 },
       abilities: {
         shuckShot: { cooldown: 26, range: 34, speed: 26, gravity: 22, fuse: 1.6, radius: 8, stun: 3.5, bossStun: 1.2,
           damage: 20, mechMult: 5, arcTime: 0.35 },
@@ -804,6 +837,9 @@ const CONFIG = {
                scientist:   { head: [0.5, 0.35, -0.2], jaw: [0.5, 0, 0], arm: [-0.7, 0, 0.9], leg: [-0.35, 0, 0.3], spine: [-0.2, -0.2, 0] },
              } },
   },
+  spectator: { distance: 12, minDistance: 4, maxDistance: 36, zoomSpeed: 0.012, height: 1.4,
+    pitch: 0.35, minPitch: -0.8, maxPitch: 1.35, follow: 8, flySpeed: 18, fastMult: 3,
+    groundClearance: 0.8, maxHeight: 100, collisionMargin: 0.4, collisionSteps: 24 },
   camera: {
     distance: 5.2, aimDistance: 3.4,  // hip / zoomed
     height: 1.0, shoulder: 1.75,      // pivot above player center, and to the right
@@ -1447,7 +1483,7 @@ const CONFIG = {
     storageKey: 'garden-defense-mastery-v1', saveInterval: 4,
     levelXp: 400, levelGrowth: 125, maxLevel: 10, maxXp: 100000000,
     titles: ['Sprout', 'Defender', 'Specialist', 'Garden Hero', 'Master'], titleEvery: 2,
-    xp: { kill: 35, agent: 65, boss: 220, assist: 20, heal: 0.35, revive: 90, wave: 60, objective: 90, victory: 300 },
+    xp: { kill: 35, agent: 65, boss: 220, assist: 20, heal: 0.35, revive: 90, wave: 60, victory: 300 },
     assistWindow: 10, assistFraction: 0.12,
     chain: { window: 5, milestones: [3, 5, 8], names: ['TRIPLE VANQUISH', 'ON A ROLL', 'GARDEN LEGEND'], xp: [30, 55, 90] },
     feed: { life: 3.5, max: 3 },
@@ -1477,13 +1513,6 @@ const CONFIG = {
       { key: 'ranged', name: 'Spit Take', minWave: 5, type: 'spitter', fraction: 0.4, delay: 1, hint: 'Break line of sight · close the distance' },
     ],
     pacing: { lowAlive: 2, quietTime: 3, nextPack: 2.5, hurtGrace: 5, gardenSafe: 0.4 },
-    objectives: {
-      schedule: ['protect', 'blitz', 'rally', 'bounty', 'protect', 'rally', 'bounty', 'blitz', 'rally', 'protect'],
-      protectLoss: 60, blitzBase: 100, blitzPerPack: 13,
-      rallyDistance: [22, 36], rallyRadius: 6, rallyHold: 9, rallyTime: 65, rallyExtra: 0.25,
-      bountyTime: 45, bountyHp: 1.35, markerWidth: 0.35, markerLift: 0.15, markerSegments: 48,
-      aiRepath: 1.5, aiWaypoint: 1.5, aiHealth: 0.45, heightTolerance: 3, positionTries: 40, holdRadius: 0.6,
-    },
   },
 
   // Waves as data. Each wave: { lanes?, packs: [{ spawn?, delay, zombies: { type: count } }], modifiers: [] }
@@ -1509,9 +1538,9 @@ const CONFIG = {
   FINALE: {
     distance: [70, 115],     // m from the statue (a random reachable nav cell)
     radius: 9,               // m: the landing zone
-    hold: 30,                // s of one plant inside to fill the charge...
+    hold: 120,               // s of one plant inside to fill the charge...
     perExtraPlant: 0.35,     // ...each extra plant inside adds this much speed
-    timeLimit: 180,          // s: the rescue leaves without you (defeat)
+    timeLimit: 240,          // s: the rescue leaves without you (defeat)
     interval: 4,             // s between horde groups
     group: [3, 6],           // zombies per group
     maxAlive: 50,            // no new groups above this many living zombies
@@ -1694,12 +1723,12 @@ function resolveSquadSelection(selection, random = Math.random) {
 }
 // Load recognition before the menu gate: no three.js or world construction is needed to show mastery.
 const EG = CONFIG.engagement;
-const mastery = { plants: {}, victories: 0, objectives: 0 };
+const mastery = { plants: {}, victories: 0 };
 try {
   const saved = JSON.parse(localStorage.getItem(EG.storageKey));
   const safe = n => Number.isFinite(n) ? Math.max(0, Math.min(EG.maxXp, Math.floor(n))) : 0;
   for (const type of Object.keys(CONFIG.PLANTS)) mastery.plants[type] = safe(saved?.plants?.[type]);
-  mastery.victories = safe(saved?.victories); mastery.objectives = safe(saved?.objectives);
+  mastery.victories = safe(saved?.victories);
 } catch { /* Unavailable or damaged storage: play normally with session-only recognition. */ }
 for (const type of Object.keys(CONFIG.PLANTS)) mastery.plants[type] ||= 0;
 let masteryDirty = false, masterySaveT = 0;
@@ -1715,13 +1744,16 @@ function masteryLevel(type) {
   return { level, xp, need, title: EG.titles[Math.min(EG.titles.length - 1, Math.floor((level - 1) / EG.titleEvery))] };
 }
 const squadSlots = document.getElementById('squadSlots');
+// Pick a visible, editable plant once on menu creation; automated boots keep their stable fixture default.
+const playerChoices = Object.keys(CONFIG.PLANTS);
+const menuPlayer = SKIP_MENU ? CONFIG.squad.defaultPlayer : playerChoices[Math.floor(Math.random() * playerChoices.length)];
 for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
   const label = document.createElement('label'); label.textContent = i === 0 ? 'Your plant' : `Companion ${i}`;
   const select = document.createElement('select'); select.id = `pick-${i}`;
   select.setAttribute('aria-label', i === 0 ? 'Your plant' : `Companion ${i}`);
   if (i > 0) { select.add(new Option('Random (no repeats)', 'random')); select.add(new Option('None', '')); }
   for (const [key, def] of Object.entries(CONFIG.PLANTS)) select.add(new Option(def.name, key));
-  select.value = i === 0 ? CONFIG.squad.defaultPlayer : 'random';
+  select.value = i === 0 ? menuPlayer : 'random';
   // Plant card: role, one-line pitch and the Q / E / F kit of whatever is picked in this slot
   const card = document.createElement('div'); card.className = 'plantCard';
   const loadout = document.createElement('select'); loadout.id = `loadout-${i}`; loadout.className = 'loadoutPick';
@@ -1753,7 +1785,7 @@ function readSquadSelection() {
 function updateSquadSummary() {
   const count = readSquadSelection().length, companions = count - 1;
   const roster = companions ? `${count} plants · you + ${companions} AI companion${companions === 1 ? '' : 's'} · switch freely in combat` : '1 plant · solo defense';
-  document.getElementById('squadSummary').textContent = `${roster} · ${mastery.victories} victories · ${mastery.objectives} bonus medals`;
+  document.getElementById('squadSummary').textContent = `${roster} · ${mastery.victories} victories`;
 }
 updateSquadSummary();
 
@@ -1808,8 +1840,19 @@ function showSettings() {
   $('setDifficulty').addEventListener('change', e => changeSetting('difficulty', e.target.value));
   showSettings();
 }
-const bootSelection = SKIP_MENU ? null : await new Promise(resolve =>
-  document.getElementById('matchButton').addEventListener('click', () => resolve(readSquadSelection()), { once: true }));
+// Camera ownership is separate from plant AI. No three.js objects are needed before the menu gate.
+const spectator = { active: false, free: false, pivot: null, position: null, distance: CONFIG.spectator.distance };
+const bootSelection = SKIP_MENU ? null : await new Promise(resolve => {
+  const play = () => choose(false), watch = () => choose(true);
+  const choose = active => {
+    spectator.active = active;
+    document.getElementById('matchButton').removeEventListener('click', play);
+    document.getElementById('watchButton').removeEventListener('click', watch);
+    resolve(readSquadSelection());
+  };
+  document.getElementById('matchButton').addEventListener('click', play);
+  document.getElementById('watchButton').addEventListener('click', watch);
+});
 {
   const button = document.getElementById('matchButton');
   document.getElementById('squadPicker').style.display = 'none';
@@ -5566,7 +5609,7 @@ function endGarlicDrone(d, destroyed = false) {
   const i = cactusDrones.indexOf(d); if (i < 0) return;
   cactusDrones.splice(i, 1); d.owner.cactus.drone = null;
   if (destroyed) { burstLeaves(d.mesh.position, 7); SFX.play('cactusWood', d.mesh.position); }
-  if (d.owner === player) {
+  if (d.owner === player && !spectator.active) {
     state.yaw = d.savedYaw; state.pitch = d.savedPitch; state.cam.pivot = null;
     mouseDown = rightDown = false; clearHumanInput();
   }
@@ -5597,7 +5640,7 @@ function updateCactusHero(h, dt) {
   if (c.drone) {
     const d = c.drone;
     d.move = h.input.move.clone(); d.aim = h.input.aimPoint.clone(); d.firing = h.input.fire;
-    d.yaw = h.input.yaw; d.rise = h.input.jumpHeld; d.descend = h === player && (keys.ControlLeft || keys.ControlRight);
+    d.yaw = h.input.yaw; d.rise = h.input.jumpHeld; d.descend = !h.isAI && h === player && (keys.ControlLeft || keys.ControlRight);
     h.input.move.set(0, 0, 0); h.input.fire = h.input.zoom = h.input.jump = false; h.input.yaw = d.savedYaw; h.vel.x = h.vel.z = 0;
   }
 }
@@ -6001,7 +6044,7 @@ function makeHero(type, isAI, spawnAt, squadIndex) {
   return h;
 }
 const initialSquad = resolveSquadSelection(bootSelection || readSquadSelection());
-const heroes = initialSquad.map((type, i) => makeHero(type, i !== 0, CONFIG.squad.spawnPoints[i], i));
+const heroes = initialSquad.map((type, i) => makeHero(type, spectator.active || i !== 0, CONFIG.squad.spawnPoints[i], i));
 let player = heroes[0];
 let mate = heroes[1] || null; // legacy debug alias: first AI companion
 let playerMesh = player.mesh, corn = player.corn;   // aliases follow control; hero objects never change identity
@@ -7816,11 +7859,6 @@ const extractZone = {
 };
 extractZone.ring.visible = extractZone.beacon.visible = false;
 scene.add(extractZone.ring, extractZone.beacon);
-// One reusable gold outline, precompiled during loading. Never add a light or allocate a mesh for a bonus.
-const bonusMarker = new THREE.Mesh(
-  new THREE.RingGeometry(1 - EG.objectives.markerWidth / EG.objectives.rallyRadius, 1, EG.objectives.markerSegments).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: 0xffd84a, transparent: true, opacity: 0.8, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
-bonusMarker.visible = false; bonusMarker.renderOrder = 9; scene.add(bonusMarker);
 function showExtractZone(pos) {
   const Z = extractZone;
   Z.ring.visible = Z.beacon.visible = !!pos;
@@ -8520,8 +8558,6 @@ function rewardVanquish(z, owner) {
   for (const [h, c] of z.contributors || []) if (h !== owner && state.time - c.t <= EG.assistWindow && c.amount >= z.def.hp * EG.assistFraction) {
     recordStat(h, 'assists', 1); awardXp(h, EG.xp.assist, 'Vanquish assist');
   }
-  const o = state.engagement.objective;
-  if (o?.kind === 'bounty' && o.target === z && o.status === 'active') finishBonus(true);
 }
 function selectTheme(index, random = Math.random) {
   if (!EG.specialWaves.includes(index)) return null;
@@ -8538,109 +8574,16 @@ function remixPacks(packs, theme) {
     return { ...p, zombies, delay: (p.delay || 0) * (theme?.delay || 1) };
   });
 }
-function rallyPosition() {
-  const O = EG.objectives, candidates = [];
-  // Connected nav cells only, with an actual plant route from home. No world geometry is built here.
-  for (let k = 0; k < NAV.open.length; k++) if (NAV.open[k] && Number.isFinite(STATUE_FIELD[k])) {
-    const x = NAV.cx(k % NAV.N), z = NAV.cx(Math.floor(k / NAV.N)), d = Math.hypot(x, z);
-    if (d >= O.rallyDistance[0] && d <= O.rallyDistance[1]) candidates.push(k);
-  }
-  for (let tries = 0; candidates.length && tries < O.positionTries; tries++) {
-    const i = Math.floor(Math.random() * candidates.length), k = candidates[i];
-    candidates[i] = candidates[candidates.length - 1]; candidates.pop();
-    const pos = new THREE.Vector3(NAV.cx(k % NAV.N), NAV.h[k], NAV.cx(Math.floor(k / NAV.N)));
-    if (findPath(player.mesh.position, pos)?.length) return pos;
-  }
-  return null;
-}
-function prepareBonus(index) {
-  const E = state.engagement, O = EG.objectives;
-  E.objective = { kind: O.schedule[index % O.schedule.length], status: 'pending', progress: 0, target: null, pos: null };
-  if (E.objective.kind === 'rally') {
-    E.objective.pos = rallyPosition();
-    if (!E.objective.pos) E.objective.kind = 'protect';
-  }
-  bonusMarker.visible = false;
-}
-function startBonus() {
-  const o = state.engagement.objective, O = EG.objectives;
-  o.status = 'active'; o.start = state.time; o.startHp = state.statueHp;
-  o.remaining = o.kind === 'blitz' ? O.blitzBase + state.packs.length * O.blitzPerPack : o.kind === 'rally' ? O.rallyTime : O.bountyTime;
-  // Bounty's clock starts when its target actually arrives; protect lasts the whole wave.
-}
-function finishBonus(success) {
-  const E = state.engagement, o = E.objective;
-  if (!o || o.status !== 'active') return;
-  o.status = success ? 'complete' : 'missed'; bonusMarker.visible = false;
-  if (!success) return;
-  E.completed++; mastery.objectives++; masteryDirty = true;
-  awardXp(player, EG.xp.objective);
-  rewardNotice(`BONUS COMPLETE · +${EG.xp.objective} XP`);
-  SFX.play('sunPickup', null); saveMastery();
-}
 function clearWaveRewards() {
   const E = state.engagement;
   if (E.rewardedWave === state.waveIndex) return;
   E.rewardedWave = state.waveIndex;
-  const o = E.objective;
-  if (o?.status === 'active') finishBonus(o.kind === 'protect' || (o.kind === 'blitz' && o.remaining > 0));
   awardXp(player, EG.xp.wave);
   saveMastery();
 }
-function bonusLabel(o) {
-  if (!o) return '';
-  const O = EG.objectives;
-  return o.kind === 'protect' ? `Garden guard · lose at most ${O.protectLoss} garden HP`
-    : o.kind === 'blitz' ? 'Quick compost · clear before the clock expires'
-    : o.kind === 'rally' ? `Supply circle · hold the gold zone for ${O.rallyHold}s`
-    : 'Wanted! · vanquish the gold-marked zombie';
-}
 function updateEngagement(dt) {
-  const E = state.engagement, o = E.objective, O = EG.objectives;
   if ((masterySaveT -= dt) <= 0) { masterySaveT = EG.saveInterval; saveMastery(); }
-  E.feed = E.feed.filter(n => n.until > state.time);
-  bonusMarker.visible = false;
-  if (state.phase !== 'active' || !o || o.status !== 'active') return;
-  if (o.kind === 'protect') {
-    // Track cumulative garden damage for the guard challenge.
-    o.loss = (o.loss || 0) + Math.max(0, (o.lastHp ?? o.startHp) - state.statueHp); o.lastHp = state.statueHp;
-    if (o.loss > O.protectLoss) finishBonus(false);
-    return;
-  }
-  if (o.kind === 'bounty' && !o.target) {
-    const z = zombies.find(z => !z.dead && !z.def.boss && !z.def.mechanical && !z.buried);
-    if (!z) return;
-    o.target = z; z.hp *= O.bountyHp; z.def = { ...z.def, hp: z.def.hp * O.bountyHp };
-    rewardNotice('WANTED! Gold-marked zombie · bonus XP');
-  }
-  o.remaining = Math.max(0, o.remaining - dt);
-  if (o.remaining <= 0) { finishBonus(false); return; }
-  if (o.kind === 'rally') {
-    const inside = heroes.filter(h => targetable(h) && flatDist(h.mesh.position, o.pos) <= O.rallyRadius && Math.abs(h.feet - o.pos.y) < O.heightTolerance).length;
-    const contested = zombies.some(z => !z.dead && !z.buried && flatDist(z.mesh.position, o.pos) < O.rallyRadius && Math.abs(feetY(z) - o.pos.y) < O.heightTolerance);
-    o.contested = contested; o.inside = inside;
-    if (inside && !contested) o.progress = Math.min(1, o.progress + dt / O.rallyHold * (1 + (inside - 1) * O.rallyExtra));
-    if (o.progress >= 1) { finishBonus(true); return; }
-  }
-  const pos = o.kind === 'rally' ? o.pos : o.target?.mesh.position;
-  if (pos) {
-    bonusMarker.position.set(pos.x, (o.kind === 'rally' ? pos.y : feetY(o.target)) + O.markerLift, pos.z);
-    bonusMarker.scale.setScalar(o.kind === 'rally' ? O.rallyRadius : o.target.def.radius + O.markerWidth);
-    bonusMarker.material.opacity = o.contested ? 0.4 : 0.8;
-    bonusMarker.visible = true;
-  }
-}
-function bonusSteer(h, dt) {
-  const o = state.engagement.objective, O = EG.objectives;
-  if (state.phase !== 'active' || o?.kind !== 'rally' || o.status !== 'active' || !targetable(h) ||
-      state.gardenAlert || state.statueHp < CONFIG.statue.hp * EG.pacing.gardenSafe || h.hp < h.stats.hp * O.aiHealth || h.sun?.reviveTarget) return;
-  // Only one companion volunteers; the rest keep defending. A solo player chooses whether to leave home.
-  const volunteer = heroes.find(a => a.isAI && targetable(a) && a.type !== 'sunflower' && a.hp >= a.stats.hp * O.aiHealth);
-  if (h !== volunteer) return;
-  if (flatDist(h.mesh.position, o.pos) < O.rallyRadius * O.holdRadius) { h.input.move.set(0, 0, 0); h.input.sprint = false; return; }
-  if (h.opsGoal !== o || (h.opsPathT -= dt) <= 0) { h.opsGoal = o; h.opsPath = findPath(h.mesh.position, o.pos) || []; h.opsPathT = O.aiRepath; }
-  while (h.opsPath.length && flatDist(h.mesh.position, h.opsPath[0]) < O.aiWaypoint) h.opsPath.shift();
-  h.input.move.copy(h.opsPath[0] || o.pos).sub(h.mesh.position).setY(0).normalize(); h.input.sprint = true;
+  state.engagement.feed = state.engagement.feed.filter(n => n.until > state.time);
 }
 function advanceQuietPack(dt) {
   const E = state.engagement, P = EG.pacing;
@@ -8654,33 +8597,13 @@ function advanceQuietPack(dt) {
   E.quiet = 0;
 }
 function drawEngagement() {
-  const E = state.engagement, o = E.objective, m = masteryLevel(player.type), chain = player.vanquishChain;
+  const E = state.engagement, m = masteryLevel(player.type), chain = player.vanquishChain;
   setHtml(hud('masteryHud'), `${m.title} · LV ${m.level} · +${Math.floor(state.stats.match[player.squadIndex]?.xp || 0)} XP this match` +
     `<progress max="${m.need}" value="${m.level >= EG.maxLevel ? m.need : m.xp}" aria-label="Plant mastery progress"></progress>`);
-  const status = o?.status === 'complete' ? '✓ Complete' : o?.status === 'missed' ? 'Bonus missed · garden defense continues' :
-    state.phase === 'countdown' ? `+${EG.xp.objective} XP` :
-    o?.kind === 'protect' ? `${Math.ceil(o.loss || 0)} / ${EG.objectives.protectLoss} garden HP lost` :
-    o?.kind === 'bounty' && !o.target ? 'Waiting for the wanted zombie' :
-    `${Math.ceil(o?.remaining || 0)}s left${o?.kind === 'rally' ? ` · ${Math.floor(o.progress * 100)}%${o.contested ? ' · CONTESTED' : ''}` : ''}`;
-  const pos = o?.status === 'active' ? (o.pos || o.target?.mesh.position) : null;
-  const bearing = pos ? ` · ${Math.round(flatDist(player.mesh.position, pos))}m ${relativeDirection(pos)}` : '';
   setHtml(hud('opsHud'), state.phase === 'extract' ? '<b>Last stand</b><div>Hold the landing zone together!</div>' :
-    `<b>${E.theme ? E.theme.name : 'Garden Ops'}</b><div class="muted">${E.theme?.hint || 'Defend · support · switch plants'}</div>` +
-    `<div class="goal"><b>Optional bonus</b><div>${bonusLabel(o)}</div><div class="muted">${status}${bearing}</div></div>`);
+    `<b>${E.theme ? E.theme.name : 'Garden Ops'}</b><div class="muted">${E.theme?.hint || (spectator.active ? 'All plants on AI · follow the action' : 'Defend · support · switch plants')}</div>`);
   const notices = E.feed.map(n => `<div>${n.text}${n.count > 1 ? ` ×${n.count}` : ''}</div>`).join('');
   setHtml(hud('rewardFeed'), notices + (chain && state.time - chain.t <= EG.chain.window && chain.count > 1 ? `<b>${chain.count} vanquish chain</b>` : ''));
-  const tag = hud('bonusTarget'), wp = pos && pos.clone().setY(pos.y + (o.target ? o.target.def.height : EG.objectives.markerLift));
-  const q = wp?.project(camera);
-  tag.style.display = q && q.z < 1 && Math.abs(q.x) < 1 && Math.abs(q.y) < 1 ? 'block' : 'none';
-  if (tag.style.display === 'block') {
-    tag.style.left = `${(q.x * 0.5 + 0.5) * innerWidth}px`; tag.style.top = `${(-q.y * 0.5 + 0.5) * innerHeight}px`;
-    setText(tag, `${o.kind === 'rally' ? 'SUPPLIES' : 'WANTED'} · ${Math.round(flatDist(playerMesh.position, pos))}m`);
-  }
-}
-function relativeDirection(pos) {
-  const fw = yawForward(), dx = pos.x - playerMesh.position.x, dz = pos.z - playerMesh.position.z;
-  const angle = Math.atan2(dx * -fw.z + dz * fw.x, dx * fw.x + dz * fw.z);
-  return Math.abs(angle) < Math.PI / 4 ? '↑' : Math.abs(angle) > Math.PI * 3 / 4 ? '↓' : angle > 0 ? '→' : '←';
 }
 const fmtNum = n => n >= 10000 ? `${(n / 1000).toFixed(0)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
 const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -8702,7 +8625,7 @@ function showWaveSummary(index) {
       return `<div${i === mvp ? ' class="mvp"' : ''}>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1} · ${l.kills} kills · ${fmtNum(l.damage)} dmg` +
         `${l.assists ? ` · ${l.assists} assists` : ''}${l.healing ? ` · ${fmtNum(l.healing)} healed` : ''}` +
         `${l.downs ? ` · ${l.downs} down${l.downs > 1 ? 's' : ''}` : ''}${l.revives ? ` · ${l.revives} revive${l.revives > 1 ? 's' : ''}` : ''} · +${Math.floor(l.xp)} XP${i === mvp ? ' ★' : ''}</div>`; }).join('') +
-    `<div>Optional bonus: ${state.engagement.objective?.status === 'complete' ? 'COMPLETE' : 'missed'} · ${state.engagement.theme?.name || 'Garden Ops'}</div>`;
+    `<div>${state.engagement.theme?.name || 'Garden Ops'}</div>`;
   S.wave = heroes.map(newStatLine); S.waveStartHp = state.statueHp; S.waveStartT = state.time;
 }
 // End-of-match table on the overlay
@@ -8710,7 +8633,7 @@ function showMatchStats(won) {
   const S = state.stats, mvp = mvpIndex(S.match), el = document.getElementById('matchStats');
   const waves = won ? WAVES.length : state.waveIndex;
   el.innerHTML = `<div class="line">${DIFF().name} · ${waves} / ${WAVES.length} waves cleared · ${fmtTime(state.time)} · garden ${Math.max(0, Math.ceil(state.statueHp))} / ${CONFIG.statue.hp}</div>` +
-    `<div class="line">${state.engagement.completed} bonuses completed · mastery saved on this device</div>` +
+    `<div class="line">${spectator.active ? 'Spectated match' : 'Plant mastery saved on this device'}</div>` +
     '<table><tr><th>Plant</th><th>Kills</th><th>Assists</th><th>Damage</th><th>Healed</th><th>Taken</th><th>Downs</th><th>Revives</th><th>XP</th></tr>' +
     heroes.map((h, i) => { const l = S.match[i];
       return `<tr${i === mvp ? ' class="mvp"' : ''}><td>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1}${h.isAI ? '' : ' · YOU'}</td>` +
@@ -8763,7 +8686,7 @@ function resetGame() {
     difficulty: SETTINGS.difficulty,   // preset key, locked for the match
     statueSeen: CONFIG.statue.hp,      // statue hp after last frame's difficulty scaling
     stats: newMatchStats(),
-    engagement: { feed: [], theme: null, lastTheme: null, objective: null, completed: 0, rewardedWave: -1, quiet: 0 },
+    engagement: { feed: [], theme: null, lastTheme: null, rewardedWave: -1, quiet: 0 },
   };
   document.getElementById('waveSummary').replaceChildren();
   document.getElementById('callout').classList.remove('show');
@@ -8783,7 +8706,7 @@ function resetGame() {
 function respawnHero(h) {
   const P = h.stats, W = h.weapon, PLAYER_CENTER_Y = h.centerY;
   h.hp = P.hp;
-  h.vanquishChain = null; h.opsGoal = null; h.opsPath = null;
+  h.vanquishChain = null;
   h.lastHurt = -Infinity;
   h.dead = false; h.downed = false; h.floatT = 0;
   h.anim.spawnPop = true;
@@ -9012,7 +8935,6 @@ function beginCountdown(index) {
   E.theme = selectTheme(index); if (E.theme) E.lastTheme = E.theme.key;
   E.quiet = 0;
   state.packs = remixPacks(resolvePacks(index), E.theme);
-  prepareBonus(index);
   showSpawnMarkers(state.packs);
   const title = document.getElementById('bannerTitle');
   title.textContent = index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1}`;
@@ -9070,7 +8992,6 @@ function startWave(index) {
   state.waveIndex = index;
   state.phase = 'active';
   state.stats.waveStartT = state.time; state.stats.waveStartHp = state.statueHp;
-  startBonus();
   setBanner(false);
   SFX.play('tick', true);
   SFX.play('waveHorn');
@@ -9135,8 +9056,19 @@ addEventListener('keydown', e => {
   if (inMatch && (e.code === 'Tab' || e.code === 'BracketLeft' || e.code === 'BracketRight')) e.preventDefault();
   if (!inMatch) return;
   keys[e.code] = true;
+  // Ctrl is a flight control; consume movement shortcuts such as Ctrl+W, including key repeats.
+  if (spectator.active && /^(Key[WASDQEFR]|Space|ControlLeft|ControlRight|Digit[1-4])$/.test(e.code)) e.preventDefault();
   if (e.code === 'F1') e.preventDefault();   // no browser help page
   if (e.repeat || !state || state.over) return;
+  if (spectator.active) {
+    const slot = /^Digit([1-4])$/.exec(e.code);
+    if (slot) spectateHero(heroes[slot[1] - 1]);
+    if (e.code === 'Tab' || e.code === 'BracketRight') switchSquadMember(e.shiftKey ? -1 : 1);
+    if (e.code === 'BracketLeft') switchSquadMember(-1);
+    if (e.code === 'KeyF') toggleSpectatorCamera();
+    if (e.code === 'KeyR') { resetSpectatorCamera(); syncSpectatorUi(); }
+    return;
+  }
   // 1–4: take control of that squad member (the number on its squad card)
   const slot = /^Digit([1-4])$/.exec(e.code);
   if (slot && !DEBUG) { const h = heroes[slot[1] - 1]; if (h && h !== player) takeControlOf(h); }
@@ -9200,15 +9132,20 @@ addEventListener('keyup', e => keys[e.code] = false);
 let mouseDown = false, rightDown = false;
 const overlay = document.getElementById('overlay');
 
-document.getElementById('matchButton').addEventListener('click', () => {
+function startMatch(watch = false) {
   if (!matchStarted || state.over) {
+    spectator.active = watch;
     configureSquad(readSquadSelection()); fillRigPools(); warmUpload();   // restart: rebuild spent rigs before play
     matchStarted = true;
     document.body.classList.remove('preMatch');
   }
   renderer.domElement.requestPointerLock();
   SFX.init();
-});
+}
+document.getElementById('matchButton').addEventListener('click', () => startMatch(false));
+document.getElementById('watchButton').addEventListener('click', () => startMatch(true));
+document.getElementById('spectatorSelect').addEventListener('change', e => spectateHero(heroes[+e.target.value]));
+document.getElementById('spectatorCameraButton').addEventListener('click', () => toggleSpectatorCamera());
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
   overlay.style.display = locked ? 'none' : 'flex';
@@ -9217,7 +9154,7 @@ document.addEventListener('pointerlockchange', () => {
   if (!locked && !state.over && matchStarted) {
     document.getElementById('squadPicker').style.display = 'none';
     document.getElementById('overlayTitle').textContent = 'PAUSED';
-    document.getElementById('overlaySub').textContent = 'Your squad is ready. Resume to return to the match.';
+    document.getElementById('overlaySub').textContent = spectator.active ? 'Spectator mode · choose a plant or camera above, then resume watching.' : 'Your squad is ready. Resume to return to the match.';
     document.getElementById('matchButton').textContent = 'RESUME';
   }
 });
@@ -9229,12 +9166,19 @@ addEventListener('blur', pauseOnFocusLoss);
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseOnFocusLoss(); });
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement !== renderer.domElement) return;
+  if (spectator.active) {
+    const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity;
+    state.yaw -= e.movementX * sens;
+    state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, CONFIG.spectator.minPitch, CONFIG.spectator.maxPitch);
+    return;
+  }
   const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity * (player.type === 'cactus' ? THREE.MathUtils.lerp(1, CONFIG.cactus.camera.sensitivity, player.zoom) : 1 - 0.35 * player.zoom);
   state.yaw -= e.movementX * sens;
   state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, -0.6, 1.2);
 });
 addEventListener('mousedown', e => {
   if (document.pointerLockElement !== renderer.domElement) return;
+  if (spectator.active) return;
   if (e.button === 0) {
     if (state.targeting) confirmButterBarrage();
     else mouseDown = true;
@@ -9246,6 +9190,12 @@ addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; if (e.button === 2) rightDown = false; });
 addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('wheel', e => {
+  if (!spectator.active || document.pointerLockElement !== renderer.domElement) return;
+  e.preventDefault();
+  spectator.distance = THREE.MathUtils.clamp(spectator.distance + e.deltaY * CONFIG.spectator.zoomSpeed,
+    CONFIG.spectator.minDistance, CONFIG.spectator.maxDistance);
+}, { passive: false });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -9262,11 +9212,11 @@ function setMessage(text, duration = 0) {
 }
 function endGame(won) {
   if (state.over) return;
-  if (won) {
+  if (won && !spectator.active) {
     awardXp(player, EG.xp.victory);
     mastery.victories++; masteryDirty = true;
   }
-  saveMastery(); bonusMarker.visible = false;
+  saveMastery();
   state.over = true;
   for (const select of squadSlots.querySelectorAll('select[id^="pick-"]')) select.showCard();
   updateSquadSummary();
@@ -9282,6 +9232,7 @@ function endGame(won) {
   document.getElementById('overlaySub').innerHTML = why + '<br>Pick a squad and press <b>Defend again</b>';
   showMatchStats(won);
   document.getElementById('squadPicker').style.display = 'block';
+  document.getElementById('watchButton').style.display = '';
   document.getElementById('matchButton').textContent = 'DEFEND AGAIN';
   overlay.style.display = 'flex';
 }
@@ -9485,6 +9436,7 @@ const pressed = { jump: false, reload: false, shuck: false, hop: false, butter: 
 
 // The human's input: WASD relative to the camera, aim under the reticle, mouse buttons, queued presses
 function readPlayerInput(h) {
+  if (spectator.active) return;
   const inp = h.input;
   const fwd = yawForward();
   const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
@@ -23019,7 +22971,7 @@ function updateDowned(h, dt) {
   h.respawnTimer = Math.max(0, h.downT);
   // The human or an autonomous medic can revive one ally. Progress belongs to
   // the fallen character, so control handoffs cannot duplicate the interaction.
-  h.reviveNear = h === nearestDownedHero() && targetable(player) && flatDist(player.mesh.position, h.mesh.position) < R.range &&
+  h.reviveNear = !spectator.active && h === nearestDownedHero() && targetable(player) && flatDist(player.mesh.position, h.mesh.position) < R.range &&
     Math.abs(player.mesh.position.y - h.mesh.position.y) < 2;
   const medic = heroes.find(a => a.type === 'sunflower' && a.isAI && targetable(a) && a.sun?.reviveTarget === h && a.input.interact
     && flatDist(a.mesh.position, h.mesh.position) < R.range && Math.abs(a.mesh.position.y - h.mesh.position.y) < 2);
@@ -23245,7 +23197,72 @@ function addCameraRecoil(kick) {
   const cs = state.cam;
   cs.recoilPitch = Math.min(cs.recoilPitch + kick, CONFIG.camera.recoilMax, Math.max(0, state.pitch + 0.6));
 }
+// Spectator mode never writes a hero's input, abilities or AI brain. `player` is only the observed HUD target.
+function resetSpectatorCamera() {
+  spectator.free = false; spectator.pivot = null; spectator.position = null;
+  spectator.distance = CONFIG.spectator.distance;
+  if (spectator.active) { state.yaw = player.yaw; state.pitch = CONFIG.spectator.pitch; }
+}
+function syncSpectatorUi() {
+  document.body.classList.toggle('spectating', spectator.active);
+  setText(hud('squadHint'), spectator.active ? 'Tab / [ ] / 1–4 · spectate plant' : 'Tab · next plant   [ / ] · previous / next');
+  hud('spectatorSelect').value = String(player.squadIndex);
+  setText(hud('spectatorCameraButton'), spectator.free ? 'FOLLOW PLANT' : 'FREE CAMERA');
+  setText(hud('spectatorMode'), spectator.free ? 'SPECTATING · FREE CAMERA' : 'SPECTATING · FOLLOW');
+  hud('spectatorFreeHelp').hidden = !spectator.free;
+}
+function spectateHero(h) {
+  if (!spectator.active || !h?.active || !heroes.includes(h)) return false;
+  player = h; playerMesh = h.mesh; corn = h.corn;
+  mate = heroes.find(member => member !== h) || null;
+  resetSpectatorCamera(); syncSpectatorUi();
+  delete hudBars.playerBox;
+  updateSpectatorCamera(0);
+  return true;
+}
+function toggleSpectatorCamera() {
+  if (!spectator.active) return;
+  spectator.free = !spectator.free;
+  spectator.position = camera.position.clone(); spectator.pivot = null;
+  syncSpectatorUi();
+}
+function updateSpectatorCamera(dt) {
+  const C = CONFIG.spectator, pitch = state.pitch, yaw = state.yaw;
+  const forward = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  if (spectator.free) {
+    spectator.position ||= camera.position.clone();
+    const move = new THREE.Vector3(), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    if (keys.KeyW) move.add(forward);
+    if (keys.KeyS) move.sub(forward);
+    if (keys.KeyD) move.add(right);
+    if (keys.KeyA) move.sub(right);
+    if (keys.KeyE || keys.Space) move.y++;
+    if (keys.KeyQ || keys.ControlLeft || keys.ControlRight) move.y--;
+    const speed = C.flySpeed * (keys.ShiftLeft || keys.ShiftRight ? C.fastMult : 1);
+    if (move.lengthSq()) spectator.position.addScaledVector(move.normalize(), speed * dt);
+    const p = spectator.position;
+    p.x = THREE.MathUtils.clamp(p.x, -HALF, HALF); p.z = THREE.MathUtils.clamp(p.z, -HALF, HALF);
+    p.y = THREE.MathUtils.clamp(p.y, heightAt(p.x, p.z) + C.groundClearance, C.maxHeight);
+    camera.position.copy(p); camera.lookAt(p.clone().add(forward));
+  } else {
+    const target = playerMesh.position.clone(); target.y += C.height;
+    if (!spectator.pivot || spectator.pivot.distanceToSquared(target) > C.maxDistance * C.maxDistance) spectator.pivot = target.clone();
+    spectator.pivot.lerp(target, 1 - Math.exp(-dt * C.follow));
+    const offset = forward.clone().multiplyScalar(-spectator.distance), pivot = spectator.pivot;
+    let reach = 1;
+    for (let i = 1; i <= C.collisionSteps; i++) {
+      if (solidAt(pivot.clone().addScaledVector(offset, i / C.collisionSteps), C.collisionMargin)) { reach = (i - 1) / C.collisionSteps; break; }
+    }
+    camera.position.copy(pivot).addScaledVector(offset, reach);
+    camera.position.y = Math.max(camera.position.y, heightAt(camera.position.x, camera.position.z) + C.groundClearance);
+    camera.lookAt(pivot);
+  }
+  if (camera.fov !== CONFIG.camera.fov) { camera.fov = CONFIG.camera.fov; camera.updateProjectionMatrix(); }
+  hideBlockingAllies(null, dt);
+  sun.position.copy(camera.position).add(SUN_OFFSET); sun.target.position.copy(camera.position);
+}
 function updateCamera(dt) {
+  if (spectator.active) { updateSpectatorCamera(dt); return; }
   state.cam.recoilPitch *= Math.exp(-dt * CONFIG.camera.recoilRecovery);
   if (player.cactus?.drone) { updateGarlicCamera(dt); hideBlockingAllies(null, dt); return; }
   const c = CONFIG.camera, cs = state.cam, h = player, motion = SETTINGS.motion;
@@ -23393,6 +23410,13 @@ let fpsShownAt = 0;
 function updateHud(dt) {
   const P = player.stats, W = player.weapon, AB = player.abilities;
   drawEngagement();
+  // Match totals persist across waves and respawns; the personal count follows squad control.
+  setText(hud('killCount'), state.stats.match[player.squadIndex]?.kills || 0);
+  setText(hud('squadKillCount'), state.stats.match.reduce((sum, line) => sum + line.kills, 0));
+  if (spectator.active) {
+    const status = player.dead ? ` · respawning in ${Math.ceil(respawnLeft(player))}s` : ` · ${Math.ceil(player.hp)} / ${P.hp} HP`;
+    setText(hud('spectatorName'), `${player.name} #${player.squadIndex + 1}${status}`);
+  }
   // FPS readout, refreshed a few times a second so it's readable
   const now = performance.now();
   if (now - fpsShownAt > 250) { fpsShownAt = now; setText(hud('fps'), `${Math.round(fpsAvg)} FPS`); }
@@ -23426,14 +23450,14 @@ function updateHud(dt) {
     setHudBar(id, fallen ? left / CONFIG.squad.respawnDelay : h.hp / h.stats.hp, dt, (h.regen || h.healedUntil > state.time) && !fallen);
     box.classList.toggle('controlled', h === player);
     box.classList.toggle('fallen', fallen);
-    setText(box.querySelector('.label'), `${h.squadIndex + 1} · ${h.name}${h === player ? ' · YOU' : ''}`);
+    setText(box.querySelector('.label'), `${h.squadIndex + 1} · ${h.name}${h === player && !spectator.active ? ' · YOU' : ''}`);
     setText(box.querySelector('.num'), fallen ? `${h.downed ? 'DOWN' : 'RESPAWN'} ${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`);
     updateFallenTag(h, fallen, left);
     h.bar.group.position.copy(h.mesh.position).setY(h.mesh.position.y + h.centerY + 0.4);
     h.bar.group.visible = h.active && h !== player && !h.dead && keepBarReadable(h.bar.group, 20, 3.5);
     h.bar.group.quaternion.copy(camera.quaternion); setWorldBar(h.bar, h.hp / h.stats.hp);
   }
-  setText(hud('squadHint'), heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help');
+  setText(hud('squadHint'), spectator.active ? 'Tab / [ ] / 1–4 · spectate plant' : heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help');
   setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
   statueHpBar.group.visible = keepBarReadable(statueHpBar.group, 45, 7);
   statueHpBar.group.quaternion.copy(camera.quaternion);
@@ -23717,8 +23741,10 @@ const PLANT_ICONS = { corn: '🌽', peashooter: '🫛', sunflower: '🌻', cactu
 const respawnLeft = h => h.downed ? Math.max(0, h.downT) : h.dead ? Math.max(0, h.respawnTimer) : 0;
 function rebuildSquadHud() {
   hud('squadHud').replaceChildren(); hud('fallenTags').replaceChildren();
+  hud('spectatorSelect').replaceChildren();
   for (const key of Object.keys(hudBars)) delete hudBars[key];
   for (const h of heroes) {
+    hud('spectatorSelect').add(new Option(`${h.name} #${h.squadIndex + 1}`, String(h.squadIndex)));
     const box = document.createElement('div'); box.id = `squad-${h.squadIndex}`; box.className = 'hbox squadMember';
     box.innerHTML = `<div class="icon">${PLANT_ICONS[h.type] || '🌱'}</div><div class="row"><span class="label"></span><span class="num"></span></div><div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>`;
     hud('squadHud').append(box);
@@ -23730,9 +23756,10 @@ function clearHumanInput(releaseKeys = true) {
   if (releaseKeys) for (const key of Object.keys(keys)) delete keys[key];
   for (const key of Object.keys(pressed)) pressed[key] = key === 'butter' ? null : false;
   mouseDown = rightDown = false;
-  if (player) { player.input = newInput(); player.jumpQueuedUntil = player.lastGroundT = -Infinity; }
+  if (player && !spectator.active) { player.input = newInput(); player.jumpQueuedUntil = player.lastGroundT = -Infinity; }
 }
 function takeControl(h) {
+  if (spectator.active) return spectateHero(h);
   const previous = player;
   if (previous.cactus?.drone) endGarlicDrone(previous.cactus.drone);
   if (h.cactus?.drone) endGarlicDrone(h.cactus.drone);
@@ -23752,6 +23779,10 @@ function takeControl(h) {
 }
 function switchSquadMember(direction = 1) {
   if (!matchStarted || state.over) return false;
+  if (spectator.active) {
+    const index = heroes.indexOf(player), next = (index + direction + heroes.length) % heroes.length;
+    return spectateHero(heroes[next]);
+  }
   const index = heroes.indexOf(player);
   for (let step = 1; step < heroes.length; step++) {
     const h = heroes[(index + direction * step + heroes.length) % heroes.length];
@@ -23764,6 +23795,7 @@ function switchSquadMember(direction = 1) {
 }
 // Number keys: jump straight to one squad member (a fallen one can't be taken)
 function takeControlOf(h) {
+  if (spectator.active) return spectateHero(h);
   if (!matchStarted || state.over || !h.active) return false;
   if (!standing(h)) { setMessage(`${h.name} #${h.squadIndex + 1} is down · back in ${Math.ceil(respawnLeft(h))}s`, 1.5); return false; }
   takeControl(h); setMessage(`Controlling ${h.name} #${h.squadIndex + 1}`, 1.2); return true;
@@ -23802,13 +23834,14 @@ function configureSquad(selection) {
   heroes.length = 0;
   selection.forEach((type, i) => {
     const h = previous[i]?.type === type ? previous[i] : makeHero(type, i > 0, CONFIG.squad.spawnPoints[i], i);
-    h.isAI = i !== 0; h.active = true; heroes.push(h);
+    h.isAI = spectator.active || i !== 0; h.active = true; heroes.push(h);
     const picked = [...squadSlots.querySelectorAll('select[id^="pick-"]')].filter(s => s.value)[i];
     applyLoadout(h, picked?.value === type && document.getElementById(picked.id.replace('pick-', 'loadout-'))?.value === 'variant');
   });
   for (const h of previous) if (!heroes.includes(h)) disposeHero(h);
   player = heroes[0]; playerMesh = player.mesh; corn = player.corn; mate = heroes[1] || null;
   clearHumanInput(); rebuildSquadHud(); resetGame();
+  resetSpectatorCamera(); syncSpectatorUi();
   for (const h of heroes) h.plant.animate(h, 0);
   return true;
 }
@@ -23824,9 +23857,9 @@ function loop() {
 
   if (playing) {
     state.time += dt;
-    readPlayerInput(player);
+    if (!spectator.active) readPlayerInput(player);
     updateGardenAlert(dt);
-    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); bonusSteer(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
+    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
     for (const h of heroes) updateHero(h, dt);
     updateZombies(dt);
     updateProjectiles(dt);
@@ -23863,7 +23896,7 @@ function loop() {
     if (state.statueHp <= 0 && !state.over) endGame(false);
     else updateWaves(dt);
   }
-  updateCamera(dt);
+  updateCamera(spectator.active && !playing ? 0 : dt);
   // Silence everything while paused / tabbed out (game-over stings still play)
   SFX.setActive((document.pointerLockElement === renderer.domElement || AUTOPLAY || state.over) && !document.hidden && document.hasFocus());
   SFX.update(dt);
@@ -23871,7 +23904,7 @@ function loop() {
   updateHud(playing ? dt : 0);
   updateAwareness(playing ? dt : 0);
   drawRadar();
-  updateTips(playing ? dt : 0);
+  if (!spectator.active) updateTips(playing ? dt : 0);
   updateCactusHud();
   updateSunflowerHud();
   updateRevivePrompt();
@@ -23902,8 +23935,9 @@ Object.assign(window.__game, { gargantuarState, gargantuarStartSlam, launchGarga
 Object.assign(window.__game, { damageZombie, endGame, SETTINGS, changeSetting, DIFF, sun });
 // Boss slot + extraction finale hooks (tests/boss-finale.cjs)
 Object.assign(window.__game, { beginCountdown, startWave, startFinale, extractZone });
-Object.assign(window.__game, { mastery, masteryLevel, saveMastery, applyLoadout, healHero, bonusMarker,
-  selectTheme, remixPacks, prepareBonus, startBonus, finishBonus, updateEngagement, clearWaveRewards, advanceQuietPack, bonusSteer, recordStat });
+Object.assign(window.__game, { mastery, masteryLevel, saveMastery, applyLoadout, healHero,
+  selectTheme, remixPacks, updateEngagement, clearWaveRewards, advanceQuietPack, recordStat });
+Object.assign(window.__game, { spectator, spectateHero, toggleSpectatorCamera, resetSpectatorCamera });
 Object.defineProperty(window.__game, 'particleCap', { get: () => particleCap });
 // Experience hooks (tests/experience.cjs): debug gating, awareness HUD, pacing, onboarding, statue states
 Object.assign(window.__game, { DEBUG, hurryMult, noteHitFrom, hitDirs, gardenStatue, takeControlOf, toggleHelp, TIPS, tipsSeen, drawRadar, artSpin });
@@ -23996,13 +24030,12 @@ function prewarmAssets() {
   try { AS_IMP ||= asImpTemplate(); AS_SHIELD ||= asShieldTemplate(); } catch (err) { console.warn('prewarm all-star', err); }
   for (const z of zombies) z.mesh.visible = true;
   spawnCactusTrail(new THREE.Vector3(0, 2, 0), new THREE.Vector3(0, 2, 6));
-  bonusMarker.visible = true;
   const plantWarm = prewarmNewPlants(); scene.add(plantWarm);   // Citron / Rose / Chomper effects + templates
   scene.traverse(singlePass);
   renderer.compile(scene, camera);
   fillRigPools();
   warmUpload();
-  bonusMarker.visible = false; scene.remove(plantWarm);
+  scene.remove(plantWarm);
   pinPrograms();   // keep every program alive past the reset below
   prewarmShadowVariants();
   resetGame();
@@ -24039,7 +24072,8 @@ prewarmAssets();
     matchStarted = true;
     document.body.classList.remove('preMatch');
     document.getElementById('overlayTitle').textContent = 'THE GARDEN IS READY';
-    button.textContent = 'CLICK TO START';   // pointer lock needs a fresh click
+    button.textContent = spectator.active ? 'CLICK TO WATCH' : 'CLICK TO START';   // pointer lock needs a fresh click
+    document.getElementById('watchButton').style.display = 'none';
     button.focus();
   } else {   // automated boot without ?autoplay: the menu is the squad picker again
     document.getElementById('overlayTitle').textContent = 'GARDEN DEFENSE';

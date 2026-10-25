@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.27.1)
+## Current state (v1.28.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -18,7 +18,7 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   variants compile in parallel behind `updateShaderGuard`; agent rigs are baked (`bakeRig`) templates cloned by
   `cloneRig` (~1 ms); plain zombie bodies and particles draw instanced (`ZOMBIE_BATCH`, `PARTICLE_BATCH`); share
   geometry for per-shot/per-effect meshes instead of building it each spawn.
-- Squad: picker = your plant (default Corn) + 0–3 AI companions (default Random, no repeats; pool = `CONFIG.PLANTS`). `makeHero`
+- Squad: picker = your plant (random visible selection, editable; automated boots default Corn) + 0–3 AI companions (default Random, no repeats; pool = `CONFIG.PLANTS`). `makeHero`
   gives each hero its own stats/weapon/abilities/brain; every hero is driven by `h.input` (human: `readPlayerInput`,
   AI: `PLANT_TYPES[type].drive`). Tab / [ ] switch control. Down → respawn after `CONFIG.squad.respawnDelay` (20 s),
   hold X to revive; squad cards + floating tags show respawn timers. AI rooted abilities are cancelled when stalled
@@ -48,8 +48,8 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   test: `tests/enemy-scale.cjs` (including Z-Mech boarding/ejection and corpses). Bosses spawn at a random lane and prefer plants
   (`heroFirst`). Boss slot machine (`CONFIG.BOSS_SLOT`): waves 5 and 10 roll Gargantuar / Mecha / agent squad / mixed
   pack for the pack marked `bossSlot` (reel in the countdown banner). After wave 10 the extraction finale
-  (`CONFIG.FINALE`, phase `'extract'`): hold a random landing zone until charged under a plant-hunting horde, before
-  the time limit; AI plants path there (`finaleSteer`). Test: `tests/boss-finale.cjs`. Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
+  (`CONFIG.FINALE`, phase `'extract'`): hold a random landing zone until charged under a plant-hunting horde (120 s solo,
+  240 s deadline); AI plants path there (`finaleSteer`). Test: `tests/boss-finale.cjs`. Escort agents: `AGENTS.escort` (chained `moreChance` rolls).
 - Map/nav: heightfield terrain + obstacles (`CONFIG.MAP`), 2 m nav grid, static statue flow fields, A* for AI plants.
   Spawn areas (`CONFIG.SPAWN_POINTS`: center, `r`, `minStatue`) — zombies appear anywhere inside; packs roll a random
   area (`randomPackSpawns`), part of a pack clusters on an anchor. Waves are data in `CONFIG.WAVES`.
@@ -78,12 +78,14 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   boss / off from match state fades layer gains. Music volume setting. Feedback: `callout()` for wave start / clear /
   boss, pooled damage numbers (`spawnPopup` style: yours / 'minor' allies / 'kill'). HUD writes go through
   `setText` / `setHtml` (DOM only on change). Polish audit: docs/experience.md. Test: `tests/polish.cjs`.
-- Match flow: `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
+- Match flow: always-on vanquish HUD (controlled plant + squad match totals); `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
   between-waves summary (`showWaveSummary`, under the countdown banner) and end-of-match table (`showMatchStats`).
+- Spectator: discreet Watch squad menu button makes every selected plant AI; `spectator` owns follow/free camera only.
+  Tab / [ ] / 1–4 watch plants; mouse orbit, wheel zoom, F free/follow, R reset; WASD + E/Q fly, Shift faster; Esc pause.
+  Tuning: `CONFIG.spectator`; docs/spectator.md; test: `tests/spectator.cjs`. Spectating awards no mastery or saved wins.
 - Engagement (`CONFIG.engagement`, docs/gw2-engagement.md): menu weapon sidegrades; saved class mastery (XP only for the currently controlled plant; levels/titles,
-  no power gating); assists, healing/revive XP and per-hero vanquish chains; themed waves remix base packs; optional guard,
-  timed clear, supply-circle and bounty bonuses award controlled-plant XP. One AI helps supplies unless home needs it.
-  `advanceQuietPack` shortens quiet gaps only for a healthy squad; gold marker is prewarmed. Test: `tests/engagement.cjs`.
+  no power gating); assists, healing/revive XP and per-hero vanquish chains; themed waves remix base packs. No bonus missions.
+  `advanceQuietPack` shortens quiet gaps only for a healthy squad. Test: `tests/engagement.cjs`.
 - Difficulty presets `CONFIG.DIFFICULTY` (`DIFF()`, locked per match in `state.difficulty`): zombieHp (scales hits in
   `damageZombie`), zombieDamage (`damageHero`), statueDamage (per-frame statue loss in `loop`), count (`scaledCount`).
   Wave tuning was eased zombie-side in v1.27.1 (Normal = 1×; levers in docs/balance.md "Wave difficulty").

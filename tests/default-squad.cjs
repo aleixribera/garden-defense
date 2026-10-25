@@ -1,4 +1,4 @@
-// Corn defaults, random companions without replacement, and picker / spawn lifecycle against the real source.
+// Stable automated defaults, visible random player selection, no-repeat companions, and picker / spawn lifecycle.
 // Playwright and its Chromium browser are test-only dependencies.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -109,12 +109,18 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await menu.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
     await menu.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: 'load' });
     assert.equal(await menu.evaluate(() => !!window.__game), false, 'human menu keeps world construction behind the gate');
-    assert.deepEqual(await menu.locator('#squadSlots select[id^="pick-"]').evaluateAll(els => els.map(el => el.value)), picks);
+    const menuPicks = await menu.locator('#squadSlots select[id^="pick-"]').evaluateAll(els => els.map(el => el.value));
+    assert.ok(roster.includes(menuPicks[0]), 'the player sees a concrete plant from the current roster');
+    assert.deepEqual(menuPicks.slice(1), picks.slice(1));
+    assert.ok(await menu.locator('#loadout-0').isEnabled(), 'the selected plant has its loadout ready');
+    const chosen = roster.find(type => type !== menuPicks[0]);
+    await menu.selectOption('#pick-0', chosen);
     await menu.click('#matchButton');
     await menu.waitForFunction(() => window.__defaultSquadTest && !document.body.classList.contains('loading'), null, { timeout: 90000 });
     const booted = await menu.evaluate(() => ({ types: __game.heroes.map(h => h.type), human: __game.player.type }));
-    assert.equal(booted.human, 'corn'); assertSquad(booted.types, 'menu boot squad');
-    console.log('PASS: human menu boots the chosen Corn and random companion squad behind the loading screen');
+    assert.equal(booted.human, chosen);
+    assert.equal(new Set(booted.types).size, 4); assert.ok(booted.types.every(type => roster.includes(type)));
+    console.log('PASS: human menu shows a random player plant, accepts a different choice, and boots that squad behind the loading screen');
     assert.deepEqual(errors, [], 'no runtime exceptions during lineup lifecycle');
   } finally { await browser?.close(); server.close(); }
 })().catch(error => { console.error(error); server.close(); process.exitCode = 1; });
