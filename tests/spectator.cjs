@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const expose = `window.__spectatorTest = { updateCamera, updateHud, updateHero, updateWaves, updateFinale,
-  readPlayerInput, clearHumanInput, keys, pressed, respawnHero, resetGame, endGarlicDrone, toggleGarlicDrone };`;
+  readPlayerInput, clearHumanInput, keys, pressed, respawnHero, resetGame, endGarlicDrone, toggleGarlicDrone, damageHero };`;
 const html = source.replace(/loop\(\);\s*<\/script>\s*<\/body>/, expose + '</script></body>');
 assert.ok(html.includes(expose));
 const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
@@ -31,9 +31,25 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await page.evaluate(() => { __spectatorTest.updateCamera(0); __spectatorTest.updateHud(0); __game.renderer.render(__game.scene, __game.camera); });
     await page.screenshot({ path: path.resolve(__dirname, '..', 'docs', 'spectator.png') });
     assert.ok(await page.locator('#spectatorHud').isVisible());
-    assert.equal(await page.locator('#abilities').isVisible(), false);
-    assert.equal(await page.locator('#crosshair').isVisible(), false);
-    console.log('PASS: discreet menu button boots the selected all-AI squad with a spectator HUD');
+    assert.ok(await page.locator('#abilities').isVisible(), "plant view shows the watched plant's HUD");
+    assert.ok(await page.locator('#crosshair .t').isVisible());
+    assert.ok(await page.locator('#ammo').isVisible());
+    console.log('PASS: discreet menu button boots the selected all-AI squad in plant view with the player HUD');
+
+    const plantView = await page.evaluate(() => {
+      const g = __game, t = __spectatorTest, h = g.player, p = h.mesh.position;
+      g.state.shake = 0; h.aimPoint.set(p.x + 25, p.y + 1, p.z - 18);
+      for (let i = 0; i < 4; i++) t.updateCamera(0);   // dt 0 snaps onto the aim; repeats settle the shoulder pivot
+      g.camera.updateMatrixWorld();
+      const v = h.aimPoint.clone().project(g.camera);
+      const hurt = g.state.hurt; t.damageHero(h, 5);
+      const felt = g.state.hurt > hurt, mid = g.state.hurt; t.damageHero(g.heroes[1], 5);
+      return { view: g.spectator.view, x: v.x, y: v.y, felt, othersQuiet: g.state.hurt === mid };
+    });
+    assert.equal(plantView.view, 'plant');
+    assert.ok(Math.abs(plantView.x) < 0.05 && Math.abs(plantView.y) < 0.05, `reticle on the AI aim point: ${JSON.stringify(plantView)}`);
+    assert.ok(plantView.felt && plantView.othersQuiet, 'hurt feedback follows the watched plant only');
+    console.log("PASS: plant view puts the reticle on the watched AI's aim point and shows its hurt feedback");
 
     await page.evaluate(() => {
       const h = __game.player; h.input.fire = true; h.cd.shuckShot = 9;
@@ -47,6 +63,10 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await page.keyboard.press('BracketLeft');
     assert.equal(await page.evaluate(() => __game.player.type), 'peashooter');
     await page.keyboard.press('KeyF');
+    assert.equal(await page.evaluate(() => __game.spectator.view), 'orbit');
+    assert.ok(await page.evaluate(() => document.body.classList.contains('detachedView')));
+    assert.equal(await page.locator('#crosshair .t').isVisible(), false, 'orbit camera hides the plant HUD');
+    await page.keyboard.press('KeyF');
     const free = await page.evaluate(() => {
       const g = __game, t = __spectatorTest, h = g.player, before = h.mesh.position.clone();
       const input = h.input, fire = input.fire, move = input.move.clone(), yaw = h.yaw;
@@ -57,17 +77,21 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
       t.keys.KeyW = true; const paused = g.camera.position.clone(); t.updateCamera(0); t.clearHumanInput();
       const shortcutBlocked = !dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', ctrlKey: true, repeat: true, cancelable: true }));
       t.clearHumanInput();
-      return { free: g.spectator.free, traveled, paused: paused.equals(g.camera.position), shortcutBlocked,
+      return { free: g.spectator.view === 'free', traveled, paused: paused.equals(g.camera.position), shortcutBlocked,
         untouched: h.mesh.position.equals(before) && h.input === input && input.fire === fire && input.move.equals(move) && h.yaw === yaw };
     });
     assert.ok(free.free && free.traveled > 20 && free.paused && free.untouched && free.shortcutBlocked);
     await page.keyboard.press('KeyR');
-    assert.equal(await page.evaluate(() => __game.spectator.free), false);
+    assert.equal(await page.evaluate(() => __game.spectator.view), 'plant');
+    await page.mouse.wheel(0, 100000);
+    assert.equal(await page.evaluate(() => __game.spectator.distance), 12, 'wheel only zooms the orbit camera');
+    await page.keyboard.press('KeyF');
     await page.mouse.wheel(0, 100000);
     assert.equal(await page.evaluate(() => __game.spectator.distance), 36);
     await page.mouse.wheel(0, -100000);
     assert.equal(await page.evaluate(() => __game.spectator.distance), 4);
-    console.log('PASS: plant hotkeys preserve AI state; free flight, reset, zoom limits and paused camera work');
+    await page.keyboard.press('KeyR');
+    console.log('PASS: plant hotkeys preserve AI state; F cycles orbit / free, free flight, reset, zoom limits and paused camera work');
 
     await page.keyboard.press('Escape');
     await page.evaluate(() => document.exitPointerLock());   // DevTools key presses do not trigger Chromium's native Esc unlock.
@@ -76,7 +100,7 @@ const server = http.createServer((req, res) => { res.setHeader('Content-Type', '
     await page.selectOption('#spectatorSelect', '3');
     assert.equal(await page.evaluate(() => __game.player.type), 'cactus');
     await page.click('#spectatorCameraButton');
-    assert.equal(await page.evaluate(() => __game.spectator.free), true);
+    assert.equal(await page.evaluate(() => __game.spectator.view), 'orbit');
     await page.click('#matchButton');
     await page.waitForFunction(() => !!document.pointerLockElement);
     const drone = await page.evaluate(() => {

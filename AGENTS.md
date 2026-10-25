@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.28.0)
+## Current state (v1.29.0)
 - Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
   WebAudio only (no external models, textures or samples).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
@@ -80,8 +80,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   `setText` / `setHtml` (DOM only on change). Polish audit: docs/experience.md. Test: `tests/polish.cjs`.
 - Match flow: always-on vanquish HUD (controlled plant + squad match totals); `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
   between-waves summary (`showWaveSummary`, under the countdown banner) and end-of-match table (`showMatchStats`).
-- Spectator: discreet Watch squad menu button makes every selected plant AI; `spectator` owns follow/free camera only.
-  Tab / [ ] / 1–4 watch plants; mouse orbit, wheel zoom, F free/follow, R reset; WASD + E/Q fly, Shift faster; Esc pause.
+- Spectator: discreet Watch squad menu button makes every selected plant AI; `spectator.view` = plant (default: the
+  player camera + full HUD aimed by the AI via `followPlantAim`; feedback via `ownsView(h)`) / orbit / free. Tab / [ ] /
+  1–4 watch plants; F cycles views, R plant view; orbit: mouse + wheel; free: WASD + E/Q fly, Shift faster; Esc pause.
   Tuning: `CONFIG.spectator`; docs/spectator.md; test: `tests/spectator.cjs`. Spectating awards no mastery or saved wins.
 - Engagement (`CONFIG.engagement`, docs/gw2-engagement.md): menu weapon sidegrades; saved class mastery (XP only for the currently controlled plant; levels/titles,
   no power gating); assists, healing/revive XP and per-hero vanquish chains; themed waves remix base packs. No bonus missions.

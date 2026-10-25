@@ -162,11 +162,15 @@
   body.spectating #spectatorHud { display: block; }
   body.spectating #spectatorSettings { display: flex; }
   body.preMatch #spectatorHud, body.loading #spectatorSettings { display: none; }
-  body.spectating #abilities, body.spectating #ammo, body.spectating #crosshair, body.spectating #hitmarker,
-  body.spectating #hitDirs, body.spectating #vignette, body.spectating #hurtTint, body.spectating #speedFx,
-  body.spectating #targetHint, body.spectating #revive, body.spectating #tip, body.spectating #cactusScope,
-  body.spectating #droneHud, body.spectating #roseLock, body.spectating #chompHint, body.spectating #stinkFx,
-  body.spectating #masteryHud { display: none !important; }
+  /* Plant view shows the watched plant's own HUD; orbit / free cameras hide it. Human-only prompts always hide. */
+  body.spectating:not(.detachedView) #spectatorHud { left: auto; right: 20px; bottom: 122px; transform: none; width: auto;
+    max-width: 320px; padding: 4px 14px; text-align: right; opacity: 0.85; }
+  body.spectating.detachedView #abilities, body.spectating.detachedView #ammo, body.spectating.detachedView #crosshair,
+  body.spectating.detachedView #hitmarker, body.spectating.detachedView #hitDirs, body.spectating.detachedView #vignette,
+  body.spectating.detachedView #hurtTint, body.spectating.detachedView #speedFx, body.spectating.detachedView #cactusScope,
+  body.spectating.detachedView #droneHud, body.spectating.detachedView #roseLock, body.spectating.detachedView #chompHint,
+  body.spectating.detachedView #stinkFx, body.spectating.detachedView #sunflowerStatus,
+  body.spectating #targetHint, body.spectating #revive, body.spectating #tip, body.spectating #masteryHud { display: none !important; }
   #difficultyPick { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; font-size: 12px;
     color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
   #overlay select { font: inherit; background: #203626; color: var(--text); border: 1px solid #647957; border-radius: 7px; padding: 8px; font-size: 13px; }
@@ -405,9 +409,7 @@
 <div id="roseLock"></div><div id="chompHint"></div><div id="fps"></div>
 <div id="version"></div>
 <div id="spectatorHud" class="panel"><b id="spectatorMode">SPECTATING</b><div id="spectatorName"></div>
-  <div class="muted">Mouse · look &nbsp; Wheel · zoom &nbsp; Tab / [ ] / 1–4 · plant</div>
-  <div class="muted">F · free / follow &nbsp; R · reset view &nbsp; Esc · pause &amp; camera settings</div>
-  <div id="spectatorFreeHelp" class="muted" hidden>WASD · fly &nbsp; E / Space · up &nbsp; Q / Ctrl · down &nbsp; Shift · faster</div>
+  <div id="spectatorHelp" class="muted"></div>
 </div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
   <div id="squadPicker"><h2>Choose your squad</h2>
@@ -442,7 +444,7 @@
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.28.0';
+const VERSION = 'v1.29.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -839,7 +841,9 @@ const CONFIG = {
   },
   spectator: { distance: 12, minDistance: 4, maxDistance: 36, zoomSpeed: 0.012, height: 1.4,
     pitch: 0.35, minPitch: -0.8, maxPitch: 1.35, follow: 8, flySpeed: 18, fastMult: 3,
-    groundClearance: 0.8, maxHeight: 100, collisionMargin: 0.4, collisionSteps: 24 },
+    groundClearance: 0.8, maxHeight: 100, collisionMargin: 0.4, collisionSteps: 24,
+    aimFollow: 10,       // plant view: how fast the camera eases onto the watched plant's aim (1/s)
+    minAimDistance: 2 }, // closer aim points are ignored (the plant's facing is used instead)
   camera: {
     distance: 5.2, aimDistance: 3.4,  // hip / zoomed
     height: 1.0, shoulder: 1.75,      // pivot above player center, and to the right
@@ -1841,7 +1845,11 @@ function showSettings() {
   showSettings();
 }
 // Camera ownership is separate from plant AI. No three.js objects are needed before the menu gate.
-const spectator = { active: false, free: false, pivot: null, position: null, distance: CONFIG.spectator.distance };
+// view: 'plant' (the watched plant's own over-the-shoulder view and HUD) | 'orbit' | 'free'
+const spectator = { active: false, view: 'plant', pivot: null, position: null, distance: CONFIG.spectator.distance };
+// Camera feedback (recoil, shake, hurt flashes) belongs to the plant whose view is on screen: the human's plant,
+// or the plant a spectator watches in plant view.
+function ownsView(h) { return !h.isAI || (spectator.active && h === player); }
 const bootSelection = SKIP_MENU ? null : await new Promise(resolve => {
   const play = () => choose(false), watch = () => choose(true);
   const choose = active => {
@@ -5467,7 +5475,7 @@ function fireCactusSpike(h) {
   const W = h.weapon, { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
   traceCactusSpike(h, start, dir); h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   arm.recoil = 1; arm.flashT = 0.055;
-  if (!h.isAI) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.3)); addShake(0.055); }
+  if (ownsView(h)) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.3)); addShake(0.055); }
   SFX.play('cactusSpike', start, h.isAI);
 }
 
@@ -9167,6 +9175,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 document.addEventListener('mousemove', e => {
   if (document.pointerLockElement !== renderer.domElement) return;
   if (spectator.active) {
+    if (spectator.view === 'plant') return;   // plant view looks where the watched plant aims
     const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity;
     state.yaw -= e.movementX * sens;
     state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, CONFIG.spectator.minPitch, CONFIG.spectator.maxPitch);
@@ -9193,6 +9202,7 @@ addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('wheel', e => {
   if (!spectator.active || document.pointerLockElement !== renderer.domElement) return;
   e.preventDefault();
+  if (spectator.view !== 'orbit') return;
   spectator.distance = THREE.MathUtils.clamp(spectator.distance + e.deltaY * CONFIG.spectator.zoomSpeed,
     CONFIG.spectator.minDistance, CONFIG.spectator.maxDistance);
 }, { passive: false });
@@ -9674,7 +9684,7 @@ function fireKernel(h) {
   projectiles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: h, weapon: W });
   h.ammo--;
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
-  if (!h.isAI) {   // camera recoil + shake belong to the human's view
+  if (ownsView(h)) {   // camera recoil + shake belong to the human's view
     addCameraRecoil(W.recoilKick * (1 - 0.5 * h.zoom));
     addShake(0.035);
   }
@@ -9720,7 +9730,7 @@ function fireShuckMissile(h) {
   rockets.push({ mesh, vel: dir.multiplyScalar(A.speed), life: A.life, owner: h, ability: A });
   muzzleFx(arm, start, 1.6);
   SFX.play('shuck', start, h.isAI);
-  if (!h.isAI) addShake(0.12);
+  if (ownsView(h)) addShake(0.12);
   for (let i = 0; i < 4; i++) spawnParticle('puff', 0xeeeeee, start, rand3(2, 1), { life: 0.5, gravity: -1, grow: 2, drag: 3, size: 0.6 });
 }
 function updateRockets(dt) {
@@ -9758,7 +9768,7 @@ function useHuskHop(h) {
   v.set(dir.x * H.forwardSpeed, H.upSpeed, dir.z * H.forwardSpeed);
   h.onGround = false;
   h.hopping = true;
-  if (!h.isAI) { state.fovKick = 10; addShake(0.25); }
+  if (ownsView(h)) { state.fovKick = 10; addShake(0.25); }
   burstLeaves(h.mesh.position, 16);
   SFX.play('hop', h.mesh.position, h.isAI);
   spawnRing(h.mesh.position.clone().setY(h.mesh.position.y - PLAYER_CENTER_Y), 3, 0xd8ff9a, 0.35);
@@ -9888,7 +9898,7 @@ function damageHero(h, amount, src = null) {
   h.lastHurt = state.time;   // pauses passive regen
   heroFlinch(h, amount);
   if (h.isAI) SFX.play('mateHurt', h.mesh.position); else SFX.play('hurt', amount > 20);
-  if (!h.isAI) {
+  if (ownsView(h)) {
     state.hurt = Math.min(1, state.hurt + amount / 40);
     state.cam.tint = Math.min(1, state.cam.tint + 0.35 + amount / 50);   // red flash
     state.cam.flinch = (Math.random() < 0.5 ? -1 : 1) * Math.min(1, 0.4 + amount / 30);
@@ -10042,7 +10052,7 @@ function fireSunPulse(h) {
   const arm = h.corn.arms[0]; arm.recoil = 1; arm.flashT = 0.045;
   muzzleLight.position.copy(start); muzzleLight.intensity = 2.4;
   SFX.play('sunPulse', start, h.isAI);
-  if (!h.isAI) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.5)); addShake(F.shake); }
+  if (ownsView(h)) { addCameraRecoil(W.recoilKick * (1 - h.zoom * 0.5)); addShake(F.shake); }
 }
 function traceSunbeam(h, applyDamage) {
   const A = h.abilities.huskHop, F = CONFIG.SUNFLOWER.fx, start = sunflowerMuzzle(h);
@@ -10071,7 +10081,7 @@ function traceSunbeam(h, applyDamage) {
     }
     spawnParticle('spark', F.coreColor, end, rand3(3, 2), { life: 0.2, gravity: 0, size: 0.5, additive: true });
     SFX.play('sunLaser', start, h.isAI);
-    if (!h.isAI) addShake(F.beamShake);
+    if (ownsView(h)) addShake(F.beamShake);
     h.corn.arms[0].recoil = 0.7;
   }
 }
@@ -10521,7 +10531,7 @@ function useHyper(h) {
   h.pea.hyper = h.abilities.butterBarrage.duration;
   burstLeaves(h.mesh.position, 14);
   SFX.play('peaHyper', h.isAI ? h.mesh.position : null);
-  if (!h.isAI) { addShake(0.12); state.fovKick += CONFIG.PEASHOOTER.fx.hyperFov; }
+  if (ownsView(h)) { addShake(0.12); state.fovKick += CONFIG.PEASHOOTER.fx.hyperFov; }
 }
 function updatePeashooter(h, dt) {
   if (!h.pea) resetPeashooter(h);
@@ -10546,7 +10556,7 @@ function firePea(h, gatling = false) {
   if (gatling) h.pea.gatlingAmmo--; else h.ammo--;
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   muzzleFx(arm, start, gatling ? 0.35 : 1.25);
-  if (!h.isAI) {
+  if (ownsView(h)) {
     addCameraRecoil(W.recoilKick * (gatling ? 0.16 : 1) * (1 - h.zoom * 0.4));
     addShake(gatling ? F.gatlingShake : F.cameraShake);
   }
@@ -10943,7 +10953,7 @@ function fireOrangeBeam(h) {
     if (h === player) setMessage('Overheated!', 0.8);
   }
   muzzleFx(arm, start, 0.45);
-  if (!h.isAI) { addCameraRecoil(W.recoilKick); addShake(0.02); }
+  if (ownsView(h)) { addCameraRecoil(W.recoilKick); addShake(0.02); }
   SFX.play('citBeam', start, h.isAI);
 }
 // Visual beam from the live muzzle along the live aim (the damage ticks own the hit; this only draws it)
@@ -11020,7 +11030,7 @@ function toggleCitronBall(h) {
   Object.assign(c, { ball: true, dashCharge: 0, dashing: 0, beamT: 0 });
   SFX.play('citBall', h.mesh.position, h.isAI, true);
   burstLeaves(h.mesh.position, 6);
-  if (!h.isAI) { state.fovKick += 4; addShake(0.12); }
+  if (ownsView(h)) { state.fovKick += 4; addShake(0.12); }
 }
 function endCitronBall(h) {
   const c = h.cit; if (!c.ball) return;
@@ -11045,7 +11055,7 @@ function citronBallTick(h, dt) {
       for (let i = 0; i < 8; i++) spawnParticle('spark', CIT.fx.beamColor, z.mesh.position, rand3(10, 4), { life: 0.4, size: 0.8, additive: true });
       SFX.play('citRam', z.mesh.position, true);
       if (z.def.boss) { c.dashing = 0; h.vel.x = -c.dashDir.x * 7; h.vel.z = -c.dashDir.z * 7; addShake(0.35, h.isAI ? pos : null); }
-      else if (!h.isAI) addShake(0.15);
+      else if (ownsView(h)) addShake(0.15);
     }
     if (c.dashing <= 0) c.dashHit.clear();
     return;
@@ -11059,7 +11069,7 @@ function citronBallTick(h, dt) {
     c.dashPower = c.dashCharge; c.dashCharge = 0; c.dashing = B.dashTime * (0.6 + 0.4 * c.dashPower);
     c.dashDir.copy(yawForward(inp.yaw)); c.dashHit.clear();
     SFX.play('citDash', pos, h.isAI);
-    if (!h.isAI) { state.fovKick += 8 * c.dashPower; addShake(0.25); }
+    if (ownsView(h)) { state.fovKick += 8 * c.dashPower; addShake(0.25); }
     for (let i = 0; i < 10; i++) spawnParticle('puff', 0xb7a27a, pos.clone().setY(pos.y - h.centerY + 0.2), rand3(4, 1).addScaledVector(c.dashDir, -5), { life: 0.6, gravity: -0.5, grow: 2, drag: 3 });
   } else c.dashCharge = 0;
   // Rolling ram: bump anything in the way while moving fast
@@ -11230,7 +11240,7 @@ function fireMagicThistle(h) {
   thistles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: h, W, target: roseLockTarget(h, 0), trailT: 0 });
   h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   muzzleFx(arm, start, 0.6);
-  if (!h.isAI) { addCameraRecoil(W.recoilKick); addShake(0.025); }
+  if (ownsView(h)) { addCameraRecoil(W.recoilKick); addShake(0.025); }
   SFX.play('roseShot', start, h.isAI);
 }
 const thistleSteer = new THREE.Vector3();
@@ -11410,7 +11420,7 @@ function toggleArcaneEnigma(h) {
   if (h.dead || h.cd.butterBarrage > 0 || r.pending) { if (!h.isAI) SFX.play('denied'); return; }
   r.enigma = E.duration; r.cast = 'enigma'; r.castT = 0; r.pulseT = E.pulseEvery * 0.5; h.cloak = true; h.reloading = false;
   SFX.play('enigma', h.mesh.position, h.isAI, true);
-  if (!h.isAI) { state.fovKick += 5; addShake(0.1); }
+  if (ownsView(h)) { state.fovKick += 5; addShake(0.1); }
 }
 function endArcaneEnigma(h) {
   const r = h.rose; if (!(r.enigma > 0)) return;
@@ -11510,7 +11520,7 @@ function resolveBite(h) {
   });
   for (let k = 0; k < 7; k++) spawnParticle('chip', k % 2 ? 0x9ab07a : 0xffffff, mouth, rand3(6, 3), { life: 0.4, size: 0.8 });
   SFX.play('chomp', mouth, h.isAI);
-  if (!h.isAI) { addShake(0.14); state.fovKick -= 1.5; addCameraRecoil(W.recoilKick); }
+  if (ownsView(h)) { addShake(0.14); state.fovKick -= 1.5; addCameraRecoil(W.recoilKick); }
 }
 // Swallow a zombie whole: instant vanquish (no corpse), then chew. Held zombies chew faster and refund a Spikeweed.
 function devour(h, z) {
@@ -11527,7 +11537,7 @@ function devour(h, z) {
   spawnPopup(at.setY(at.y + 1), 'GULP!', '#d68bff', h === player ? 'kill' : 'minor');
   for (let k = 0; k < 12; k++) spawnParticle(k % 3 ? 'chip' : 'leaf', k % 2 ? new THREE.Color(z.def.color) : 0xb07fd8, at, rand3(7, 4), { life: 0.6, size: 1 });
   SFX.play('gulp', h.mesh.position, h.isAI);
-  if (!h.isAI) { addShake(0.25); state.fovKick -= 3; }
+  if (ownsView(h)) { addShake(0.25); state.fovKick -= 3; }
 }
 // ---- Goop ----
 function spitGoop(h) {
@@ -11599,7 +11609,7 @@ function emerge(h) {
   for (let k = 0; k < 24; k++) spawnParticle(k % 3 ? 'chip' : 'puff', k % 4 ? CH.fx.dirt : 0x4f7a2a, feet.clone().add(rand3(1.2).setY(0)), rand3(8, 7), { life: 0.8, size: 1.2, gravity: 14 });
   spawnRing(feet, B.hitRadius, 0xa8865a, 0.35);
   SFX.play('chompEmerge', feet, h.isAI);
-  if (!h.isAI) addShake(0.3);
+  if (ownsView(h)) addShake(0.3);
 }
 // ---- Spikeweed ----
 function plantSpikeweed(h) {
@@ -23198,38 +23208,75 @@ function addCameraRecoil(kick) {
   cs.recoilPitch = Math.min(cs.recoilPitch + kick, CONFIG.camera.recoilMax, Math.max(0, state.pitch + 0.6));
 }
 // Spectator mode never writes a hero's input, abilities or AI brain. `player` is only the observed HUD target.
+// Views: 'plant' = the player's camera and HUD aimed by the plant's AI; 'orbit' = mouse orbit; 'free' = fly.
+const SPECTATOR_VIEWS = {
+  plant: { mode: 'PLANT VIEW', button: 'ORBIT CAMERA', help: 'Tab / [ ] / 1–4 · plant &nbsp; F · orbit camera &nbsp; Esc · pause' },
+  orbit: { mode: 'ORBIT', button: 'FREE CAMERA', help: 'Mouse · orbit &nbsp; Wheel · zoom &nbsp; Tab / [ ] / 1–4 · plant<br>F · free camera &nbsp; R · plant view &nbsp; Esc · pause' },
+  free:  { mode: 'FREE CAMERA', button: 'PLANT VIEW', help: 'Mouse · look &nbsp; WASD · fly &nbsp; E / Space · up &nbsp; Q / Ctrl · down &nbsp; Shift · faster<br>Tab / [ ] / 1–4 · plant &nbsp; F · plant view &nbsp; R · plant view &nbsp; Esc · pause' },
+};
+const SPECTATOR_NEXT = { plant: 'orbit', orbit: 'free', free: 'plant' };
 function resetSpectatorCamera() {
-  spectator.free = false; spectator.pivot = null; spectator.position = null;
+  spectator.view = 'plant'; spectator.pivot = null; spectator.position = null;
   spectator.distance = CONFIG.spectator.distance;
-  if (spectator.active) { state.yaw = player.yaw; state.pitch = CONFIG.spectator.pitch; }
+  if (spectator.active) { state.yaw = player.yaw; state.pitch = CONFIG.spectator.pitch; state.cam.pivot = null; }
 }
 function syncSpectatorUi() {
+  const V = SPECTATOR_VIEWS[spectator.view];
   document.body.classList.toggle('spectating', spectator.active);
+  document.body.classList.toggle('detachedView', spectator.active && spectator.view !== 'plant');
   setText(hud('squadHint'), spectator.active ? 'Tab / [ ] / 1–4 · spectate plant' : 'Tab · next plant   [ / ] · previous / next');
   hud('spectatorSelect').value = String(player.squadIndex);
-  setText(hud('spectatorCameraButton'), spectator.free ? 'FOLLOW PLANT' : 'FREE CAMERA');
-  setText(hud('spectatorMode'), spectator.free ? 'SPECTATING · FREE CAMERA' : 'SPECTATING · FOLLOW');
-  hud('spectatorFreeHelp').hidden = !spectator.free;
+  setText(hud('spectatorCameraButton'), V.button);
+  setText(hud('spectatorMode'), `SPECTATING · ${V.mode}`);
+  setHtml(hud('spectatorHelp'), V.help);
+}
+// Fresh camera feedback state for a newly viewed plant (no carried-over shake, flinch or hurt flash)
+function resetViewFeedback(h) {
+  state.cam = { pivot: null, recoilPitch: 0, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: h.vel.y, wasGround: h.onGround };
+  state.shake = state.hurt = state.hitmarker = state.fovKick = 0;
+  hitDirs.length = 0;
+  delete hudBars.playerBox;
+  hud('playerBox').classList.remove('hit');
 }
 function spectateHero(h) {
   if (!spectator.active || !h?.active || !heroes.includes(h)) return false;
   player = h; playerMesh = h.mesh; corn = h.corn;
   mate = heroes.find(member => member !== h) || null;
-  resetSpectatorCamera(); syncSpectatorUi();
-  delete hudBars.playerBox;
-  updateSpectatorCamera(0);
+  resetViewFeedback(h); resetSpectatorCamera(); syncSpectatorUi();
+  updateCamera(0);
   return true;
 }
 function toggleSpectatorCamera() {
   if (!spectator.active) return;
-  spectator.free = !spectator.free;
-  spectator.position = camera.position.clone(); spectator.pivot = null;
+  spectator.view = SPECTATOR_NEXT[spectator.view];
+  spectator.position = camera.position.clone(); spectator.pivot = null; state.cam.pivot = null;
+  if (spectator.view === 'orbit') state.pitch = THREE.MathUtils.clamp(state.pitch, CONFIG.spectator.minPitch, CONFIG.spectator.maxPitch);
   syncSpectatorUi();
+}
+// Plant view: the camera takes the watched plant's own aim (its AI's aim point, or its drone's), eased so target
+// swaps don't whip the view. The regular player camera then runs unchanged, so the reticle sits where the plant aims.
+const _specEye = new THREE.Vector3();
+function followPlantAim(dt) {
+  const h = player, d = h.cactus?.drone, C = CONFIG.spectator, c = CONFIG.camera, D = CONFIG.cactus.camera;
+  if (h.dead) return;   // a fallen plant keeps the last view while it topples / respawns
+  // Aim from the camera's look point (pivot + shoulder), so the reticle ray passes through the aim point itself
+  const f = yawForward(), shoulder = d ? D.droneShoulder : h.type === 'sunflower'
+    ? THREE.MathUtils.lerp(CONFIG.SUNFLOWER.camera.shoulder, CONFIG.SUNFLOWER.camera.aimShoulder, h.zoom) : c.shoulder + (state.cam.clear || 0);
+  const from = _specEye.copy(d ? d.mesh.position : state.cam.pivot || playerMesh.position);
+  from.y += d ? D.dronePivotHeight : (state.cam.pivot ? 0 : c.height) + c.lift;
+  from.x -= f.z * shoulder; from.z += f.x * shoulder;
+  const aim = (d && d.aim) || h.aimPoint;
+  const dx = aim.x - from.x, dz = aim.z - from.z, flat = Math.hypot(dx, dz);
+  let yaw = d?.yaw ?? h.yaw, pitch = state.pitch;
+  if (flat > C.minAimDistance) { yaw = Math.atan2(-dx, -dz); pitch = -Math.atan2(aim.y - from.y, flat); }
+  const k = dt > 0 ? 1 - Math.exp(-dt * C.aimFollow) : 1;
+  state.yaw += Math.atan2(Math.sin(yaw - state.yaw), Math.cos(yaw - state.yaw)) * k;
+  state.pitch += (THREE.MathUtils.clamp(pitch, -0.6, 1.2) - state.pitch) * k;
 }
 function updateSpectatorCamera(dt) {
   const C = CONFIG.spectator, pitch = state.pitch, yaw = state.yaw;
   const forward = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-  if (spectator.free) {
+  if (spectator.view === 'free') {
     spectator.position ||= camera.position.clone();
     const move = new THREE.Vector3(), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     if (keys.KeyW) move.add(forward);
@@ -23262,7 +23309,8 @@ function updateSpectatorCamera(dt) {
   sun.position.copy(camera.position).add(SUN_OFFSET); sun.target.position.copy(camera.position);
 }
 function updateCamera(dt) {
-  if (spectator.active) { updateSpectatorCamera(dt); return; }
+  if (spectator.active && spectator.view !== 'plant') { updateSpectatorCamera(dt); return; }
+  if (spectator.active) followPlantAim(dt);
   state.cam.recoilPitch *= Math.exp(-dt * CONFIG.camera.recoilRecovery);
   if (player.cactus?.drone) { updateGarlicCamera(dt); hideBlockingAllies(null, dt); return; }
   const c = CONFIG.camera, cs = state.cam, h = player, motion = SETTINGS.motion;
@@ -23771,10 +23819,7 @@ function takeControl(h) {
   if (!previous.dead) resetBrain(previous);
   if (!h.dead) resetBrain(h);
   state.yaw = h.yaw; state.pitch = THREE.MathUtils.clamp(-h.aimElev, -0.6, 1.2);
-  state.cam = { pivot: null, recoilPitch: 0, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: h.vel.y, wasGround: h.onGround };
-  state.shake = state.hurt = state.hitmarker = state.fovKick = 0;
-  delete hudBars.playerBox;
-  hud('playerBox').classList.remove('hit');
+  resetViewFeedback(h);
   updateCamera(0);
 }
 function switchSquadMember(direction = 1) {
