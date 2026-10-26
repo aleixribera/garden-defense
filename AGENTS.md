@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.30.0)
+## Current state (v1.30.1)
 - Single file `index.html`, three.js 0.160 vendored in `vendor/three` (import map, dynamic `import()`; serve over http,
   not file://), no build step, procedural geometry and WebAudio only (no external models, textures or samples).
 - **Failure handling:** a plain boot-guard script turns any error before `gardenBoot.ready` into a menu message + Reload;
@@ -20,7 +20,8 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - **No-stutter rules:** never add/remove lights mid-match (borrow `takeFxLight()`); shader programs are pinned and new
   variants compile in parallel behind `updateShaderGuard`; agent rigs are baked (`bakeRig`) templates cloned by
   `cloneRig` (~1 ms); plain zombie bodies and particles draw instanced (`ZOMBIE_BATCH`, `PARTICLE_BATCH`); share
-  geometry for per-shot/per-effect meshes instead of building it each spawn.
+  geometry for per-shot/per-effect meshes instead of building it each spawn; plant shots use `takeShotMesh` /
+  `freeShotMesh`, particles are pooled, prop point queries go through `obstaclesNear`. Audit: docs/render-audit.md.
 - Squad: picker = your plant (random visible selection, editable; automated boots default Corn) + 0–3 AI companions (default Random, no repeats; pool = `CONFIG.PLANTS`). `makeHero`
   gives each hero its own stats/weapon/abilities/brain; every hero is driven by `h.input` (human: `readPlayerInput`,
   AI: `PLANT_TYPES[type].drive`). Tab / [ ] switch control. Down → respawn after `CONFIG.squad.respawnDelay` (20 s),
@@ -43,7 +44,8 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Docs: docs/citron.md, rose.md, chomper.md. Test: `tests/new-plants.cjs`; renders: `npm run renders:plants` (`tools/plant-models.cjs`).
 - Horde models (section "Horde models"): the 8 basic zombies are sculpted merged meshes, GPU-skinned (16 bones,
   per-instance bone texture) and instanced per type; clips are procedural in `HORDE_MODELS[type].pose/attack` plus
-  shared layers (`hordeOverlays`: look, wind-up/strike, flinch, stun, spawn); deaths become `hordeCorpses`.
+  shared layers (`hordeOverlays`: look, wind-up/strike, flinch, stun, spawn); deaths become `hordeCorpses`. Far
+  zombies draw a coarse copy of the sculpt in `kit.far` (`CONFIG.render.hordeLod`, segment counts × `hgDetail.k`).
   Renders: `tests/horde-models.cjs` → `docs/horde-*.png`.
 - Zombies: `CONFIG.ZOMBIE_TYPES` (behavior key → `BEHAVIORS`), shared brain `CONFIG.AI`. Tactical agents (Imp, Foot
   Soldier, All-Star, Captain Deadbeard, Super Brainz, Engineer, Scientist) use `thinkAgent` + own kits, tuning

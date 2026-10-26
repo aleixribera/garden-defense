@@ -476,7 +476,7 @@ addEventListener('unhandledrejection', e => gardenBootFailed(e.reason?.message |
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.30.0';
+const VERSION = 'v1.30.1';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -1279,6 +1279,7 @@ const CONFIG = {
     path: {
       budget: 7000,              // A* node expansions per frame, shared by all zombies…
       budgetMs: 1.2,             // …and never more than this many ms per frame
+      chunk: 150,                // nodes expanded between deadline checks (small = the ms cap holds tighter)
       maxNodes: 60000,           // a single search gives up past this (falls back to the flow field)
       heuristic: 1.6,            // weighted A*: >1 = faster, slightly less optimal routes (noise keeps them varied)
       noiseScale: 30,            // m: feature size of the personal route-preference noise
@@ -1482,6 +1483,9 @@ const CONFIG = {
     zombieBatch: 400,          // instanced bodies per zombie type (overflow: capsules draw individually, horde skips)
     hordeRows: 64,             // initial rows of each horde type's bone texture (doubles when the horde outgrows it)
     corpseTime: 2.4,           // s a dead horde zombie lies on the ground before sinking away
+    // Horde level of detail: zombies farther than `distance` m (at the default FOV; zooming in pushes it out) draw a
+    // second, coarser sculpt (segment counts × detail) in its own batch. hysteresis (m) stops flicker at the line.
+    hordeLod: { distance: 30, hysteresis: 3, detail: 0.4 },
   },
   plantShotLife: 6,       // s; plant bullets fly until they hit something or leave the map (this is only a safety net)
   // World art (section "World art"): purely visual dressing over the grey-box collision. Colours are sRGB hex.
@@ -6174,7 +6178,8 @@ for (const [name, a] of Object.entries(zombieAssets)) {
 }
 function updateZombieBatches(dt = 0) {
   for (const b of Object.values(ZOMBIE_BATCH)) b.mesh.count = 0;
-  for (const k of Object.values(HORDE)) k.n = 0;
+  for (const k of Object.values(HORDE)) { k.n = 0; if (k.far) k.far.n = 0; }
+  hordeLodFrame();
   for (const z of zombies) {
     if (!z.batched || !z.mesh.parent || !z.mesh.visible) continue;
     if (z.horde) { hordeDraw(z, dt); continue; }   // sculpted, skinned horde body (section "Horde models")
@@ -6207,15 +6212,18 @@ const HORDE_MODELS = {};   // type → { build(M), gait, windup, pose(z, ha, w),
 const HORDE = {};          // type → built kit: instanced mesh, bone texture, pivots (hordeKit)
 let hordeCorpses = [];     // dead horde zombies playing their death clip inside their type's batch
 
-// Geometry shorthands for the sculpts (all consumed by the modeler)
+// Geometry shorthands for the sculpts (all consumed by the modeler). Segment counts scale with hgDetail.k, so the
+// same build() also makes the coarse far-LOD sculpt (hordeKit).
+const hgDetail = { k: 1 };
+const hgSeg = (n, min) => Math.max(min, Math.round(n * hgDetail.k));
 const HG = {
-  sph: (r, w = 14, h = 10) => new THREE.SphereGeometry(r, w, h),
-  cap: (r, l, rs = 10) => new THREE.CapsuleGeometry(r, l, 3, rs),
-  cyl: (rt, rb, h, rs = 12) => new THREE.CylinderGeometry(rt, rb, h, rs),
-  box: (w, h, d, r = 0.02) => new RoundedBoxGeometry(w, h, d, 2, Math.max(1e-3, Math.min(r, w / 2, h / 2, d / 2) - 1e-3)),
-  cone: (r, h, rs = 10) => new THREE.ConeGeometry(r, h, rs),
-  tor: (R, r, rs = 6, ts = 16, arc = Math.PI * 2) => new THREE.TorusGeometry(R, r, rs, ts, arc),
-  cut: (r, w, h, t0, tl) => new THREE.SphereGeometry(r, w, h, 0, Math.PI * 2, t0, tl),   // sphere band (eyelids, caps)
+  sph: (r, w = 14, h = 10) => new THREE.SphereGeometry(r, hgSeg(w, 6), hgSeg(h, 4)),
+  cap: (r, l, rs = 10) => new THREE.CapsuleGeometry(r, l, hgSeg(3, 1), hgSeg(rs, 5)),
+  cyl: (rt, rb, h, rs = 12) => new THREE.CylinderGeometry(rt, rb, h, hgSeg(rs, 5)),
+  box: (w, h, d, r = 0.02) => new RoundedBoxGeometry(w, h, d, hgSeg(2, 1), Math.max(1e-3, Math.min(r, w / 2, h / 2, d / 2) - 1e-3)),
+  cone: (r, h, rs = 10) => new THREE.ConeGeometry(r, h, hgSeg(rs, 5)),
+  tor: (R, r, rs = 6, ts = 16, arc = Math.PI * 2) => new THREE.TorusGeometry(R, r, hgSeg(rs, 3), hgSeg(ts, 6), arc),
+  cut: (r, w, h, t0, tl) => new THREE.SphereGeometry(r, hgSeg(w, 6), hgSeg(h, 2), 0, Math.PI * 2, t0, tl),   // sphere band (eyelids, caps)
 };
 
 // Collects coloured parts per bone and merges them into one skinned geometry. Authored with the feet at y = 0;
@@ -6322,13 +6330,9 @@ function hordeDepthMaterial(bones) {
   return mat;
 }
 
-// Build (once) a type's merged model, its instanced mesh and its bone texture
-function hordeKit(type) {
-  if (HORDE[type]) return HORDE[type];
-  const model = HORDE_MODELS[type], def = ZT[type], halfH = rigHalf(def), cap = CONFIG.render.zombieBatch;
-  const M = hordeModeler();
-  model.build(M, def);
-  const { geo, pivots, parent } = M.build(halfH);
+// One instanced draw of a sculpt: mesh, per-instance emissive / glow and its own bone texture (rows = instances)
+function hordeBatch(geo) {
+  const cap = CONFIG.render.zombieBatch;
   const emissive = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage);
   const glow = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('instEmissive', emissive); geo.setAttribute('instGlow', glow);
@@ -6339,24 +6343,53 @@ function hordeKit(type) {
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3).setUsage(THREE.DynamicDrawUsage);
   mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0;
   scene.add(mesh);
+  const B = { mesh, emissive, glow, bones, data: null, tex: null, rows: 0, n: 0 };
+  hordeGrow(B, CONFIG.render.hordeRows);
+  return B;
+}
+// Build (once) a type's merged model (+ its coarse far sculpt), their instanced batches and bone textures.
+// The kit itself is the near batch (kit.mesh, kit.data, kit.n…); kit.far is the far one.
+function hordeKit(type) {
+  if (HORDE[type]) return HORDE[type];
+  const model = HORDE_MODELS[type], def = ZT[type], halfH = rigHalf(def), L = CONFIG.render.hordeLod;
+  const M = hordeModeler();
+  model.build(M, def);
+  const { geo, pivots, parent } = M.build(halfH);
   // Leg lengths (feet-planting crouches) straight from the pivots
   const py = b => pivots[b * 3 + 1];
-  const kit = HORDE[type] = { type, model, mesh, emissive, glow, bones, pivots, parent, halfH, marks: M.marks,
+  const kit = HORDE[type] = Object.assign(hordeBatch(geo), { type, model, pivots, parent, halfH, marks: M.marks,
     hipY: py(HB.hips) + halfH, l1: py(HB.thighL) - py(HB.shinL), l2: py(HB.shinL) + halfH - (model.ankle ?? 0.1),
-    world: new Float32Array(HB_N * 12), data: null, tex: null, rows: 0, n: 0 };
-  hordeGrow(kit, CONFIG.render.hordeRows);
+    world: new Float32Array(HB_N * 12), far: null });
+  if (L?.detail < 1) {   // same sculpt, same bones, fewer segments
+    const F = hordeModeler();
+    hgDetail.k = L.detail;
+    try { model.build(F, def); } finally { hgDetail.k = 1; }
+    kit.far = hordeBatch(F.build(halfH).geo);
+  }
   return kit;
 }
-// The bone texture grows (doubling) with the horde, so small waves upload a small texture every frame
-function hordeGrow(kit, rows) {
+// Near or far batch for a zombie / corpse at pos; o.far keeps its last choice (hysteresis)
+const hordeLod = { near2: 0, far2: 0 };
+function hordeLodFrame() {   // thresholds for this frame: a zoomed-in camera (scopes) keeps detail farther out
+  const L = CONFIG.render.hordeLod, k = Math.tan(CONFIG.camera.fov * Math.PI / 360) / Math.tan(camera.fov * Math.PI / 360);
+  hordeLod.near2 = (Math.max(0, L.distance - L.hysteresis) * k) ** 2; hordeLod.far2 = ((L.distance + L.hysteresis) * k) ** 2;
+}
+function hordePick(kit, x, y, z, o) {
+  if (!kit.far) return kit;
+  const c = camera.position, d2 = (x - c.x) ** 2 + (y - c.y) ** 2 + (z - c.z) ** 2;
+  o.far = d2 > (o.far ? hordeLod.near2 : hordeLod.far2);
+  return o.far ? kit.far : kit;
+}
+// A batch's bone texture grows (doubling) with the horde, so small waves upload a small texture every frame
+function hordeGrow(B, rows) {
   rows = Math.min(rows, CONFIG.render.zombieBatch);
   const data = new Float32Array(rows * HB_N * 12);
-  if (kit.data) data.set(kit.data.subarray(0, Math.min(kit.data.length, data.length)));
+  if (B.data) data.set(B.data.subarray(0, Math.min(B.data.length, data.length)));
   const tex = new THREE.DataTexture(data, HB_N * 3, rows, THREE.RGBAFormat, THREE.FloatType);
   tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
-  kit.tex?.dispose();
-  Object.assign(kit, { tex, data, rows });
-  kit.bones.value = tex;
+  B.tex?.dispose();
+  Object.assign(B, { tex, data, rows });
+  B.bones.value = tex;
 }
 
 // ---- Pose buffer: per bone rx ry rz scale tx ty tz (pad). Clips add or blend into it, hordeSolve skins it ----
@@ -6368,8 +6401,8 @@ const hs = (b, s) => { HP[b * 8 + 3] *= s; };
 const ht = (b, x, y, z) => { const o = b * 8; HP[o + 4] += x; HP[o + 5] += y; HP[o + 6] += z; };
 const hget = (b, axis = 0) => HP[b * 8 + axis];
 
-// Pose → model-space bone matrices (R = Ry·Rx·Rz about each pivot, chained to the parent) → texture row
-function hordeSolve(kit, row) {
+// Pose → model-space bone matrices (R = Ry·Rx·Rz about each pivot, chained to the parent) → texture row of batch B
+function hordeSolve(kit, row, B = kit) {
   const W = kit.world, piv = kit.pivots, par = kit.parent;
   for (let b = 0; b < HB_N; b++) {
     const o = b * 8, s = HP[o + 3];
@@ -6390,7 +6423,7 @@ function hordeSolve(kit, row) {
       W[w + r * 4 + 2] = m0 * a02 + m1 * a12 + m2 * a22; W[w + r * 4 + 3] = m0 * t0 + m1 * t1 + m2 * t2 + m3;
     }
   }
-  kit.data.set(W, row * HB_N * 12);
+  B.data.set(W, row * HB_N * 12);
 }
 
 // ---- Shared clip layers ----
@@ -6534,20 +6567,20 @@ function hordeOverlays(z, ha, kit) {
   }
 }
 
-// Draw one live zombie into its type's batch
+// Draw one live zombie into its type's near or far batch
 function hordeDraw(z, dt) {
-  const kit = z.horde, i = kit.n;
+  const kit = z.horde, p = z.mesh.position, B = hordePick(kit, p.x, p.y, p.z, z.hordeLod ||= { far: false }), i = B.n;
   if (i >= CONFIG.render.zombieBatch) return false;
-  if (i >= kit.rows) hordeGrow(kit, kit.rows * 2);
+  if (i >= B.rows) hordeGrow(B, B.rows * 2);
   hordeAnimate(z, dt);
-  hordeSolve(kit, i);
+  hordeSolve(kit, i, B);
   z.mesh.updateMatrix();
-  kit.mesh.setMatrixAt(i, z.mesh.matrix);
+  B.mesh.setMatrixAt(i, z.mesh.matrix);
   const f = z.flash > 0 ? 0.5 : 0;
-  kit.emissive.setXYZ(i, f, f * 0.95, f * 0.85);
-  kit.glow.setX(i, Math.min(1.5, (z.glow || 0) + (kit.model.glow?.(z, z.ha) || 0)));
-  const c = z.ha.tint; kit.mesh.instanceColor.setXYZ(i, c, c * (0.98 + z.ha.seed * 0.04), c);
-  kit.n++;
+  B.emissive.setXYZ(i, f, f * 0.95, f * 0.85);
+  B.glow.setX(i, Math.min(1.5, (z.glow || 0) + (kit.model.glow?.(z, z.ha) || 0)));
+  const c = z.ha.tint; B.mesh.instanceColor.setXYZ(i, c, c * (0.98 + z.ha.seed * 0.04), c);
+  B.n++;
   return true;
 }
 
@@ -6557,7 +6590,7 @@ function hordeKill(z) {
   if (!z.ha) return;
   const p = z.mesh.position;
   hordeCorpses.push({ kit: z.horde, x: p.x, y: p.y, z: p.z, yaw: z.mesh.rotation.y, t: 0, back: z.ha.seed < 0.5,
-    snap: z.ha.pose.slice(), ha: z.ha, landed: false, scale: z.mesh.scale.x });
+    snap: z.ha.pose.slice(), ha: z.ha, landed: false, scale: z.mesh.scale.x, lod: { far: !!z.hordeLod?.far } });
 }
 function hordeDeathPose(c) {
   const kit = c.kit, t = c.t, model = kit.model;
@@ -6590,11 +6623,12 @@ function updateHordeCorpses(dt) {
     c.t += dt;
     const sinkT = CONFIG.render.corpseTime;
     if (c.t > sinkT + 1.2) { hordeCorpses.splice(i, 1); continue; }
-    if (kit.n >= CONFIG.render.zombieBatch) continue;
-    if (kit.n >= kit.rows) hordeGrow(kit, kit.rows * 2);
+    const B = hordePick(kit, c.x, c.y, c.z, c.lod);
+    if (B.n >= CONFIG.render.zombieBatch) continue;
+    if (B.n >= B.rows) hordeGrow(B, B.rows * 2);
     const tilt = hordeDeathPose(c), b = smooth01(c.t / 0.14);
     for (let j = 0; j < HP.length; j++) HP[j] = c.snap[j] + (HP[j] - c.snap[j]) * b;
-    hordeSolve(kit, kit.n);
+    hordeSolve(kit, B.n, B);
     // Fall about a pivot on the ground (behind the heels / in front of the knees), then sink
     const landT = c.back ? 0.62 : 0.78;
     if (!c.landed && c.t > landT) {
@@ -6609,19 +6643,19 @@ function updateHordeCorpses(dt) {
     hordeTmpM.makeRotationY(c.yaw).setPosition(c.x, c.y - sink, c.z);
     hordeTmpM.multiply(hordeTmpM2.makeTranslation(0, -kit.halfH * c.scale, pz)).multiply(hordeTmpM2.makeRotationX(tilt))
       .multiply(hordeTmpM2.makeTranslation(0, kit.halfH * c.scale, -pz)).multiply(hordeTmpM2.makeScale(c.scale, c.scale, c.scale));
-    kit.mesh.setMatrixAt(kit.n, hordeTmpM);
-    kit.emissive.setXYZ(kit.n, 0, 0, 0); kit.glow.setX(kit.n, 0);
+    B.mesh.setMatrixAt(B.n, hordeTmpM);
+    B.emissive.setXYZ(B.n, 0, 0, 0); B.glow.setX(B.n, 0);
     const tn = c.ha.tint * (1 - smooth01((c.t - 0.3) / 1.5) * 0.25);   // the colour drains a little
-    kit.mesh.instanceColor.setXYZ(kit.n, tn, tn, tn);
-    kit.n++;
+    B.mesh.instanceColor.setXYZ(B.n, tn, tn, tn);
+    B.n++;
   }
 }
 function flushHordeBatches() {
-  for (const kit of Object.values(HORDE)) {
-    kit.mesh.count = kit.n;
-    if (!kit.n) continue;
-    kit.mesh.instanceMatrix.needsUpdate = true; kit.mesh.instanceColor.needsUpdate = true;
-    kit.emissive.needsUpdate = true; kit.glow.needsUpdate = true; kit.tex.needsUpdate = true;
+  for (const kit of Object.values(HORDE)) for (const B of kit.far ? [kit, kit.far] : [kit]) {
+    B.mesh.count = B.n;
+    if (!B.n) continue;
+    B.mesh.instanceMatrix.needsUpdate = true; B.mesh.instanceColor.needsUpdate = true;
+    B.emissive.needsUpdate = true; B.glow.needsUpdate = true; B.tex.needsUpdate = true;
   }
 }
 
@@ -7338,6 +7372,30 @@ const OBSTACLES = MAP.obstacles.map(o => {
   const base = heightAt(o.x, o.z);
   return { ...o, base, top: base + o.h, blocksLOS: o.kind === 'hedge' || o.kind === 'building' || o.h >= 2 };
 });
+// OBSTACLES never move: bucket them on a coarse grid so point queries (shots, camera, ground, sight lines) only
+// test the props nearby. A query with a pad wider than the bucket margin falls back to the full list; the buckets
+// rebuild if the list itself changes (tests add temporary cover).
+const OBST_GRID = { cell: 8, margin: 3, cells: new Map(), count: -1 };
+function bucketObstacles() {
+  const G = OBST_GRID;
+  G.cells.clear(); G.count = OBSTACLES.length;
+  for (const o of OBSTACLES) {
+    const hx = (o.r ?? o.w / 2) + G.margin, hz = (o.r ?? o.d / 2) + G.margin;
+    for (let i = Math.floor((o.x - hx) / G.cell); i <= Math.floor((o.x + hx) / G.cell); i++)
+      for (let j = Math.floor((o.z - hz) / G.cell); j <= Math.floor((o.z + hz) / G.cell); j++) {
+        const k = i * 4096 + j;
+        if (!G.cells.has(k)) G.cells.set(k, []);
+        G.cells.get(k).push(o);
+      }
+  }
+}
+const NO_OBSTACLES = [];
+function obstaclesNear(x, z, pad = 0) {
+  const G = OBST_GRID;
+  if (pad > G.margin) return OBSTACLES;
+  if (G.count !== OBSTACLES.length) bucketObstacles();
+  return G.cells.get(Math.floor(x / G.cell) * 4096 + Math.floor(z / G.cell)) || NO_OBSTACLES;
+}
 // Is (x,z) inside the footprint of o, grown by `pad`?
 function inFootprint(o, x, z, pad = 0) {
   if (o.r !== undefined) return Math.hypot(x - o.x, z - o.z) < o.r + pad;
@@ -7362,7 +7420,7 @@ function pushOut(o, x, z, rad) {
 // Highest surface under (x,z) that someone with feet at feetY can stand on (terrain or a prop top)
 function groundAt(x, z, feetY = Infinity, rad = 0) {
   let h = heightAt(x, z);
-  for (const o of OBSTACLES) if (o.top > h && o.top <= feetY + MAP.stepUp && inFootprint(o, x, z, rad * 0.5)) h = o.top;
+  for (const o of obstaclesNear(x, z, rad * 0.5)) if (o.top > h && o.top <= feetY + MAP.stepUp && inFootprint(o, x, z, rad * 0.5)) h = o.top;
   return h;
 }
 // Point is inside terrain or a solid prop (projectiles, camera). The camera passes `shields = false`: a zombie's
@@ -7371,7 +7429,7 @@ function solidAt(p, pad = 0, shields = true) {
   if (cactusWallAt(p, pad)) return true;
   if (shields && allStarShieldAt(p, pad)) return true;   // All-Star Dummy Shield stops plant shots
   if (p.y < heightAt(p.x, p.z) + pad) return true;
-  for (const o of OBSTACLES) if (p.y < o.top + pad && p.y > o.base - 1 && inFootprint(o, p.x, p.z, pad)) return true;
+  for (const o of obstaclesNear(p.x, p.z, pad)) if (p.y < o.top + pad && p.y > o.base - 1 && inFootprint(o, p.x, p.z, pad)) return true;
   return hitsStatue(p, pad);
 }
 // Line of sight between two points: terrain and tall props (hedges, buildings) block it
@@ -7382,7 +7440,7 @@ function losClear(a, b) {
   for (let s = 1; s < n; s++) {
     const t = s / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t;
     if (y < heightAt(x, z)) return false;
-    for (const o of OBSTACLES) if (o.blocksLOS && y < o.top && inFootprint(o, x, z)) return false;
+    for (const o of obstaclesNear(x, z)) if (o.blocksLOS && y < o.top && inFootprint(o, x, z)) return false;
   }
   return true;
 }
@@ -8315,7 +8373,7 @@ const ZROUTE = (() => {
     while (budget > 0 && performance.now() < deadline) {
       if (!job && !begin()) break;
       if (!job) continue;   // that request failed instantly
-      const used = step(Math.min(budget, 400));
+      const used = step(Math.min(budget, P.chunk));
       budget -= Math.max(1, used); stats.frameNodes += used; stats.expanded += used;
     }
     stats.maxFrameMs = Math.max(stats.maxFrameMs * 0.995, performance.now() - t0);
@@ -9416,12 +9474,18 @@ for (const kind of Object.keys(PARTICLE_GEO)) for (const additive of [false, tru
   scene.add(mesh);
   PARTICLE_BATCH[kind + (additive ? '+' : '')] = { mesh, alpha };
 }
+// Spent particles go back to particlePool and are reused, so bursts don't allocate. At the cap a live particle is
+// recycled (round robin) instead of growing the list.
+const particlePool = [];
+let particleRecycle = 0;
 function spawnParticle(kind, color, pos, vel, { life = 0.6, gravity = 18, grow = 0, size = 1, additive = false, drag = 0 } = {}) {
-  particles.push({ batch: PARTICLE_BATCH[kind + (additive ? '+' : '')], color: new THREE.Color(color), pos: pos.clone(),
-    rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), scale: size, alpha: 1,
-    vel, life, maxLife: life, gravity, grow, size, drag,
-    spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14) });
-  while (particles.length > particleCap) particles.shift();
+  let p;
+  if (particles.length >= particleCap) p = particles[particleRecycle++ % particles.length];
+  else particles.push(p = particlePool.pop() || { color: new THREE.Color(), pos: new THREE.Vector3(), rot: new THREE.Euler(), spin: new THREE.Vector3() });
+  p.batch = PARTICLE_BATCH[kind + (additive ? '+' : '')]; p.color.set(color); p.pos.copy(pos);
+  p.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+  p.spin.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14);
+  p.scale = size; p.alpha = 1; p.vel = vel; p.life = life; p.maxLife = life; p.gravity = gravity; p.grow = grow; p.size = size; p.drag = drag;
 }
 const rand3 = (s, up = 0) => new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s + up, (Math.random() - 0.5) * s);
 
@@ -9429,7 +9493,11 @@ function updateParticles(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i], pos = p.pos;
     p.life -= dt;
-    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    if (p.life <= 0) {   // swap-remove (the last one was already updated this frame)
+      const last = particles.pop();
+      if (last !== p) particles[i] = last;
+      particlePool.push(p); continue;
+    }
     p.vel.y -= p.gravity * dt;
     if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
     pos.addScaledVector(p.vel, dt);
@@ -9539,7 +9607,10 @@ function getGroundAimPoint(range) {
   const x = pl.x + off.x, z = pl.z + off.z;
   return new THREE.Vector3(x, groundAt(x, z), z);
 }
-const yawForward = (yaw = state.yaw) => new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+const yawForward = (yaw = state.yaw, out = new THREE.Vector3()) => out.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+// Scratch yaw axes for per-frame callers (input, animators, camera): yawForward(yaw, fwd) + right.set(-fwd.z, 0, fwd.x)
+const inFwd = new THREE.Vector3(), inRight = new THREE.Vector3(), animFwd = new THREE.Vector3(), animRight = new THREE.Vector3();
+const camFwd = new THREE.Vector3(), camRight = new THREE.Vector3();
 
 // =====================================================================
 // Heroes: movement, weapon, abilities — all driven by h.input
@@ -9553,8 +9624,8 @@ const pressed = { jump: false, reload: false, shuck: false, hop: false, butter: 
 function readPlayerInput(h) {
   if (spectator.active) return;
   const inp = h.input;
-  const fwd = yawForward();
-  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const fwd = yawForward(state.yaw, inFwd);
+  const right = inRight.set(-fwd.z, 0, fwd.x);
   inp.move.set(0, 0, 0);
   if (keys.KeyW) inp.move.add(fwd);
   if (keys.KeyS) inp.move.sub(fwd);
@@ -9745,6 +9816,23 @@ function startReload(h) {
   SFX.play('reload', h.mesh.position, h.isAI, W.reloadTime);
 }
 
+// Plant shots borrow pooled meshes (one pool per geometry + material) and hand them back when they end
+const SHOT_POOL = new Map();
+function takeShotMesh(geo, mat) {
+  const key = geo.uuid + mat.uuid, mesh = SHOT_POOL.get(key)?.pop() || new THREE.Mesh(geo, mat);
+  mesh.userData.pool = key; mesh.position.set(0, 0, 0); mesh.rotation.set(0, 0, 0); mesh.scale.setScalar(1);
+  scene.add(mesh);
+  return mesh;
+}
+function freeShotMesh(mesh) {
+  scene.remove(mesh);
+  const key = mesh.userData.pool;
+  if (!key) return;
+  mesh.userData.pool = null;   // freed twice = pooled once
+  if (!SHOT_POOL.has(key)) SHOT_POOL.set(key, []);
+  SHOT_POOL.get(key).push(mesh);
+}
+
 // Pick the next arm (alternating) and return its muzzle's world position
 function nextMuzzle(h) {
   const arm = h.corn.arms[h.nextArm];
@@ -9778,11 +9866,10 @@ function fireKernel(h) {
   const W = h.weapon;
   const { arm, start } = nextMuzzle(h);
   const dir = aimedDir(h, start, currentSpread(h));
-  const mesh = new THREE.Mesh(kernelShotGeo, kernelShotMat);
+  const mesh = takeShotMesh(kernelShotGeo, kernelShotMat);
   mesh.scale.set(0.075, 0.075, 0.32);
   mesh.position.copy(start);
   mesh.quaternion.setFromUnitVectors(FWD_Z, dir);
-  scene.add(mesh);
   projectiles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: h, weapon: W });
   h.ammo--;
   h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
@@ -10523,7 +10610,7 @@ function animateSunflower(h, dt) {
   A.phase += dt * M.strideRate * stride;
   C.root.rotation.x += ((h.downed ? 1.45 : 0) - C.root.rotation.x) * ease;
   if (h.downed) { C.arms[0].flash.visible = false; return; }
-  const forward = yawForward(h.yaw), right = new THREE.Vector3(-forward.z, 0, forward.x);
+  const forward = yawForward(h.yaw, animFwd), right = animRight.set(-forward.z, 0, forward.x);
   A.leanF += (h.vel.dot(forward) / h.stats.speed - A.leanF) * ease;
   A.leanS += (h.vel.dot(right) / h.stats.speed - A.leanS) * ease;
   A.air += ((h.onGround ? 0 : 1) - A.air) * ease; A.squash *= Math.exp(-dt * 12);
@@ -10575,7 +10662,7 @@ function animateCorn(h, dt) {
   // Downed: tip over and lie flat on the ground
   C.root.rotation.x += ((h.downed ? 1.45 : 0) - C.root.rotation.x) * Math.min(1, dt * 8);
   if (h.downed) { for (const a of C.arms) a.flash.visible = false; return; }
-  const fwd = yawForward(h.yaw), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const fwd = yawForward(h.yaw, animFwd), right = animRight.set(-fwd.z, 0, fwd.x);
   const hv = Math.hypot(v.x, v.z);
   const s = h.onGround ? Math.min(1, hv / P.speed) : 0;      // stride strength
   A.phase += dt * 12 * s;
@@ -10711,8 +10798,8 @@ function firePea(h, gatling = false) {
   const weapon = gatling ? { ...W, damage: G.damage, kernelSpeed: G.speed, kernelLife: G.life,
     kernelRadius: W.kernelRadius * 0.55, splashRadius: 0 } : W;
   const { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, gatling ? G.spread : currentSpread(h));
-  const mesh = new THREE.Mesh(peaShotGeo, peaShotMat); mesh.position.copy(start);
-  mesh.scale.setScalar(gatling ? 0.085 : W.kernelRadius); scene.add(mesh);
+  const mesh = takeShotMesh(peaShotGeo, peaShotMat); mesh.position.copy(start);
+  mesh.scale.setScalar(gatling ? 0.085 : W.kernelRadius);
   projectiles.push({ mesh, vel: dir.multiplyScalar(weapon.kernelSpeed), life: CONFIG.plantShotLife, owner: h, weapon,
     pea: true, trailT: 0, gatling });
   if (gatling) h.pea.gatlingAmmo--; else h.ammo--;
@@ -10832,7 +10919,7 @@ function animatePeashooter(h, dt) {
   if (h.downed) { C.arms[0].flash.visible = false; return; }
   const hv = Math.hypot(h.vel.x, h.vel.z), s = h.onGround ? Math.min(1.5, hv / h.stats.speed) : 0;
   A.phase += dt * M.strideRate * s;
-  const fwd = yawForward(h.yaw), right = new THREE.Vector3(-fwd.z, 0, fwd.x), damp = 1 - Math.exp(-dt * 10);
+  const fwd = yawForward(h.yaw, animFwd), right = animRight.set(-fwd.z, 0, fwd.x), damp = 1 - Math.exp(-dt * 10);
   A.leanF += (h.vel.dot(fwd) / h.stats.speed - A.leanF) * damp;
   A.leanS += (h.vel.dot(right) / h.stats.speed - A.leanS) * damp;
   A.air += ((h.onGround ? 0 : 1) - A.air) * damp; A.squash *= Math.exp(-dt * 12);
@@ -11398,14 +11485,15 @@ function fireMagicThistle(h) {
   const r = h.rose, W = h.weapon;
   if (r.enigma > 0 || r.pending) return;
   const { arm, start } = nextMuzzle(h), dir = aimedDir(h, start, currentSpread(h));
-  const mesh = THISTLE_TEMPLATE.clone(); mesh.position.copy(start); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); scene.add(mesh);
+  const mesh = thistlePool.pop() || THISTLE_TEMPLATE.clone();   // spent thistles are reused (updateThistles)
+  mesh.position.copy(start); mesh.quaternion.setFromUnitVectors(FWD_Z, dir); scene.add(mesh);
   thistles.push({ mesh, vel: dir.multiplyScalar(W.kernelSpeed), life: CONFIG.plantShotLife, owner: h, W, target: roseLockTarget(h, 0), trailT: 0 });
   h.ammo--; h.bloom = Math.min(W.bloomMax, h.bloom + W.bloomPerShot);
   muzzleFx(arm, start, 0.6);
   if (ownsView(h)) { addCameraRecoil(W.recoilKick); addShake(0.025); }
   SFX.play('roseShot', start, h.isAI);
 }
-const thistleSteer = new THREE.Vector3();
+const thistleSteer = new THREE.Vector3(), thistlePool = [];
 function updateThistles(dt) {
   for (let i = thistles.length - 1; i >= 0; i--) {
     const t = thistles[i], p = t.mesh.position, W = t.W;
@@ -11435,7 +11523,7 @@ function updateThistles(dt) {
       SFX.play('roseHit', p, mult < 1);
     }
     for (let k = 0; k < 6; k++) spawnParticle(k % 2 ? 'leaf' : 'spark', k % 2 ? 0xd62a6a : RO.fx.thistleColor, p, rand3(5, 2), { life: 0.45, size: 0.6, additive: k % 2 === 0, gravity: 5 });
-    scene.remove(t.mesh); thistles.splice(i, 1);
+    scene.remove(t.mesh); thistlePool.push(t.mesh); thistles.splice(i, 1);
   }
 }
 // ---- Goatify ----
@@ -15506,7 +15594,7 @@ function allStarShoot(z, h, aimAt, seen) {
 const asQ = new THREE.Quaternion();
 function asSolid(p) {   // world collision for zombie projectiles (shields are the zombies' own, so skipped)
   if (p.y < heightAt(p.x, p.z)) return 'ground';
-  for (const o of OBSTACLES) if (p.y < o.top && p.y > o.base - 1 && inFootprint(o, p.x, p.z)) return 'prop';
+  for (const o of obstaclesNear(p.x, p.z)) if (p.y < o.top && p.y > o.base - 1 && inFootprint(o, p.x, p.z)) return 'prop';
   return hitsStatue(p, 0) ? 'statue' : null;
 }
 function asHitHero(p, r) {
@@ -22355,9 +22443,8 @@ const hitsStatue = (p, r) => Math.abs(p.x) < S / 2 + r && Math.abs(p.z) < S / 2 
 function damageMultiplierFor(z, shotVel) {
   const def = z.def;
   if (def.frontDamageMult === undefined && !def.plateBreaks) return 1;
-  const facing = new THREE.Vector3(Math.sin(z.mesh.rotation.y), 0, Math.cos(z.mesh.rotation.y));
-  const incoming = shotVel.clone().setY(0).normalize();
-  if (-incoming.dot(facing) <= def.frontArc) return 1;
+  const len = Math.hypot(shotVel.x, shotVel.z), yaw = z.mesh.rotation.y;   // flat incoming direction · facing
+  if (!len || -(shotVel.x * Math.sin(yaw) + shotVel.z * Math.cos(yaw)) / len <= def.frontArc) return 1;
   if (!def.plateBreaks) return def.frontDamageMult;
   const broken = z.ai.plates || 0;
   return broken >= def.plateBreaks.length ? def.weakPointMult : def.frontMults[broken];
@@ -22434,7 +22521,7 @@ function updateProjectiles(dt) {
         break;
       }
     }
-    if (dead) { scene.remove(p.mesh); projectiles.splice(i, 1); }
+    if (dead) { freeShotMesh(p.mesh); projectiles.splice(i, 1); }
   }
 }
 
@@ -23490,7 +23577,7 @@ function updateCamera(dt) {
   const fov = THREE.MathUtils.lerp(c.fov + (c.speedFov * speedK + c.sprintFov * sp) * motion, h.plant.camera?.aimFov ?? c.aimFov, z) + state.fovKick * motion;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   const dist = THREE.MathUtils.lerp(c.distance + c.sprintDistance * sp * motion, h.plant.camera?.aimDistance ?? c.aimDistance, z);
-  const fwd = yawForward(), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const fwd = yawForward(state.yaw, camFwd), right = camRight.set(-fwd.z, 0, fwd.x);
 
   // Smoothed pivot: snaps on (re)spawn / teleports, otherwise catches up (softer vertically)
   const want = playerMesh.position.clone().add(new THREE.Vector3(0, c.height, 0));
