@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.29.5)
+## Current state (v1.30.0)
 - Single file `index.html`, three.js 0.160 vendored in `vendor/three` (import map, dynamic `import()`; serve over http,
   not file://), no build step, procedural geometry and WebAudio only (no external models, textures or samples).
 - **Failure handling:** a plain boot-guard script turns any error before `gardenBoot.ready` into a menu message + Reload;
@@ -37,8 +37,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - Citron (tank: heat beam, EMPeach, Citron Ball + Spin Dash, Peel Shield), Rose (homing thistles, Goatify, Time Snare,
   Arcane Enigma) and Chomper (bite / swallow from behind + chew, Goop, Burrow, Spikeweed): `CONFIG.CITRON` / `ROSE` /
   `CHOMPER`, sections "<Name> combat" + the shared "New plant kits" (zombie status `z.pfx` via `plantStatus`: slow, goop,
-  hold, goat; `rayZombie`; `np*` AI helpers). Optional `PLANT_TYPES` hooks: reset, onDown, dispose, speedMult, absorb,
-  stance, hud. `h.cloak` (Burrow, Enigma) makes `targetable()` false; the human's aim / squad switching use `standing()`.
+  hold, goat; `rayZombie`; `np*` AI helpers). Optional `PLANT_TYPES` hooks (all seven plants; shared code
+  never checks `h.type`): reset, onDown, dispose, speedMult/jumpMult, absorb, stance, hud, rooted (`heroRooted`),
+  stanceFire, eye, camera, healer, groundTarget, ownAbilityAI — listed above `PLANT_TYPES`. `h.cloak` (Burrow, Enigma) makes `targetable()` false; the human's aim / squad switching use `standing()`.
   Docs: docs/citron.md, rose.md, chomper.md. Test: `tests/new-plants.cjs`; renders: `npm run renders:plants` (`tools/plant-models.cjs`).
 - Horde models (section "Horde models"): the 8 basic zombies are sculpted merged meshes, GPU-skinned (16 bones,
   per-instance bone texture) and instanced per type; clips are procedural in `HORDE_MODELS[type].pose/attack` plus
@@ -110,4 +111,5 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
 - All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.
 - Keep code readable and commented; match the surrounding style.
 - New zombie = `ZOMBIE_TYPES` entry + its own behavior function. New hero = `CONFIG.PLANTS` + `PLANT_TYPES` hooks.
-- Damage: zombies via `damageZombie()`, areas via `explodeAt()`, heroes via `damageHero()`.
+- Damage: zombies via `damageZombie()`, plant areas via `explodeAt()`, enemy areas via `enemyBlast()`, heroes via
+  `damageHero()`, the garden statue via `damageStatue()` (difficulty, hit flash, garden alert).

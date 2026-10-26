@@ -476,7 +476,7 @@ addEventListener('unhandledrejection', e => gardenBootFailed(e.reason?.message |
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.29.5';
+const VERSION = 'v1.30.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -653,7 +653,7 @@ const CONFIG = {
       droneRange: 24, droneSafe: 14 },
   },
   SUNFLOWER: {
-    camera: { shoulder: 2.1, aimShoulder: 2.15 }, // keep the broad crown clear of the reticle
+    camera: { shoulder: 2.1, aimShoulder: 2.15, clearRadius: 1 }, // keep the broad crown clear of the reticle
     // Model coordinates are in metres: feet at zero, face looking along +Z.
     model: { headY: 2.18, faceWidth: 0.65, faceHeight: 0.54, faceDepth: 0.29,
       petalCount: 22, backPetals: 17, petalLength: 0.62, petalWidth: 0.31,
@@ -710,7 +710,9 @@ const CONFIG = {
       turnSpeed: 5, fireCone: 0.07, aimError: 0.01, reaction: 0.2, stickiness: 6, ventAt: 0.86, ventTime: 0.9,
       ballTravel: 22, unballDist: 9, dashPack: 3, dashRange: [5, 15], dashLane: 2.2, dashPlanTime: 2.5,
       shieldCrowd: 2, shieldRange: 10, shieldHurt: 1.5, shieldDrop: 4,
-      empCluster: 4, empRange: [7, 30], empRadius: 7, empAgentRange: 24, retreatHp: 0.3 },
+      empCluster: 4, empRange: [7, 30], empRadius: 7, empAgentRange: 24, retreatHp: 0.3,
+      // target score = distance + garden distance × garden − boss − hunter (zombie hunting this plant); lowest wins
+      targetBias: { garden: 0.35, boss: 12, hunter: 6 } },
     model: {
       scale: 1.1,                                                  // whole model (sculpted at 1.0, built a size up for the tank role)
       bodyY: 1.38, peelR: 0.76, peelSquash: 0.965, ballR: 0.862,   // orange centre (walking), peel radius, ball radius
@@ -738,7 +740,8 @@ const CONFIG = {
     goatWander: { speed: 2.4, turn: [0.7, 1.8], hop: 0.18 },
     ai: { thinkRate: 10, engageRange: 55, preferRange: [14, 26], kiteRange: 7, guardRadius: 36, patrol: [12, 24], patrolTime: [4, 8],
       turnSpeed: 5.5, fireCone: 0.06, reaction: 0.2, stickiness: 8, goatRange: 34, goatCluster: 3, snareCluster: 4, snareRange: [6, 28],
-      snareBoss: 24, enigmaHp: 0.35, enigmaCrowd: 7 },
+      snareBoss: 24, enigmaHp: 0.35, enigmaCrowd: 7,
+      targetBias: { garden: 0.4, boss: 8, hunter: 10 } },   // see CITRON.ai.targetBias
     model: {
       waistY: 1.12, headY: 2.17, headScale: 1.22, shoulderY: 1.45, shoulderX: 0.135,
       upperArm: 0.3, foreArm: 0.27, wandLength: 0.5,
@@ -764,7 +767,11 @@ const CONFIG = {
     fx: { goopColor: 0x9b3fd0, goopDark: 0x5a1a80, dirt: 0x6b4a2e, moundEvery: 0.06 },
     ai: { thinkRate: 10, huntRange: 40, guardRadius: 38, patrol: [8, 22], patrolTime: [4, 8], turnSpeed: 7, biteRange: 2.9,
       flankDist: 1.7, flankRange: 12, goopRange: [6, 28], burrowTravel: 18, emergeDist: 1.4, escapeHp: 0.3, escapeCrowd: 3,
-      spikeCrowd: 2, spikeEvery: 7, spikeRing: [6, 12], reaction: 0.12, stickiness: 5, retreatHp: 0.35 },
+      spikeCrowd: 2, spikeEvery: 7, spikeRing: [6, 12], reaction: 0.12, stickiness: 5, retreatHp: 0.35,
+      mobRadius: 6,      // zombies this close count as the mob around the Chomper (escape / Spikeweed)
+      safeRadius: 18,    // a hurt, burrowed Chomper with no mob pops up inside this distance of the garden
+      // see CITRON.ai.targetBias; held = goated / snared / stunned prey (easy meals); boss < 0 avoids bosses
+      targetBias: { garden: 0.5, held: 8, boss: -14, hunter: 4 } },
     model: {
       headLength: 1.5, headWidth: 1.22,     // jaw rim outline (m)
       domeUp: 0.72, domeDown: 0.46,         // outer dome height of the upper / lower jaw above / below the lip line
@@ -815,6 +822,7 @@ const CONFIG = {
     spread: 0.02, aimSpread: 0.004,   // radians of random deviation (hip / zoomed)
     bloomPerShot: 0.004, bloomMax: 0.03, bloomRecovery: 0.12,
     kernelSpeed: 240, kernelLife: 0.4, kernelRadius: 0.12,
+    muzzleDrop: 0.55,                 // m below the body centre where Corn's cobs fire from (AI line-of-fire checks)
     recoilKick: 0.0022,        // camera pitch kick per shot
   },
   abilities: {
@@ -883,6 +891,7 @@ const CONFIG = {
     // Crosshair zone (NDC half-size) kept free of the plant: if its silhouette enters, the shoulder slides out
     clearZone: { x: 0.1, y: 0.14, rate: 3, max: 1.4 },
     fov: 70, aimFov: 50, sensitivity: 0.0025,
+    aimSensitivity: 0.65,             // look speed while zoomed (× sensitivity); a plant's camera.sensitivity overrides
     recoilRecovery: 8, recoilMax: 0.08, // temporary pitch kick: return rate (1/s) and maximum rise (rad)
     // Dynamic feel (all small on purpose — readable, never dizzy)
     follow: 16, followY: 9,           // pivot catch-up rate (1/s); vertical is softer so steps/jumps glide
@@ -891,6 +900,7 @@ const CONFIG = {
     bob: 0.035, bobSide: 0.025, sprintBob: 2.2,  // head bob (m) while walking; sprint multiplies it
     strafeRoll: 0.022,                // roll (rad) leaning into sideways motion
     landDip: 0.35,                    // camera dip on hard landings (m at max impact)
+    speedFxBoost: 1.5,                // a plant speed boost above this shows the full speed-line vignette (Hyper)
     hurtRoll: 0.05, hurtFov: -3,      // flinch when hit: roll kick + quick FOV punch-in
     shakeRot: 0.022, shakePos: 0.12,  // trauma shake amplitude (rad / m) at full trauma
     lowHp: 0.35,                      // below this hp fraction the screen edges pulse red
@@ -1020,7 +1030,8 @@ const CONFIG = {
         punt: { range: [7, 26], cluster: 6, windup: 0.36, recover: 0.35, gravity: 18, flightSpeed: 15, flight: [0.6, 1.5],
                 lobMult: 1.35, lead: 0.6, contact: 0.5, damage: 30, radius: 3.6, knock: 9, fuse: 3.2, cooldown: 9 },
         shield: { hp: 250, life: 14, width: 2.1, depth: 0.6, height: 1.45, dist: 1.6, hold: 1.3, deploy: 0.45,
-                  minDist: 6, hurtFrac: 0.8, anchorArc: 1.0, cooldown: 18 },
+                  minDist: 6, hurtFrac: 0.8, anchorArc: 1.0, cooldown: 18,
+                  blastMult: 0.6 },   // plant explosions deal damage × blastMult to a shield in range
         decide: 0.25, chance: 0.65,
       },
     },
@@ -1152,7 +1163,8 @@ const CONFIG = {
     // Heroic Beam (his zoom attack): sustained hand beam that turns slowly (plants can strafe out), heat-limited
     beam: { range: 28, windup: 0.3, tick: 0.1, damage: 2.4, maxTime: 2.2, cooldown: 3.5, turnRate: 1.6, width: 0.32, moveMult: 0.4 },
     // Super Ultra Ball: hands-together charge, then a thrown orb with splash (cover checked)
-    ball: { charge: 1.0, speed: 30, life: 1.4, damage: 28, minDamage: 7, radius: 3.4, knock: 7, cooldown: 9, lead: 0.7, moveMult: 0.35 },
+    ball: { charge: 1.0, speed: 30, life: 1.4, damage: 28, minDamage: 7, radius: 3.4, knock: 7, cooldown: 9, lead: 0.7, moveMult: 0.35,
+      statueMult: 0.5 },   // a direct hit on the garden deals damage × statueMult
     // Heroic Kick: crouch, then a flying dash kick that stops on the first plant it connects with
     kick: { windup: 0.2, time: 0.42, speed: 30, damage: 22, knock: 12, hitRadius: 1.2, cooldown: 7 },
     // Turbo Twister: spin with arms out, damaging plants around, taking reduced damage, moving faster
@@ -1249,6 +1261,8 @@ const CONFIG = {
     separationWeight: 1.2,
     avoidLook: 2.2,              // obstacle feeler length (m)
     knockback: 9,                // explosion push at the center (m/s), scaled by 1 - knockbackResist
+    blastFalloff: 0.4,           // plant explosions (explodeAt) deal this much less at the rim than at the centre
+    armorBreakStun: 2,           // s an armoured boss reels when its shell breaks
     heroRise: 1.6,               // hero feet this far above the terrain = on a prop (no ground path)
     slots: { statueOffset: 0.75, statueSpacing: 1.5, statueClaim: 9, queueDist: 3.5,
              heroRadius: 1.6, heroCount: 6, heroClaim: 5, heroHold: 3.2 },
@@ -6034,18 +6048,30 @@ const PLAYER_CENTER_Y = P.radius + P.height / 2;
 const newInput = () => ({ move: new THREE.Vector3(), yaw: 0, aimPoint: new THREE.Vector3(), zoom: false, fire: false, sprint: false,
   jump: false, jumpHeld: false, interact: false, reload: false, shuck: false, hop: false, butter: null });
 // The roster's hooks deliberately reuse the existing model and behavior. New plants plug in here;
-// adding a class never requires another human-only or AI-only simulation path. Optional hooks (Citron, Rose, Chomper):
-// reset (respawn), onDown, dispose, speedMult (movement), absorb (damage soak before hp), stance (ability gestures), hud.
+// adding a class never requires another human-only or AI-only simulation path, and shared code never asks which
+// plant it is. Optional hooks: reset (respawn), onDown, dispose, speedMult (movement), absorb (damage soak before hp),
+// stance (ability gestures), hud, rooted (can't move: stances, drones), stanceFire (a stance owns the primary: fires it
+// and returns true, which also blocks reloading), eye (where its shots start), camera (aim FOV / distance /
+// sensitivity, shoulder overrides), healer (allies retreat to it), groundTarget (F aims a ground reticle),
+// ownAbilityAI (its driver plays its own abilities; the shared teammate brain only moves and shoots).
 const PLANT_TYPES = {
   cactus: { buildModel: buildCactus, animate: animateCactus, drive: driveCactus,
-    fire: fireCactusSpike, update: updateCactusHero,
+    fire: fireCactusSpike, update: updateCactusHero, reset: resetCactus, camera: CONFIG.cactus.camera, ownAbilityAI: true,
+    rooted: h => !!h.cactus?.drone, onDown: h => { if (h.cactus?.drone) endGarlicDrone(h.cactus.drone, true); },
     actions: { shuckShot: plantPotatoMine, huskHop: toggleGarlicDrone, butterBarrage: plantTallnut } },
   sunflower: { buildModel: buildSunflower, animate: animateSunflower, drive: driveSunflower,
-    fire: fireSunPulse, update: updateSunflower,
+    fire: fireSunPulse, update: updateSunflower, reset: resetSunflower, camera: CONFIG.SUNFLOWER.camera, healer: true,
+    rooted: h => !!h.sun?.sunbeam, stanceFire: h => !!h.sun?.sunbeam,   // Sunbeam owns its own charge and cadence
+    onDown: h => { stopSunbeam(h); h.sun.healTarget = null; if (h.sun.healFx) h.sun.healFx.visible = false; },
+    dispose: h => { if (h.sun) { freeSolarObject(h.sun.healFx); freeSolarObject(h.sun.beamFx); } },
     actions: { shuckShot: toggleHealBeam, huskHop: toggleSunbeam, butterBarrage: plantHealFlower } },
   peashooter: { buildModel: buildPeashooter, animate: animatePeashooter, drive: drivePeashooter,
     sharedResources: () => ({ materials: Object.values(PEA_MAT), geometries: [peaSphere] }),
-    fire: firePea, update: updatePeashooter,
+    fire: firePea, update: updatePeashooter, reset: resetPeashooter, hud: peashooterHud,
+    rooted: h => !!h.pea?.gatling, stanceFire: peaGatlingFire,
+    speedMult: h => h.pea?.hyper > 0 ? h.abilities.butterBarrage.speedMult : 1,
+    jumpMult: h => h.pea?.hyper > 0 ? h.abilities.butterBarrage.jumpMult : 1,
+    onDown: h => { stopPeaGatling(h); h.pea.hyper = 0; },
     actions: { shuckShot: throwChiliBean, huskHop: togglePeaGatling, butterBarrage: useHyper } },
   citron: { buildModel: buildCitron, animate: animateCitron, drive: driveCitron, fire: fireOrangeBeam, update: updateCitron,
     reset: resetCitron, onDown: citronOff, dispose: disposeCitron, speedMult: citronSpeedMult, hud: citronHud,
@@ -6061,7 +6087,8 @@ const PLANT_TYPES = {
     stance: h => `${!!h.chomp?.burrowed}${h.chomp?.charges}`,
     actions: { shuckShot: spitGoop, huskHop: toggleBurrow, butterBarrage: plantSpikeweed },
     labPoses: CHOMPER_LAB.poses, docPoses: ['idle', 'run', 'biteOpen', 'chew', 'burrowed', 'spikeweed'] },
-  corn: { buildModel: buildKernelCorn, animate: animateCorn, drive: driveTeammate,
+  corn: { buildModel: buildKernelCorn, animate: animateCorn, drive: driveTeammate, groundTarget: true,
+    eye: (h, out) => out.copy(h.mesh.position).setY(h.mesh.position.y - CONFIG.weapon.muzzleDrop),   // the cobs fire below centre
     sharedResources: () => ({ materials: Object.values(CORN_MAT), geometries: [KERNEL_GEO] }),
     actions: { shuckShot: useShuckShot, huskHop: useHuskHop, butterBarrage: callButterBarrage } },
 };
@@ -7837,7 +7864,7 @@ const gardenStatue = (() => {
 })();
 statueMesh.visible = false;   // the box stays as the logical statue (position, collision helpers)
 statueHpBar.group.position.y = ART.statueBarY;
-// A hit on the garden this frame (loop): red flash + stone chips (throttled)
+// A hit on the garden (damageStatue): red flash + stone chips (throttled)
 function statueHit() {
   const G = gardenStatue;
   G.flash = 1;
@@ -8757,7 +8784,6 @@ function resetGame() {
     // camera feel: smoothed pivot, bob phase, roll, landing spring, hurt flinch, last airborne fall speed
     cam: { pivot: null, recoilPitch: 0, bob: 0, roll: 0, land: 0, landVel: 0, flinch: 0, tint: 0, airVy: 0, wasGround: true },
     difficulty: SETTINGS.difficulty,   // preset key, locked for the match
-    statueSeen: CONFIG.statue.hp,      // statue hp after last frame's difficulty scaling
     stats: newMatchStats(),
     engagement: { feed: [], theme: null, lastTheme: null, rewardedWave: -1, quiet: 0 },
   };
@@ -8785,9 +8811,6 @@ function respawnHero(h) {
   h.anim.spawnPop = true;
   h.vel.set(0, 0, 0);
   h.hopping = false;
-  if (h.type === 'peashooter') resetPeashooter(h);
-  if (h.type === 'sunflower') resetSunflower(h);
-  if (h.type === 'cactus') resetCactus(h);
   h.cloak = false; h.plant.reset?.(h);
   h.ammo = W.clip; h.reloading = false; h.reloadT = 0; h.fireTimer = 0; h.bloom = 0;
   h.respawnTimer = 0; h.downT = 0; h.jam = 0; h.reviveT = 0; h.reviveNear = false;
@@ -9262,7 +9285,8 @@ document.addEventListener('mousemove', e => {
     state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, CONFIG.spectator.minPitch, CONFIG.spectator.maxPitch);
     return;
   }
-  const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity * (player.type === 'cactus' ? THREE.MathUtils.lerp(1, CONFIG.cactus.camera.sensitivity, player.zoom) : 1 - 0.35 * player.zoom);
+  const sens = CONFIG.camera.sensitivity * SETTINGS.sensitivity *
+    THREE.MathUtils.lerp(1, player.plant.camera?.sensitivity ?? CONFIG.camera.aimSensitivity, player.zoom);
   state.yaw -= e.movementX * sens;
   state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, -0.6, 1.2);
 });
@@ -9565,7 +9589,7 @@ function updateHero(h, dt) {
   h.plant.update?.(h, dt);
   // Engineer's Sonic Grenade jams new ability use (a rooted mode can still be exited) and slows
   if (h.jam > 0) h.jam = Math.max(0, h.jam - dt);
-  const jammed = h.jam > 0 && !((h.type === 'peashooter' && h.pea.gatling) || (h.type === 'sunflower' && h.sun?.sunbeam) || h.cactus?.drone);
+  const jammed = h.jam > 0 && !heroRooted(h);
   if (jammed && (inp.shuck || inp.hop || inp.butter)) {
     inp.shuck = inp.hop = false; inp.butter = null;
     if (h === player) { SFX.play('jamDenied'); setMessage('Abilities jammed!', 0.8); }
@@ -9586,10 +9610,9 @@ function updateHero(h, dt) {
   // Gravity Grenade: suspended in the air, barely able to steer, no jumping
   const floating = (h.floatT || 0) > 0;
   if (floating) { h.floatT -= dt; inp.jump = false; }
-  const rooted = (h.type === 'peashooter' && h.pea.gatling) || (h.type === 'sunflower' && h.sun?.sunbeam) || !!h.cactus?.drone;
-  const hyper = h.type === 'peashooter' && h.pea.hyper > 0;
+  const rooted = heroRooted(h);   // after this frame's ability toggles (Gatling, Sunbeam, drone)
   const speed = rooted ? 0 : P.speed * (1 - (1 - P.aimSpeedMult) * h.zoom) * (1 + (P.sprintMult - 1) * h.sprint)
-    * (hyper ? AB.butterBarrage.speedMult : 1) * (h.jam > 0 ? CONFIG.ENGINEER.sonic.slowMult : 1) * (h.plant.speedMult?.(h) ?? 1);
+    * (h.jam > 0 ? CONFIG.ENGINEER.sonic.slowMult : 1) * (h.plant.speedMult?.(h) ?? 1);
   if (rooted) { v.x = v.z = 0; inp.jump = false; }
   const floatK = floating ? h.floatSlow : 1;
   // In the air with no input, keep momentum (so Husk Hop carries you)
@@ -9609,7 +9632,7 @@ function updateHero(h, dt) {
     : state.time <= (h.jumpQueuedUntil ?? -Infinity) && (h.onGround || state.time - (h.lastGroundT ?? -Infinity) <= CONFIG.movement.coyoteTime);
   // Jump / gravity / glide (hold jump while falling after a Husk Hop)
   if (jump) {
-    v.y = P.jumpSpeed * (hyper ? AB.butterBarrage.jumpMult : 1); h.onGround = false;
+    v.y = P.jumpSpeed * (h.plant.jumpMult?.(h) ?? 1); h.onGround = false;
     h.jumpQueuedUntil = h.lastGroundT = -Infinity;
     SFX.play('jump', pos, h.isAI);
     burstLeaves(pos, 4);
@@ -9668,12 +9691,8 @@ function updateHero(h, dt) {
     h.reloadT -= dt;
     if (h.reloadT <= 0) { h.reloading = false; h.ammo = W.clip; }
   }
-  if (rooted && h.type === 'sunflower') {
-    // Sunbeam owns a separate 100-charge magazine and firing cadence.
-  } else if (h.type === 'peashooter' && rooted) {
-    if (inp.fire && h.pea.deploy <= 0 && h.fireTimer <= 0) {
-      h.fireTimer += AB.huskHop.fireRate; firePea(h, true);
-    }
+  if (h.plant.stanceFire?.(h)) {
+    // a stance (Pea Gatling, Sunbeam) owns the primary this frame
   } else if (inp.fire && !h.reloading && h.ammo <= 0) { if (!h.isAI) SFX.play('empty'); startReload(h); }
   else if (inp.fire && !h.reloading && h.ammo > 0 && h.fireTimer <= 0) {
     h.fireTimer += W.fireRate;
@@ -9714,10 +9733,12 @@ function burstLeaves(pos, n) {
   }
 }
 
+// Stances and drones root a plant in place (PLANT_TYPES rooted hooks)
+function heroRooted(h) { return !!h.plant.rooted?.(h); }
+
 function startReload(h) {
   const W = h.weapon;
-  if (h.type === 'sunflower' && h.sun?.sunbeam) return;
-  if (h.type === 'peashooter' && h.pea.gatling) return;
+  if (h.plant.stanceFire && heroRooted(h)) return;   // no reloading inside a weapon stance
   if (h.reloading || h.ammo >= W.clip || h.dead) return;
   h.reloading = true;
   h.reloadT = W.reloadTime;
@@ -9871,7 +9892,7 @@ const butterReticle = new THREE.Group();
   scene.add(butterReticle);
 }
 function toggleButterTargeting() {
-  if (player.type !== 'corn') { pressed.butter = true; return; }   // only Corn's F aims a ground reticle
+  if (!player.plant.groundTarget) { pressed.butter = true; return; }   // only some plants' F aims a ground reticle
   if (state.targeting) { cancelButterTargeting(); return; }
   if (player.dead || player.cd.butterBarrage > 0) { if (!player.dead) SFX.play('denied'); return; }
   state.targeting = true;
@@ -9960,12 +9981,55 @@ function explodeAt(pos, radius, damage, { color = 0xff8800, stun = 0, sphere = t
     // push away from the blast (Plated / bosses resist)
     const push = CONFIG.AI.knockback * (1 - Math.max(0, d) / radius) * (1 - (z.def.knockbackResist || 0));
     if (push > 0 && tmp.lengthSq() > 1e-4) z.kb.addScaledVector(tmp.normalize(), push);
-    damageZombie(z, damage * (1 - 0.4 * Math.max(0, d) / radius), z.mesh.position.clone().setY(z.mesh.position.y + z.def.height / 2), false, true, owner);
+    damageZombie(z, damage * (1 - CONFIG.AI.blastFalloff * Math.max(0, d) / radius), z.mesh.position.clone().setY(z.mesh.position.y + z.def.height / 2), false, true, owner);
   }
   if (sphere) spawnExplosion(pos, radius, color);
   spawnRing(pos, radius, color, 0.3);
   for (let i = 0; i < 6; i++) spawnParticle('puff', 0x8a8a7a, pos.clone().add(rand3(radius * 0.5)), rand3(4, 2), { life: 0.8, gravity: -1, grow: 2.5, drag: 3, size: 0.8 });
   addShake(0.3, pos);
+}
+
+// ---- Damage rules every enemy shares: the garden (damageStatue), enemy area blasts (enemyBlast), knockback ----
+// The only way the garden loses health: difficulty scaling, the statue's hit flash / chips and the "garden under
+// attack" HUD. attacker (optional zombie) raises the garden alert, so AI plants near home turn on it.
+function damageStatue(amount, attacker = null) {
+  if (!(amount > 0) || state.over) return;
+  state.statueHp -= amount * DIFF().statueDamage;
+  state.gardenHurtT = state.time;
+  statueHit();
+  if (attacker) raiseGardenAlert(attacker);
+}
+// Enemy area damage (agent grenades and balls, boss blasts, flung imps). Every targetable plant whose body is within
+// `radius` (and, with cover, in line of sight from `coverLift` m above the blast) takes damage falling linearly from
+// `damage` at the centre to `edge` at the rim, x mult; onHit(h, k) adds the caller's knockback (k: 0 centre ... 1 rim).
+// Cactus walls within `wallRange` take `walls`; the garden takes `statue` when the blast reaches its face (behind no
+// cover unless statueCover is false). Visuals and sounds stay with each caller. Returns how many plants were hit.
+const blastEye = new THREE.Vector3(), blastStatue = new THREE.Vector3();
+function enemyBlast(pos, radius, { damage, edge = damage, mult = 1, round = false, cover = true, coverLift = 0, onHit = null,
+  walls = 0, wallRange = radius, statue = 0, statueCover = cover } = {}) {
+  blastEye.copy(pos); blastEye.y += coverLift;
+  let hits = 0;
+  for (const h of heroes) {
+    if (!targetable(h)) continue;
+    const d = Math.max(0, h.mesh.position.distanceTo(pos) - h.stats.radius);
+    if (d > radius || (cover && !losClear(blastEye, h.mesh.position))) continue;
+    const k = d / radius, amount = (damage + (edge - damage) * k) * mult;
+    damageHero(h, round ? Math.round(amount) : amount, pos);
+    onHit?.(h, k);
+    hits++;
+  }
+  if (walls > 0) for (const w of cactusWalls) if (w.hp > 0 && w.mesh.position.distanceTo(pos) < wallRange) damageCactusWall(w, walls);
+  if (statue > 0 && statueFaceDist(pos) < radius && Math.abs(pos.y - S / 2) < radius &&
+      (!statueCover || losClear(blastEye, blastStatue.set(0, S / 2, 0)))) damageStatue(statue);
+  return hits;
+}
+// Shove a plant away from `from` (horizontal power); up > 0 also pops it off the ground
+const knockDir = new THREE.Vector3();
+function knockHero(h, from, power, up = 4) {
+  knockDir.set(h.mesh.position.x - from.x, 0, h.mesh.position.z - from.z);
+  if (knockDir.lengthSq() < 1e-4) knockDir.set(1, 0, 0);
+  h.vel.addScaledVector(knockDir.normalize(), power);
+  if (up > 0) { h.vel.y = Math.max(h.vel.y, up); h.onGround = false; }
 }
 
 // Death / revival belongs to the character, regardless of its current controller.
@@ -9988,13 +10052,7 @@ function damageHero(h, amount, src = null) {
     noteHitFrom(h, src);
   }
   if (h.hp > 0) return;
-  if (h.cactus?.drone) endGarlicDrone(h.cactus.drone, true);
   h.hp = 0;
-  if (h.type === 'sunflower') {
-    stopSunbeam(h); h.sun.healTarget = null;
-    if (h.sun.healFx) h.sun.healFx.visible = false;
-  }
-  if (h.type === 'peashooter') { stopPeaGatling(h); h.pea.hyper = 0; }
   h.plant.onDown?.(h);
   h.dead = true; h.floatT = 0;
   h.shuckQueue = 0;
@@ -10587,6 +10645,29 @@ function resetPeashooter(h) {
   h.pea = { hyper: 0, gatling: false, gatlingTime: 0, gatlingAmmo: 0, deploy: 0, trailT: 0 };
   h.corn.turret.visible = h.corn.brace.visible = false;
   h.corn.arms[0].recoil = h.corn.arms[0].flashT = 0; h.corn.arms[0].flash.visible = false;
+}
+// Pea Gatling owns the primary while rooted (PLANT_TYPES.peashooter.stanceFire)
+function peaGatlingFire(h) {
+  if (!h.pea?.gatling) return false;
+  if (h.input.fire && h.pea.deploy <= 0 && h.fireTimer <= 0) { h.fireTimer += h.abilities.huskHop.fireRate; firePea(h, true); }
+  return true;
+}
+// Gatling ammo / time and the Gatling / Hyper ability timers (PLANT_TYPES.peashooter.hud)
+function peashooterHud(h) {
+  const p = h.pea, G = h.abilities.huskHop;
+  if (!p) return;
+  if (p.gatling) {
+    setText(hud('ammoN'), p.gatlingAmmo); setText(hud('ammoMax'), ` / ${G.ammo}`);
+    setText(hud('weaponLabel'), p.deploy > 0 ? 'ROOTING…' : 'PEA GATLING · E TO UPROOT');
+    hud('reloadFill').style.width = `${Math.max(0, p.gatlingTime / G.duration) * 100}%`;
+  }
+  for (const [key, remaining, total] of [['huskHop', p.gatling ? p.gatlingTime : 0, G.duration],
+    ['butterBarrage', p.hyper, h.abilities.butterBarrage.duration]]) {
+    if (remaining <= 0) continue;
+    const el = hud(`ab-${key}`); el.classList.add('active'); el.classList.remove('ready');
+    el.querySelector('.cd').style.height = `${(1 - remaining / total) * 100}%`;
+    setText(el.querySelector('.cdt'), `${Math.ceil(remaining)}s`);
+  }
 }
 function stopPeaGatling(h) {
   if (!h.pea?.gatling) return;
@@ -11834,7 +11915,8 @@ function driveCitron(h, dt) {
   const eye = eyeOf(h, new THREE.Vector3());
   if ((ai.thinkT -= dt) <= 0 || (b.target && !validTarget(b.target))) {
     ai.thinkT = 1 / A.thinkRate;
-    const list = npCandidates(h, A.engageRange, (z, d) => d + Math.max(0, statueFaceDist(z.mesh.position)) * 0.35 - (z.def.boss ? 12 : 0) - (z.heroTgt === h ? 6 : 0));
+    const T = A.targetBias, list = npCandidates(h, A.engageRange, (z, d) => d + Math.max(0, statueFaceDist(z.mesh.position)) * T.garden
+      - (z.def.boss ? T.boss : 0) - (z.heroTgt === h ? T.hunter : 0));
     b.threat = list[0]?.z || null;
     const t = npSticky(list, b.target, A.stickiness, z => shotClear(eye, z.mesh.position));
     if (t !== b.target) { if (!b.target || !validTarget(b.target)) b.reactT = A.reaction; b.target = t; }
@@ -11898,7 +11980,8 @@ function driveRose(h, dt) {
   const eye = eyeOf(h, new THREE.Vector3());
   if ((ai.thinkT -= dt) <= 0 || (b.target && !validTarget(b.target))) {
     ai.thinkT = 1 / A.thinkRate;
-    const list = npCandidates(h, A.engageRange, (z, d) => d + Math.max(0, statueFaceDist(z.mesh.position)) * 0.4 - (z.heroTgt === h ? 10 : 0) - (z.def.boss ? 8 : 0));
+    const T = A.targetBias, list = npCandidates(h, A.engageRange, (z, d) => d + Math.max(0, statueFaceDist(z.mesh.position)) * T.garden
+      - (z.heroTgt === h ? T.hunter : 0) - (z.def.boss ? T.boss : 0));
     b.threat = list[0]?.z || null;
     const t = npSticky(list, b.target, A.stickiness, z => shotClear(eye, z.mesh.position));
     if (t !== b.target) { if (!b.target || !validTarget(b.target)) b.reactT = A.reaction; b.target = t; b.trackT = 0; }
@@ -11962,17 +12045,17 @@ function driveChomper(h, dt) {
   const eye = eyeOf(h, new THREE.Vector3());
   if ((ai.thinkT -= dt) <= 0 || (b.target && !validTarget(b.target))) {
     ai.thinkT = 1 / A.thinkRate;
-    const list = npCandidates(h, A.huntRange, (z, d) => d + Math.max(0, statueFaceDist(z.mesh.position)) * 0.5
-      - (z.pfx?.holdT > 0 || z.stun > 0 ? 8 : 0) + (z.def.boss ? 14 : 0) - (z.heroTgt === h ? 4 : 0));
+    const T = A.targetBias, list = npCandidates(h, A.huntRange, (z, d) => d + Math.max(0, statueFaceDist(z.mesh.position)) * T.garden
+      - (z.pfx?.holdT > 0 || z.stun > 0 ? T.held : 0) - (z.def.boss ? T.boss : 0) - (z.heroTgt === h ? T.hunter : 0));
     b.threat = list[0]?.z || null;
     const pick = npSticky(list, b.target, A.stickiness);
     if (pick !== b.target) { if (!b.target || !validTarget(b.target)) b.reactT = A.reaction; b.target = pick; }
     const t = b.target, dist = t ? flatDist(pos, t.mesh.position) : Infinity;
-    const hurt = h.hp < h.stats.hp * A.escapeHp, mob = crowd(pos, 6);
+    const hurt = h.hp < h.stats.hp * A.escapeHp, mob = crowd(pos, A.mobRadius);
     // Burrow: escape a mob when hurt, or travel to a far target; pop up when on top of it (or safe)
     if (c.burrowed) {
       if (t && dist < A.emergeDist + t.def.radius && !hurt) inp.hop = true;
-      else if (hurt && mob === 0 && Math.hypot(pos.x, pos.z) < 18) inp.hop = true;
+      else if (hurt && mob === 0 && Math.hypot(pos.x, pos.z) < A.safeRadius) inp.hop = true;
     } else if (h.cd.huskHop <= 0 && c.chew <= 0 && h.onGround && ((hurt && mob >= A.escapeCrowd) || (t && dist > A.burrowTravel && plantControllable(t)))) inp.hop = true;
     // Goop: a target out of bite reach in the goop band (agents and garden attackers are priorities)
     if (!c.burrowed && c.chew <= 0 && h.cd.shuckShot <= 0) {
@@ -11991,7 +12074,7 @@ function driveChomper(h, dt) {
       }
     }
     // Movement goal: hurt → fall back to a medic or the garden; else behind the target (to swallow it), else patrol
-    const medic = heroes.find(o => o !== h && o.type === 'sunflower' && standing(o));
+    const medic = heroes.find(o => o !== h && o.plant.healer && standing(o));
     if (h.hp < h.stats.hp * A.retreatHp && !c.burrowed && (!t || dist > A.biteRange)) {
       b.state = 'retreat';
       if (medic) b.goal.copy(medic.mesh.position);
@@ -12516,7 +12599,7 @@ const gardenAlertPull = () => state.gardenAlert ? CONFIG.gardenAlert.pullScale :
 
 function dealDamage(z, target, amount) {
   if (target.isHero) { damageHero(target.hero, amount, z); z.chaseTime = 0; SFX.play('zombieHit', target.hero.mesh.position); }   // landing a hit resets the chase timeout
-  else { state.statueHp -= amount; SFX.play('statueHit', z.mesh.position); raiseGardenAlert(z); }
+  else { damageStatue(amount, z); SFX.play('statueHit', z.mesh.position); }
   SFX.play('swing', z.mesh.position);
   z.ai.swing = 0.18;   // little lunge-squash for readability
 }
@@ -14179,7 +14262,7 @@ function bomberBehavior(z, t, dt) {
   a.beepT = (a.beepT || 0) - dt * rate;
   if (a.beepT <= 0) { a.beepT += 1; z.glow = 1; SFX.play('beep', pos, 700 + rate * 80, def.beepRange); }
   if (t.dist > (t.isPoint ? 0 : def.radius + 0.2)) { moveZombie(z, t.dir, dt); return; }
-  if (!t.isPoint) state.statueHp -= def.explosionDamage * z.buff.damage;
+  if (!t.isPoint) damageStatue(def.explosionDamage * z.buff.damage);
   for (const h of heroes) if (targetable(h) && h.mesh.position.distanceTo(pos) < def.explosionRadius) damageHero(h, def.playerExplosionDamage, pos);
   spawnExplosion(pos, def.explosionRadius);
   SFX.play('boom', pos, 1.2);
@@ -14589,7 +14672,7 @@ function gargantuarSlam(z) {
     const push=h.mesh.position.clone().sub(z.mesh.position).setY(0).normalize();h.vel.addScaledVector(push,C.knock);h.vel.y=Math.max(h.vel.y,C.lift);h.onGround=false;
     z.chaseTime=0;
   }
-  if(statueFaceDist(p)<C.radius&&losClear(p.clone().setY(p.y+0.5),statueMesh.position))state.statueHp-=C.statueDamage;
+  if(statueFaceDist(p)<C.radius&&losClear(p.clone().setY(p.y+0.5),statueMesh.position))damageStatue(C.statueDamage);
   for(const wall of cactusWalls) if(flatDist(wall.mesh.position,p)<C.radius)damageCactusWall(wall,C.damage);
   spawnRing(p,C.radius,0xd9b67b,0.45);spawnRing(p,C.radius*0.65,0xffe1a3,0.25);
   for(let i=0;i<GG.fx.dust;i++)spawnParticle('puff',GG.fx.dustColor,p.clone().add(rand3(0.6)),rand3(5,2),{life:0.8,gravity:-1,size:0.8,grow:2,drag:3});
@@ -14650,9 +14733,7 @@ function launchGargantuarImp(z,target) {
 }
 function gargantuarImpBlast(p) {
   const C=GG.imp;
-  for(const h of heroes)if(targetable(h)&&p.distanceTo(h.mesh.position)<C.radius+h.stats.radius&&losClear(p,h.mesh.position))damageHero(h,C.damage);
-  if(statueFaceDist(p)<C.radius&&Math.abs(p.y-statueMesh.position.y)<C.radius)state.statueHp-=C.damage;
-  for(const wall of cactusWalls)if(flatDist(wall.mesh.position,p)<C.radius)damageCactusWall(wall,C.damage);
+  enemyBlast(p,C.radius,{damage:C.damage,walls:C.damage,statue:C.damage,statueCover:false});
   spawnExplosion(p,C.radius,0xff9b3b);SFX.play('explosion',p);addShake(GG.fx.shake*0.5,p);
 }
 function updateGargantuarWorld(dt) {
@@ -14722,7 +14803,7 @@ function bruteBehavior(z, t, dt) {
       addShake(0.5, hit.isAI ? pos : null);
       endCharge(z, false);
     } else if (statueFaceDist(pos) < def.radius + 0.3) {
-      state.statueHp -= C.statueDamage;
+      damageStatue(C.statueDamage);
       SFX.play('slam', pos, 1.3);
       addShake(0.4, pos);
       endCharge(z, false);
@@ -15467,7 +15548,7 @@ function updateAllStarFootballs(dt) {
       }
     }
     const solid = !dead && asSolid(p);
-    if (solid === 'statue' && f.dmg > 0) { state.statueHp -= f.dmg; SFX.play('asThud', p); dead = true; }
+    if (solid === 'statue' && f.dmg > 0) { damageStatue(f.dmg); SFX.play('asThud', p); dead = true; }
     else if (solid) {
       if (f.bounced) dead = true;
       else {
@@ -15606,17 +15687,8 @@ function allStarImpBlast(pos, owner) {
   for (let i = 0; i < 6; i++) spawnParticle('puff', 0x6a6458, pos.clone().add(rand3(1)), rand3(3, 2), { life: 1, gravity: -1.5, grow: 2.6, drag: 3, size: 0.9 });
   SFX.play('boom', pos, 0.75);
   addShake(0.35, pos);
-  eyeA.copy(pos).setY(pos.y + 0.3);
-  for (const h of heroes) {
-    if (!targetable(h)) continue;
-    const hp = h.mesh.position, d = Math.hypot(hp.x - pos.x, Math.max(0, Math.abs(hp.y - pos.y) - h.stats.height / 2), hp.z - pos.z);
-    if (d > K.radius + h.stats.radius || !losClear(eyeA, eyeB.copy(hp))) continue;
-    const f = 1 - Math.min(1, d / (K.radius + h.stats.radius));
-    damageHero(h, K.damage * dmgMul * (0.45 + 0.55 * f));
-    asTmp.set(hp.x - pos.x, 0, hp.z - pos.z).normalize();
-    h.vel.addScaledVector(asTmp, K.knock * f); h.vel.y = Math.max(h.vel.y, 4 * f); h.onGround = h.onGround && f < 0.2;
-  }
-  for (const w of cactusWalls) if (w.hp > 0 && flatDist(w.mesh.position, pos) < K.radius + 1) damageCactusWall(w, K.damage);
+  enemyBlast(pos, K.radius, { damage: K.damage, edge: K.damage * 0.45, mult: dmgMul, coverLift: 0.3, walls: K.damage, wallRange: K.radius + 1,
+    onHit: (h, k) => knockHero(h, pos, K.knock * (1 - k), k < 0.8 ? 4 * (1 - k) : 0) });
 }
 
 // ---------- Dummy Shield ----------
@@ -15688,7 +15760,7 @@ function damageAllStarShield(sh, n) {
   for (let i = 0; i < 18; i++) spawnParticle('chip', i % 3 ? 0xcaa274 : 0xc22a20, sh.mesh.position.clone().add(rand3(1).setY(Math.random() * 1.4)), rand3(6, 5), { life: 1, size: 1.4 });
 }
 function damageAllStarShieldsInRadius(pos, radius, damage) {
-  for (const sh of asShields) if (sh.hp > 0 && flatDist(sh.mesh.position, pos) < radius + AS.shield.width / 2) damageAllStarShield(sh, damage * 0.6);
+  for (const sh of asShields) if (sh.hp > 0 && flatDist(sh.mesh.position, pos) < radius + AS.shield.width / 2) damageAllStarShield(sh, damage * AS.shield.blastMult);
 }
 // Heroes can't walk through a raised shield
 function pushAllStarShields(pos, radius, feet, height) {
@@ -16368,7 +16440,6 @@ function lobVelocity(from, to, speedH, g, out, tMin = 0.3, tMax = 1.3) {
   const T = THREE.MathUtils.clamp(dH / speedH, tMin, tMax);
   return out.set(dx / T, (to.y - from.y + 0.5 * g * T * T) / T, dz / T);
 }
-const heroRooted = h => !!((h.type === 'peashooter' && h.pea?.gatling) || (h.type === 'sunflower' && h.sun?.sunbeam) || h.cactus?.drone);
 const yawGap = (z, p) => { const d = Math.atan2(p.x - z.mesh.position.x, p.z - z.mesh.position.z) - z.mesh.rotation.y; return Math.abs(Math.atan2(Math.sin(d), Math.cos(d))); };
 
 function engineerKit(z, h, dHero, dt) {
@@ -16469,7 +16540,7 @@ function concreteImpact(s, directHero) {
     tmpV1.set(hp.x - p.x, 0, hp.z - p.z).normalize();
     h.vel.x += tmpV1.x * L.knock; h.vel.z += tmpV1.z * L.knock;
   }
-  if (hitsStatue(p, R * 0.5)) state.statueHp -= L.statueDamage;
+  if (hitsStatue(p, R * 0.5)) damageStatue(L.statueDamage);
   const g = heightAt(p.x, p.z);
   spawnExplosion(p, R * 0.6, 0xc9c1b2);
   spawnRing(p, R, 0xd8cfbd, 0.35); effects[effects.length - 1].mesh.position.y = g + 0.08;
@@ -17322,14 +17393,8 @@ function throwStickyBall(z, h) {
 }
 function stickyExplode(b) {
   const B = ZT.scientist.kit.sticky, p = b.mesh.position;
-  for (const h of heroes) {
-    if (!targetable(h)) continue;
-    const d = h.mesh.position.distanceTo(p);
-    if (d > B.radius + h.stats.radius) continue;
-    damageHero(h, b.damage * (1 - 0.5 * Math.max(0, d - h.stats.radius) / B.radius));
-    tmp.copy(h.mesh.position).sub(p).setY(0).normalize();
-    h.vel.addScaledVector(tmp, B.knock); h.vel.y += B.knock * 0.4;
-  }
+  enemyBlast(p, B.radius, { damage: b.damage, edge: b.damage * 0.5, cover: false,
+    onHit: h => { knockHero(h, p, B.knock, 0); h.vel.y += B.knock * 0.4; } });
   const wall = cactusWallAt(p); if (wall) damageCactusWall(wall, b.damage);
   spawnExplosion(p, B.radius * 0.8, 0xa070ff);
   spawnRing(p.clone().setY(heightAt(p.x, p.z) + 0.1), B.radius, 0xc8a0ff, 0.35);
@@ -19310,7 +19375,6 @@ function solState(z) {
     decideT: 0, aimAt: new THREE.Vector3(), aimActive: false, airZpg: false,
   };
 }
-const solRooted = h => (h.type === 'peashooter' && h.pea?.gatling) || (h.type === 'sunflower' && h.sun?.sunbeam) || !!h.cactus?.drone;
 const solHeroFeet = h => h.mesh.position.y - h.centerY;
 function solHeroesNear(pos, r) { let n = 0; for (const h of heroes) if (targetable(h) && h.mesh.position.distanceTo(pos) < r) n++; return n; }
 function soldierMuzzle(z, out) {
@@ -19382,18 +19446,8 @@ function fireZpg(z) {
 }
 function explodeZpg(pos) {
   const Z = SOL.zpg;
-  for (const h of heroes) {
-    if (!targetable(h)) continue;
-    const hp = h.mesh.position, d = Math.max(0, hp.distanceTo(pos) - h.stats.radius);
-    if (d > Z.radius) continue;
-    if (!losClear(_sv.a.copy(pos).setY(pos.y + 0.4), hp)) continue;   // cover shields the blast
-    damageHero(h, THREE.MathUtils.lerp(Z.damage, Z.edgeDamage, d / Z.radius) * AG.damageMult);
-    const push = Z.knock * (1 - d / Z.radius);
-    _sv.b.copy(hp).sub(pos).setY(0);
-    if (_sv.b.lengthSq() > 1e-4) h.vel.addScaledVector(_sv.b.normalize(), push);
-    if (h.onGround) { h.vel.y = Math.max(h.vel.y, push * 0.45); h.onGround = false; }
-  }
-  for (const w of cactusWalls) if (w.mesh.position.distanceTo(pos) < Z.radius + 1) damageCactusWall(w, Z.damage);
+  enemyBlast(pos, Z.radius, { damage: Z.damage, edge: Z.edgeDamage, mult: AG.damageMult, coverLift: 0.4, walls: Z.damage, wallRange: Z.radius + 1,
+    onHit: (h, k) => { const push = Z.knock * (1 - k); knockHero(h, pos, push, h.onGround ? push * 0.45 : 0); } });
   spawnExplosion(pos, Z.radius, 0xff7a20);
   spawnExplosion(pos, Z.radius * 0.55, 0xfff0a0);
   spawnRing(pos, Z.radius * 1.2, 0xffb040, 0.35);
@@ -19548,7 +19602,7 @@ function soldierCombat(z, h, dt) {
 function soldierAbilities(z, h, d) {
   const J = SOL.jump, Z = SOL.zpg, St = SOL.stink, a = z.ai, s = z.ai.sol, pos = z.mesh.position, hp = h.mesh.position;
   if (a.air) return false;
-  const hpFrac = z.hp / z.def.hp, rooted = solRooted(h), cluster = solHeroesNear(hp, 5);
+  const hpFrac = z.hp / z.def.hp, rooted = heroRooted(h), cluster = solHeroesNear(hp, 5);
   const still = Math.hypot(h.vel.x, h.vel.z) < St.stillSpeed;
   // E Rocket Jump: escape a close plant when hurt · reach a plant on higher ground · get an angle when blind too long
   if (s.cd.jump <= 0) {
@@ -20222,13 +20276,6 @@ function sbHeroAlongRay(o, d, maxT, pad) {
   }
   return best ? { h: best, t: bt } : null;
 }
-function knockHero(h, from, power, up = 4) {
-  sbV.set(h.mesh.position.x - from.x, 0, h.mesh.position.z - from.z);
-  if (sbV.lengthSq() < 1e-4) sbV.set(1, 0, 0);
-  sbV.normalize();
-  h.vel.addScaledVector(sbV, power);
-  if (up > 0) { h.vel.y = Math.max(h.vel.y, up); h.onGround = false; }
-}
 function sbStartPunch(z, S) {
   S.punchIdx = S.comboT > 0 ? (S.punchIdx + 1) % 3 : 0;
   S.punchT = 0; S.punchHit = false;
@@ -20256,7 +20303,7 @@ function sbPunchHit(z, S, t) {
   }
   const wall = cactusWallAt(fist, 0.4);
   if (wall) { damageCactusWall(wall, F.damage[i] * 2); landed = true; }
-  if (!t.isHero && t.dist <= meleeReach(z, t) + 1) { state.statueHp -= F.statueDamage; SFX.play('statueHit', pos); landed = true; }
+  if (!t.isHero && t.dist <= meleeReach(z, t) + 1) { damageStatue(F.statueDamage); SFX.play('statueHit', pos); landed = true; }
   SFX.play(landed ? 'sbPunch' : 'sbWhoosh', pos, heavy);
 }
 function sbStartBeam(z, S, h) {
@@ -20307,14 +20354,7 @@ function sbThrowBall(z, S, h) {
 }
 function sbBallBoom(b) {
   const B = SBZ.ball, p = b.mesh.position;
-  for (const h of heroes) {
-    if (!targetable(h)) continue;
-    const d = h.mesh.position.distanceTo(p);
-    if (d > B.radius + h.stats.radius || !losClear(p, h.mesh.position)) continue;
-    const k = Math.min(1, Math.max(0, d - h.stats.radius) / B.radius);
-    damageHero(h, sbMix(b.damage, B.minDamage, k));
-    knockHero(h, p, B.knock * (1 - k * 0.6), 5 * (1 - k));
-  }
+  enemyBlast(p, B.radius, { damage: b.damage, edge: B.minDamage, onHit: (h, k) => knockHero(h, p, B.knock * (1 - k * 0.6), 5 * (1 - k)) });
   const wall = cactusWallAt(p, B.radius * 0.5);
   if (wall) damageCactusWall(wall, b.damage * 1.5);
   spawnExplosion(p, B.radius * 0.9, 0xb050ff);
@@ -20337,7 +20377,7 @@ function updateSuperBalls(dt) {
       const c = h.mesh.position, dy = Math.max(0, Math.abs(p.y - c.y) - h.stats.height / 2);
       if ((p.x - c.x) ** 2 + dy * dy + (p.z - c.z) ** 2 < (h.stats.radius + 0.4) ** 2) { boom = true; break; }
     }
-    if (!boom && hitsStatue(p, 0.3)) { state.statueHp -= b.damage * 0.5; boom = true; }
+    if (!boom && hitsStatue(p, 0.3)) { damageStatue(b.damage * SBZ.ball.statueMult); boom = true; }
     if (boom) { sbBallBoom(b); freeFxLight(b.light); scene.remove(b.mesh); b.mesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); superBalls.splice(i, 1); }
   }
 }
@@ -21299,14 +21339,7 @@ function pirateParrotStep(z, s, h, dt) {
 
 // Plant-side area damage (kegs, cannonballs): falloff, cover blocks it
 function pirateBlast(pos, radius, damage, minDamage, owner) {
-  for (const h of heroes) {
-    if (!targetable(h)) continue;
-    const c = h.mesh.position, d = c.distanceTo(pos);
-    if (d > radius + h.stats.radius) continue;
-    if (!losClear(eyeA.copy(pos).setY(pos.y + 0.4), eyeB.copy(c))) continue;
-    damageHero(h, Math.round(prLerp(damage, minDamage, Math.min(1, Math.max(0, d - h.stats.radius) / radius)) * (owner?.buff.damage || 1) * AG.damageMult));
-  }
-  for (const w of cactusWalls) if (w.mesh && w.mesh.position.distanceTo(pos) < radius) damageCactusWall(w, damage * 0.5);
+  enemyBlast(pos, radius, { damage, edge: minDamage, mult: (owner?.buff.damage || 1) * AG.damageMult, round: true, coverLift: 0.4, walls: damage * 0.5 });
   spawnExplosion(pos, radius, 0xff7a2a);
   spawnRing(pos, radius, 0xffb040, 0.35);
   for (let i = 0; i < 10; i++) spawnParticle('puff', 0x6a625a, pos.clone().add(rand3(radius * 0.4)), rand3(4, 3), { life: 1.2, gravity: -1.5, grow: 3, drag: 2.5, size: 0.9 });
@@ -21759,11 +21792,7 @@ function mechaSmashPoint(z) {
 }
 function mechaBlast(pos,radius,damage,statueDamage,knock=0) {
   // 3D radius and cover checks keep high ground and hard cover meaningful.
-  for(const h of heroes)if(targetable(h)&&h.mesh.position.distanceTo(pos)<radius+h.stats.radius&&losClear(pos,h.mesh.position)) {
-    damageHero(h,damage); if(knock){const d=h.mesh.position.clone().sub(pos).setY(0).normalize();h.vel.addScaledVector(d,knock);h.vel.y=Math.max(h.vel.y,6);h.onGround=false;}
-  }
-  if(statueFaceDist(pos)<radius&&Math.abs(pos.y-S/2)<radius&&losClear(pos,new THREE.Vector3(0,S/2,0)))state.statueHp-=statueDamage;
-  for(const w of cactusWalls)if(!w.dead&&w.mesh.position.distanceTo(pos)<radius)damageCactusWall(w,damage);
+  enemyBlast(pos,radius,{damage,walls:damage,statue:statueDamage,onHit:knock?h=>knockHero(h,pos,knock,6):null});
 }
 function mechaSmash(z) {
   const C=CONFIG.MECHA.smash,p=mechaSmashPoint(z);
@@ -22266,7 +22295,7 @@ function damageZombie(z, amount, at, reduced = false, heavy = false, owner = nul
       if (z.ai.armor <= 0) {
         z.parts.shell.visible = false;
         SFX.play('shatter', z.mesh.position);
-        z.stun = 2;
+        z.stun = CONFIG.AI.armorBreakStun;
         spawnPopup(z.mesh.position.clone().setY(z.mesh.position.y + def.height), 'ARMOR BROKEN', '#ffe14a');
         for (let i = 0; i < 20; i++) spawnParticle('chip', 0x8aa0b8, z.mesh.position.clone().add(rand3(def.radius)), rand3(10, 6), { life: 1, size: 1.6 });
         addShake(0.4, z.mesh.position);
@@ -22363,7 +22392,7 @@ function updateEnemyProjectiles(dt) {
     }
     // Hit statue (box)
     if (!dead && hitsStatue(pp, r)) {
-      state.statueHp -= p.damage; dead = true; raiseGardenAlert(p.owner);
+      damageStatue(p.damage, p.owner); dead = true;
     }
     }
     if (dead) { if (p.onEnd) p.onEnd(p, pp, hit); else if (p.life > 0) SFX.play('spitSplat', pp); scene.remove(p.mesh); enemyProjectiles.splice(i, 1); }
@@ -22529,7 +22558,7 @@ function smoothPath(pts, from) {
 const tmEye = new THREE.Vector3(), tmAim = new THREE.Vector3(), tmP = new THREE.Vector3();
 // Muzzle height (the cobs fire ~0.55 m below capsule center): sight checks must use where kernels really start
 const eyeOf = (h, out = tmEye) => {
-  if (h.type === 'corn') return out.copy(h.mesh.position).setY(h.mesh.position.y - 0.55);
+  if (h.plant.eye) return h.plant.eye(h, out);
   h.mesh.updateMatrixWorld(true);
   return h.corn.arms[h.nextArm].muzzle.getWorldPosition(out);
 };
@@ -22739,7 +22768,7 @@ function thinkTeammate(h, dtThink) {
     if (b.pathT <= 0) { b.pathT = TM.repathInterval; b.path = findPath(pos, goal) || []; }
   } else b.path = [];
 
-  if (h.type === 'cactus') { b.wantShuck = false; return; }
+  if (h.plant.ownAbilityAI) { b.wantShuck = false; return; }
   // ---- Combat abilities (one per decision; Shuck's aim is checked on the firing frame) ----
   b.wantShuck = false;
   if (!h.onGround || h.hopping || b.pendingHop || !t || !b.clearShot || b.reactT > 0) return;
@@ -23080,7 +23109,7 @@ function updateDowned(h, dt) {
   // the fallen character, so control handoffs cannot duplicate the interaction.
   h.reviveNear = !spectator.active && h === nearestDownedHero() && targetable(player) && flatDist(player.mesh.position, h.mesh.position) < R.range &&
     Math.abs(player.mesh.position.y - h.mesh.position.y) < 2;
-  const medic = heroes.find(a => a.type === 'sunflower' && a.isAI && targetable(a) && a.sun?.reviveTarget === h && a.input.interact
+  const medic = heroes.find(a => a.plant.healer && a.isAI && targetable(a) && a.sun?.reviveTarget === h && a.input.interact
     && flatDist(a.mesh.position, h.mesh.position) < R.range && Math.abs(a.mesh.position.y - h.mesh.position.y) < 2);
   const reviver = h.reviveNear && player.input.interact ? player : medic;
   h.reviveDuration = R.time * (reviver?.stats.reviveMult || 1);
@@ -23357,8 +23386,8 @@ function followPlantAim(dt) {
   const h = player, d = h.cactus?.drone, C = CONFIG.spectator, c = CONFIG.camera, D = CONFIG.cactus.camera;
   if (h.dead) return;   // a fallen plant keeps the last view while it topples / respawns
   // Aim from the camera's look point (pivot + shoulder), so the reticle ray passes through the aim point itself
-  const f = yawForward(), shoulder = d ? D.droneShoulder : h.type === 'sunflower'
-    ? THREE.MathUtils.lerp(CONFIG.SUNFLOWER.camera.shoulder, CONFIG.SUNFLOWER.camera.aimShoulder, h.zoom) : c.shoulder + (state.cam.clear || 0);
+  const pc = h.plant.camera, f = yawForward(), shoulder = d ? D.droneShoulder : pc?.shoulder != null
+    ? THREE.MathUtils.lerp(pc.shoulder, pc.aimShoulder, h.zoom) : c.shoulder + (state.cam.clear || 0);
   const from = _specEye.copy(d ? d.mesh.position : state.cam.pivot || playerMesh.position);
   from.y += d ? D.dronePivotHeight : (state.cam.pivot ? 0 : c.height) + c.lift;
   from.x -= f.z * shoulder; from.z += f.x * shoulder;
@@ -23458,9 +23487,9 @@ function updateCamera(dt) {
   const grounded = h.onGround && !h.dead;
 
   state.fovKick *= Math.exp(-dt * 4);
-  const fov = THREE.MathUtils.lerp(c.fov + (c.speedFov * speedK + c.sprintFov * sp) * motion, h.type === 'cactus' ? CONFIG.cactus.camera.aimFov : c.aimFov, z) + state.fovKick * motion;
+  const fov = THREE.MathUtils.lerp(c.fov + (c.speedFov * speedK + c.sprintFov * sp) * motion, h.plant.camera?.aimFov ?? c.aimFov, z) + state.fovKick * motion;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
-  const dist = THREE.MathUtils.lerp(c.distance + c.sprintDistance * sp * motion, h.type === 'cactus' ? CONFIG.cactus.camera.aimDistance : c.aimDistance, z);
+  const dist = THREE.MathUtils.lerp(c.distance + c.sprintDistance * sp * motion, h.plant.camera?.aimDistance ?? c.aimDistance, z);
   const fwd = yawForward(), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
 
   // Smoothed pivot: snaps on (re)spawn / teleports, otherwise catches up (softer vertically)
@@ -23485,7 +23514,7 @@ function updateCamera(dt) {
   cs.bobAmp = THREE.MathUtils.lerp(cs.bobAmp ?? 0, bobAmp, Math.min(1, dt * 8));
   const bobY = Math.abs(Math.sin(cs.bob)) * c.bob * cs.bobAmp * motion, bobX = Math.sin(cs.bob) * c.bobSide * cs.bobAmp * motion;
 
-  const shoulder = h.type === 'sunflower' ? THREE.MathUtils.lerp(CONFIG.SUNFLOWER.camera.shoulder, CONFIG.SUNFLOWER.camera.aimShoulder, z) : c.shoulder;
+  const pc = h.plant.camera, shoulder = pc?.shoulder != null ? THREE.MathUtils.lerp(pc.shoulder, pc.aimShoulder, z) : c.shoulder;
   const offset = new THREE.Vector3(
     Math.sin(state.yaw) * Math.cos(pitch) * dist,
     Math.sin(pitch) * dist,
@@ -23520,7 +23549,7 @@ function updateCamera(dt) {
   // Crosshair zone check: project a few points of the plant's silhouette; if any lands in the zone,
   // grow an extra shoulder offset (applied next frame), otherwise ease it back
   camera.updateMatrixWorld();
-  const Z = c.clearZone, R = h.type === 'sunflower' ? 1 : h.stats.radius * 1.5;
+  const Z = c.clearZone, R = h.plant.camera?.clearRadius ?? h.stats.radius * 1.5;
   let blocked = false;
   if (!h.dead) for (const dy of [-0.3, 0.3, 0.9]) for (const dx of [0, R]) {
     const q = tmp.copy(playerMesh.position).addScaledVector(right, dx); q.y += dy;
@@ -23672,22 +23701,6 @@ function updateHud(dt) {
   }
   hud('targetHint').style.display = state.targeting ? 'block' : 'none';
 
-  if (player.type === 'peashooter' && player.pea) {
-    const p = player.pea, G = player.abilities.huskHop;
-    if (p.gatling) {
-      setText(hud('ammoN'), p.gatlingAmmo); setText(hud('ammoMax'), ` / ${G.ammo}`);
-      setText(hud('weaponLabel'), p.deploy > 0 ? 'ROOTING…' : 'PEA GATLING · E TO UPROOT');
-      hud('reloadFill').style.width = `${Math.max(0, p.gatlingTime / G.duration) * 100}%`;
-    }
-    for (const [key, remaining, total] of [['huskHop', p.gatling ? p.gatlingTime : 0, G.duration],
-      ['butterBarrage', p.hyper, player.abilities.butterBarrage.duration]]) {
-      if (remaining <= 0) continue;
-      const el = hud(`ab-${key}`); el.classList.add('active'); el.classList.remove('ready');
-      el.querySelector('.cd').style.height = `${(1 - remaining / total) * 100}%`;
-      setText(el.querySelector('.cdt'), `${Math.ceil(remaining)}s`);
-    }
-  }
-
   if (player.type !== 'chomper') { hud('crosshair').classList.remove('swallow'); setText(hud('chompHint'), ''); }
   player.plant.hud?.(player);   // class overrides (heat, charges, active stances)
   updateRoseLockMarker();
@@ -23714,7 +23727,7 @@ function updateHud(dt) {
   hud('vignette').style.opacity = Math.max(state.hurt, low * (0.35 + 0.35 * beat));
   state.cam.tint = Math.max(0, state.cam.tint - dt * 3);
   hud('hurtTint').style.opacity = state.cam.tint * 0.22;
-  hud('speedFx').style.opacity = player.type === 'peashooter' && player.pea?.hyper > 0 ? 0.85 : player.sprint * 0.8;
+  hud('speedFx').style.opacity = (player.plant.speedMult?.(player) ?? 1) > CONFIG.camera.speedFxBoost ? 0.85 : player.sprint * 0.8;
 }
 
 // ---------------------------------------------------------------------
@@ -23988,7 +24001,6 @@ function takeControlOf(h) {
 }
 function disposeHero(h) {
   h.plant.dispose?.(h);
-  if (h.type === 'sunflower' && h.sun) { freeSolarObject(h.sun.healFx); freeSolarObject(h.sun.beamFx); }
   h.active = false; scene.remove(h.mesh, h.bar.group);
   // Registry resources stay available for future duplicates, even when the last instance leaves.
   const sharedMaterials = new Set(), sharedGeometries = new Set();
@@ -24059,13 +24071,6 @@ const SIM_SYSTEMS = [
     muzzleLight.intensity *= Math.exp(-dt * 30);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
   }],
-  ['gardenDamage', () => {   // difficulty: scale whatever the garden lost this frame (many systems write statueHp directly)
-    if (state.statueHp < state.statueSeen) {
-      state.statueHp = state.statueSeen - (state.statueSeen - state.statueHp) * DIFF().statueDamage;
-      state.gardenHurtT = state.time; statueHit();
-    }
-    state.statueSeen = state.statueHp;
-  }],
   ['engagement', dt => updateEngagement(dt)],
   ['waves', dt => { if (state.statueHp <= 0 && !state.over) endGame(false); else updateWaves(dt); }],
 ];
@@ -24120,7 +24125,7 @@ if (AUTOPLAY) { matchStarted = true; document.body.classList.remove('preMatch');
 window.__game = { CONFIG, PLANT_TYPES, get state() { return state; }, get corn() { return corn; }, camera, scene, spawnZombie, spawnAgent, explodeAt, get zombies() { return zombies; },
   heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, ZROUTE, distractAt, heroes, get player() { return player; }, get mate() { return mate; },
   get matchStarted() { return matchStarted; }, findPath, configureSquad, switchSquadMember, damageHero, SFX, get fps() { return fpsAvg; },
-  simulate, SIM_SYSTEMS, loopErrors };
+  simulate, SIM_SYSTEMS, loopErrors, damageStatue, enemyBlast };
 // Engineer inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { get engineerShells() { return engineerShells; }, get sonicGrenades() { return sonicGrenades; },
   engineerTemplate, turretTemplate, makeEngineerBody, throwSonicGrenade, spawnTurret });

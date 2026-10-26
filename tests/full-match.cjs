@@ -48,9 +48,9 @@ const SQUAD = ['corn', 'peashooter', 'sunflower', 'cactus'];
       const g = __game, frame = () => new Promise(r => setTimeout(r, 60));
       g.changeSetting('difficulty', 'crazy'); g.endGame(false); g.configureSquad(['corn', 'peashooter', 'sunflower', 'cactus']);
       const D = g.CONFIG.DIFFICULTY.crazy, out = { key: g.state.difficulty };
-      g.state.statueHp -= 100; await frame(); out.statue = g.CONFIG.statue.hp - g.state.statueHp;
+      g.damageStatue(100); await frame(); out.statue = g.CONFIG.statue.hp - g.state.statueHp;
       const h = g.player, before = h.hp; g.damageHero(h, 10); out.hero = before - h.hp;
-      g.state.statueHp = g.CONFIG.statue.hp; g.state.statueSeen = g.state.statueHp;
+      g.state.statueHp = g.CONFIG.statue.hp;
       const z = g.spawnZombie('shambler'), hp = z.hp; g.damageZombie(z, 20, z.mesh.position.clone(), false, false, h);
       out.zombie = hp - z.hp; out.taken = g.state.stats.match[0].taken; out.dealt = g.state.stats.match[0].damage;
       out.want = { statue: 100 * D.statueDamage, hero: 10 * D.zombieDamage, zombie: Math.round(20 / D.zombieHp) };
@@ -78,7 +78,7 @@ const SQUAD = ['corn', 'peashooter', 'sunflower', 'cactus'];
         if (st.phase === 'extract') { st.finale.charge = 1; return { wave: st.waveIndex, active: true }; }   // finale: zone held
         for (const s of st.spawnQueue) s.t = 0;
         for (const z of g.zombies) if (!z.dead) g.damageZombie(z, 1e7, z.mesh.position.clone(), false, true, owner);
-        st.statueHp = Math.max(st.statueHp, 400); st.statueSeen = st.statueHp;   // keep the AI-only fight from losing
+        st.statueHp = Math.max(st.statueHp, 400);   // keep the AI-only fight from losing
         return { wave: st.waveIndex, active: true };
       });
       if (tick.over) break;

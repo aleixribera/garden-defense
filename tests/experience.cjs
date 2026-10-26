@@ -83,7 +83,7 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
       g.state.yaw = 0; g.hitDirs.length = 0;
       g.damageHero(P, 1, P.mesh.position.clone().add(new T.Vector3(10, 0, 0)));
       const angle = g.hitDirs[0]?.angle;
-      g.state.statueHp -= 40;
+      g.damageStatue(40);
       await new Promise(res => setTimeout(res, 120));
       const c = document.getElementById('radar'), px = c.getContext('2d').getImageData(c.width / 2, c.height / 2 - 3, 1, 1).data;
       return { angle, alert: getComputedStyle(document.getElementById('gardenAlert')).display, flash: g.gardenStatue.flash,
@@ -97,8 +97,8 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
     // --- Statue states: the hat tip breaks off under half health and resets at full health; ally bars hide up close
     r = await page.evaluate(async () => {
       const g = __game, wait = () => new Promise(res => setTimeout(res, 120)), out = {};
-      g.state.statueHp = 400; g.state.statueSeen = 400; await wait(); out.low = g.gardenStatue.tip.visible;
-      g.state.statueHp = 950; g.state.statueSeen = 950; await wait(); out.high = g.gardenStatue.tip.visible;
+      g.state.statueHp = 400; await wait(); out.low = g.gardenStatue.tip.visible;
+      g.state.statueHp = 950; await wait(); out.high = g.gardenStatue.tip.visible;
       const ally = g.heroes.find(h => h !== g.player);
       ally.mesh.position.copy(g.camera.position).add(new g.THREE.Vector3(0, -ally.centerY - 0.2, 0)); await wait();
       out.barNear = ally.bar.group.visible;
@@ -110,7 +110,7 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
 
     // --- Screenshots: a live wave with the awareness HUD, then the court
     await page.evaluate(async () => {
-      const g = __game; g.state.statueHp = 1000; g.state.statueSeen = 1000; g.state.waveTimer = 0.01;
+      const g = __game; g.state.statueHp = 1000; g.state.waveTimer = 0.01;
       await new Promise(res => setTimeout(res, 300));
       for (const s of g.state.spawnQueue) s.t = Math.min(s.t, 0.05);
     });

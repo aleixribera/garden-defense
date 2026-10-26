@@ -68,7 +68,7 @@ const server = gameServer(html);
       const d1 = g.heroes.filter(h => h.isAI).map(h => Math.hypot(h.mesh.position.x - f.pos.x, h.mesh.position.z - f.pos.z));
       const spawned = g.zombies.length, zone = g.extractZone.beacon.visible, hud = document.getElementById('waveLine').textContent;
       g.player.mesh.position.set(f.pos.x, g.heightAt(f.pos.x, f.pos.z) + 1, f.pos.z);   // the human plant stands in the zone
-      g.state.statueHp = 1e6; g.state.statueSeen = 1e6;
+      g.state.statueHp = 1e6;
       f.charge = 0.97;
       for (let i = 0; i < 60 && !g.state.over; i++) { g.player.mesh.position.set(f.pos.x, g.heightAt(f.pos.x, f.pos.z) + 1, f.pos.z); await wait(100); }
       return { phase: g.state.phase, d0, d1, spawned, zone, hud, over: g.state.over, title: document.getElementById('overlayTitle').textContent,
