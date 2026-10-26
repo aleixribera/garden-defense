@@ -12,7 +12,8 @@ const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf
 const defaults = ['corn', 'peashooter', 'sunflower', 'cactus'];
 const picks = ['corn', 'random', 'random', 'random'];
 // The live roster (every CONFIG.PLANTS entry): a default squad is Corn plus three different plants from it
-const roster = [...source.matchAll(/^    (\w+): \{ name: '[^']+', weaponName:/gm)].map(m => m[1]);
+const configSource = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'config.js'), 'utf8');
+const roster = [...configSource.matchAll(/^    (\w+): \{ name: '[^']+', weaponName:/gm)].map(m => m[1]);
 const assertSquad = (types, message) => {
   assert.equal(types.length, 4, message); assert.equal(new Set(types).size, 4, message);
   assert.ok(types.includes('corn') && types.every(type => roster.includes(type)), message);

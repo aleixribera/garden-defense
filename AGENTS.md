@@ -7,9 +7,10 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.30.1)
-- Single file `index.html`, three.js 0.160 vendored in `vendor/three` (import map, dynamic `import()`; serve over http,
-  not file://), no build step, procedural geometry and WebAudio only (no external models, textures or samples).
+## Current state (v1.30.2)
+- `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
+  dependencies) and `src/plants/models.js` (Corn / Peashooter / Sunflower models, imported after three.js). three.js 0.160
+  vendored in `vendor/three` (import map; serve over http, not file://). Procedural geometry + WebAudio only.
 - **Failure handling:** a plain boot-guard script turns any error before `gardenBoot.ready` into a menu message + Reload;
   refused pointer lock says so on the menu (`lockPointer`). `loop()` steps `SIM_SYSTEMS` via `simulate(dt, skip)`, then
   `FRAME_SYSTEMS`, each `guarded()` (a throwing system is logged once, counted in `loopErrors`, and skips the frame).
@@ -110,7 +111,7 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   experience, full-match, polish, cactus). Keep new tests short (one boot, simulated steps, no real-time waits).
 
 ## Code rules
-- All tuning numbers live in `CONFIG` at the top of the script; waves are data, never hardcoded logic.
+- All tuning numbers live in `CONFIG` (`src/config.js`); waves are data, never hardcoded logic.
 - Keep code readable and commented; match the surrounding style.
 - New zombie = `ZOMBIE_TYPES` entry + its own behavior function. New hero = `CONFIG.PLANTS` + `PLANT_TYPES` hooks.
 - Damage: zombies via `damageZombie()`, plant areas via `explodeAt()`, enemy areas via `enemyBlast()`, heroes via

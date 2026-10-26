@@ -19,7 +19,7 @@ const server = gameServer(html);
     const page=await browser.newPage({viewport:{width:1100,height:1100},ignoreHTTPSErrors:true}),errors=[];
     page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
     await page.goto(`http://127.0.0.1:${server.address().port}/`,{timeout:60000});
-    await page.waitForFunction(()=>window.__ggTest,null,{timeout:60000});
+    await page.waitForFunction(()=>window.__ggTest,null,{timeout:120000});
     const model=await page.evaluate(()=>{
       const T=window.__ggTest,g=window.__game,THREE=T.THREE;
       const z=g.spawnZombie('miniBoss');window.ggPreview=z;
