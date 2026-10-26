@@ -995,6 +995,33 @@ export const CONFIG = {
   packDelayTighten: 0.01,       // each wave shortens the hidden pack timers by this fraction…
   packDelayMin: 0.9,            // …down to this multiplier (wave data already ramps the pacing)
   waveCountdown: 5,           // seconds of countdown before each wave (banner, beacons, ground arrows, HUD arrow)
+  // Between-wave boons: after each cleared wave the squad takes 1 of `offer` random boons (← → + Enter). Each is a
+  // squad-wide multiplier for the rest of the match (state.boons); one boon can be taken `max` times. The countdown
+  // waits up to pickTime for the choice and drops back to waveCountdown once one is taken. Spectators and automated
+  // runs take the highlighted card after autoDelay s; a timeout takes it too.
+  boons: {
+    offer: 3, pickTime: 12, autoDelay: 2.5, max: 3,
+    list: [
+      { key: 'damage',   icon: '🌵', name: 'Thorned Shots',  text: '+12% damage to zombies',        stat: 'damage',   mult: 1.12 },
+      { key: 'health',   icon: '🌱', name: 'Deep Roots',     text: '+15% max health',               stat: 'health',   mult: 1.15 },
+      { key: 'cooldown', icon: '☀️', name: 'Photosynthesis', text: 'Abilities recharge 18% faster', stat: 'cooldown', mult: 1.18 },
+      { key: 'speed',    icon: '🍃', name: 'Fleet Roots',    text: '+8% move speed',                stat: 'speed',    mult: 1.08 },
+      { key: 'reload',   icon: '🫛', name: 'Quick Pods',     text: 'Reload 25% faster',             stat: 'reload',   mult: 1.25 },
+      { key: 'respawn',  icon: '🌻', name: 'Fast Sprouting', text: 'Respawn 30% sooner',            stat: 'respawn',  mult: 0.7 },
+    ],
+  },
+  // Wave mutators: every match rolls `waves` of the waves from..to (zero-based) to carry one random mutator, never the
+  // same one twice in a row. Multipliers on that wave: hp (hits a zombie takes), count (non-boss zombies), speed
+  // (zombie walking speed), damage (zombie damage to plants). Shown on the countdown banner.
+  MUTATORS: {
+    waves: 3, from: 1, to: 8,
+    list: [
+      { key: 'frenzy', name: 'Frenzy',        text: 'zombies move 15% faster',                   speed: 1.15 },
+      { key: 'thick',  name: 'Thick Skulls',  text: 'zombies take 25% more hits, 15% fewer come', hp: 1.25, count: 0.85 },
+      { key: 'swarm',  name: 'Swarm',         text: '30% more zombies, each one frailer',         count: 1.3, hp: 0.8 },
+      { key: 'heavy',  name: 'Heavy Hitters', text: 'zombies hit 20% harder, 10% fewer come',     damage: 1.2, count: 0.9 },
+    ],
+  },
   incomingPreviewCount: 3,      // how many zombie types the "Incoming" preview lists
   skullTime: 20,                // the ghost skull marks where a pack spawned for this many seconds
   maxParticles: 450,

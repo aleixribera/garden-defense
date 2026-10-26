@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.30.2)
+## Current state (v1.31.0)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
   dependencies) and `src/plants/models.js` (Corn / Peashooter / Sunflower models, imported after three.js). three.js 0.160
   vendored in `vendor/three` (import map; serve over http, not file://). Procedural geometry + WebAudio only.
@@ -72,7 +72,10 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   (`heroAction` → `JH.gestures`); agents flinch away from hits, pop in on spawn and leave a toppling corpse
   (`agentCorpse`, deferred dispose) whose rig joints, found by ref name at spawn (`collectLimpJoints`), spring into a
   per-class `JA.deathPose` and flop on landing. Agent offsets are undone before behaviors (`unJuiceAgent`). Test: `tests/animation.cjs`.
-- Between waves: regular `CONFIG.waveCountdown` countdown; no shop, potted plants, garden repairs or currency.
+- Between waves: `offerBoons()` opens a 1-of-3 squad boon pick (`CONFIG.boons`, ← → + Enter; auto for spectators /
+  automated runs) read through `boon(stat)` (damage, health, cooldown, speed, reload, respawn → `respawnDelay()`).
+  Per-match wave mutators (`CONFIG.MUTATORS`, `state.mutators`, `mutator(stat)`: hp, count, speed, damage) show on the
+  countdown banner. No shop, potted plants, garden repairs or currency. Test: `tests/boons.cjs`.
 - World art (section "World art", `CONFIG.art`): visual only over the grey-box collision (terrain painted by vertex
   colours + detail map, cliff strata in the ground shader, dressed props merged by material via `bakeRig`, instanced
   trees/rocks/graves/tufts/flowers, sky dome). The garden statue is a gnome (`gardenStatue`; hit flash, grime, hat tip

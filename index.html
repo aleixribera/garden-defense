@@ -205,7 +205,7 @@
   @media (max-width: 700px) { #settingsPanel { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 700px) { #squadSlots { grid-template-columns: repeat(2, 1fr); } #overlayTitle { font-size: 28px; } }
   body.preMatch #hud, body.preMatch #abilities, body.preMatch #ammo, body.preMatch #banner,
-  body.preMatch #laneArrow, body.preMatch #crosshair, body.preMatch #callout { visibility: hidden; }
+  body.preMatch #laneArrow, body.preMatch #crosshair, body.preMatch #callout, body.preMatch #boonPick { visibility: hidden; }
   #banner { position: fixed; top: 22%; width: 100%; text-align: center; pointer-events: none;
     text-shadow: 0 2px 0 rgba(0,0,0,0.35), 0 2px 12px rgba(0,0,0,0.7); }
   #banner .title { font-size: 48px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; }
@@ -344,10 +344,27 @@
   /* Help panel (H) and first-match tips */
   #helpPanel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(620px, 92vw); display: none; z-index: 5;
     pointer-events: none; padding: 18px 22px; font-size: 13px; line-height: 1.6; background: rgba(12,20,14,0.9); }
-  body.helpOpen #banner, body.helpOpen #tip, body.helpOpen #callout { visibility: hidden; }
+  body.helpOpen #banner, body.helpOpen #tip, body.helpOpen #callout, body.helpOpen #boonPick { visibility: hidden; }
   #helpPanel h3 { margin: 0 0 4px; font-size: 18px; } #helpPanel .role { color: var(--accent); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; }
   #helpPanel .grid { display: grid; grid-template-columns: 34px 1fr; gap: 6px 10px; margin: 12px 0; align-items: baseline; }
-  #helpPanel kbd, #tip kbd { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 4px; text-align: center; background: rgba(0,0,0,0.45);
+  /* Between-wave boon picker (CONFIG.boons) */
+  #boonPick { position: fixed; left: 50%; bottom: 108px; transform: translateX(-50%); display: none; text-align: center;
+    pointer-events: none; text-shadow: 0 1px 3px #000; }
+  #boonPick.open { display: block; }
+  #boonPick .head { font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+  #boonTimer { color: #e8f4dc; letter-spacing: 0; font-weight: 600; }
+  #boonCards { display: flex; gap: 12px; justify-content: center; }
+  #boonCards .card { width: 168px; padding: 7px 10px; border-radius: 12px; background: rgba(12,20,14,0.85); color: #e8f4dc;
+    border: 2px solid rgba(255,255,255,0.14); transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s; text-shadow: none; }
+  #boonCards .card.sel { border-color: var(--accent); transform: translateY(-6px) scale(1.04); box-shadow: 0 0 18px rgba(255,214,90,0.35); }
+  #boonCards .icon { font-size: 21px; line-height: 1.15; }
+  #boonCards .name { font-weight: 800; margin: 2px 0; }
+  #boonCards .text { font-size: 12px; color: #cfe0c4; }
+  #boonCards .stack { font-size: 11px; color: var(--accent); }
+  #boonCards .stack:empty { display: none; }
+  #boonPick .hint, #boonTaken { margin-top: 6px; font-size: 12px; color: #dfe9d4; }
+  #boonTaken:empty { display: none; }
+  #boonPick kbd, #helpPanel kbd, #tip kbd { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 4px; text-align: center; background: rgba(0,0,0,0.45);
     border: 1px solid rgba(255,216,74,0.55); color: var(--accent); font: 800 11px/18px inherit; }
   #helpPanel .keys { color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
   /* Tips sit bottom-right above the ammo panel: clear of the plant (low-left of the crosshair) and the crosshair */
@@ -414,6 +431,8 @@
 <div id="stragglers"></div>
 <div id="helpPanel" class="panel"></div>
 <div id="tip"></div>
+<div id="boonPick"><div class="head">Choose a squad boon <span id="boonTimer"></span></div><div id="boonCards"></div>
+  <div class="hint"><kbd>←</kbd> <kbd>→</kbd> choose &nbsp; <kbd>Enter</kbd> take</div><div id="boonTaken"></div></div>
 <div id="roseLock"></div><div id="chompHint"></div><div id="fps"></div>
 <div id="version"></div>
 <div id="spectatorHud" class="panel"><b id="spectatorMode">SPECTATING</b><div id="spectatorName"></div>
@@ -481,7 +500,7 @@ addEventListener('error', e => {
 import { CONFIG } from './src/config.js';
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.30.2';
+const VERSION = 'v1.31.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -6774,6 +6793,83 @@ function selectTheme(index, random = Math.random) {
   const options = EG.themes.filter(t => index >= t.minWave && t.key !== state.engagement.lastTheme);
   return options[Math.floor(random() * options.length)] || null;
 }
+// ---- Between-wave boons (CONFIG.boons) and wave mutators (CONFIG.MUTATORS) ----
+// Both are plain multipliers read where the rule lives: boon(stat) for the squad, mutator(stat) for the wave's zombies.
+const BOONS = CONFIG.boons, MUT = CONFIG.MUTATORS;
+const boon = stat => state?.boons?.[stat] ?? 1;
+const mutator = stat => state?.mutator?.[stat] ?? 1;
+const respawnDelay = () => CONFIG.squad.respawnDelay * boon('respawn');
+function newBoons() {
+  const b = { taken: {} };
+  for (const o of BOONS.list) b[o.stat] = 1;
+  return b;
+}
+function rollMutators(random = Math.random) {
+  const pool = [], plan = {};
+  for (let i = MUT.from; i <= Math.min(MUT.to, WAVES.length - 1); i++) pool.push(i);
+  const waves = [];
+  while (waves.length < MUT.waves && pool.length) waves.push(pool.splice(Math.floor(random() * pool.length), 1)[0]);
+  let last = null;
+  for (const w of waves.sort((a, b) => a - b)) {
+    const options = MUT.list.filter(m => m.key !== last);
+    last = (plan[w] = options[Math.floor(random() * options.length)]).key;
+  }
+  return plan;
+}
+function offerBoons() {
+  const pool = BOONS.list.filter(o => (state.boons.taken[o.key] || 0) < BOONS.max), options = [];
+  while (options.length < BOONS.offer && pool.length) options.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  if (!options.length) return;
+  state.boonOffer = { options, sel: 0, t: BOONS.pickTime };
+  state.waveTimer = Math.max(state.waveTimer, BOONS.pickTime + 1);
+  renderBoonPick();
+  if (!spectator.active) tip('boons');
+}
+function takeBoon(i = state.boonOffer?.sel) {
+  const offer = state.boonOffer, o = offer?.options[i];
+  if (!o) return;
+  state.boonOffer = null;
+  state.boons.taken[o.key] = (state.boons.taken[o.key] || 0) + 1;
+  state.boons[o.stat] *= o.mult;
+  if (o.stat === 'health') for (const h of heroes) if (h.active) {   // more max health now; the gain is healed in
+    const before = h.stats.hp;
+    h.stats.hp = Math.round((h.baseHp ??= before) * state.boons.health);
+    if (!h.dead) h.hp = Math.min(h.stats.hp, h.hp + h.stats.hp - before);
+  }
+  state.waveTimer = Math.min(state.waveTimer, CONFIG.waveCountdown);
+  SFX.play('sunPickup', null);
+  rewardNotice(`${o.icon} ${o.name} · ${o.text}`);   // the feed, clear of the wave banner
+  renderBoonPick();
+}
+function boonKey(code) {
+  const offer = state.boonOffer;
+  if (code === 'Enter' || code === 'NumpadEnter') { takeBoon(); return; }
+  offer.sel = (offer.sel + (code === 'ArrowLeft' ? -1 : 1) + offer.options.length) % offer.options.length;
+  SFX.play('tick', true);
+  renderBoonPick();
+}
+function updateBoonPick(dt) {
+  const offer = state.boonOffer;
+  if (!offer) return;
+  offer.t -= dt;
+  if (offer.t <= 0 || ((spectator.active || AUTOPLAY) && offer.t <= BOONS.pickTime - BOONS.autoDelay)) { takeBoon(); return; }
+  setText(document.getElementById('boonTimer'), `· ${Math.ceil(offer.t)}s`);
+}
+function renderBoonPick() {
+  const el = document.getElementById('boonPick'), offer = state?.boonOffer;
+  el.classList.toggle('open', !!offer);
+  if (!offer) return;
+  document.getElementById('boonCards').replaceChildren(...offer.options.map((o, i) => {
+    const card = document.createElement('div'), n = state.boons.taken[o.key] || 0;
+    card.className = 'card' + (i === offer.sel ? ' sel' : '');
+    for (const [cls, text] of [['icon', o.icon], ['name', o.name], ['text', o.text], ['stack', n ? `taken ×${n}` : '']]) {
+      const d = document.createElement('div'); d.className = cls; d.textContent = text; card.append(d);
+    }
+    return card;
+  }));
+  const taken = BOONS.list.filter(o => state.boons.taken[o.key]).map(o => `${o.icon} ${o.name}${state.boons.taken[o.key] > 1 ? ' ×' + state.boons.taken[o.key] : ''}`);
+  setText(document.getElementById('boonTaken'), taken.length ? `Squad boons: ${taken.join(' · ')}` : '');
+}
 function remixPacks(packs, theme) {
   return packs.map(p => {
     const zombies = { ...p.zombies };
@@ -6896,7 +6992,12 @@ function resetGame() {
     difficulty: SETTINGS.difficulty,   // preset key, locked for the match
     stats: newMatchStats(),
     engagement: { feed: [], theme: null, lastTheme: null, rewardedWave: -1, quiet: 0 },
+    boons: newBoons(),     // squad-wide boon multipliers for this match (CONFIG.boons)
+    boonOffer: null,       // { options, sel, t } while the between-wave picker is open
+    mutators: rollMutators(),   // wave index → CONFIG.MUTATORS entry, rolled per match
+    mutator: null,         // the current wave's mutator (set by beginCountdown)
   };
+  renderBoonPick();
   document.getElementById('waveSummary').replaceChildren();
   document.getElementById('callout').classList.remove('show');
   document.getElementById('matchStats').style.display = 'none';
@@ -6914,6 +7015,7 @@ function resetGame() {
 
 function respawnHero(h) {
   const P = h.stats, W = h.weapon, PLAYER_CENTER_Y = h.centerY;
+  P.hp = Math.round((h.baseHp ??= P.hp) * boon('health'));   // Deep Roots boons (a new match starts at the base)
   h.hp = P.hp;
   h.vanquishChain = null;
   h.lastHurt = -Infinity;
@@ -7120,7 +7222,7 @@ function resolvePacks(index) {
 // Zombie counts scale with the number of active heroes (bosses stay single)
 // and with the difficulty preset (at least one stays)
 const scaledCount = (type, n) => ZT[type].boss ? n :
-  Math.max(n > 0 ? 1 : 0, Math.round(n * DIFF().count * (1 + CONFIG.ZOMBIE_SCALE_PER_HERO * (activeHeroCount() - 1))));
+  Math.max(n > 0 ? 1 : 0, Math.round(n * DIFF().count * mutator('count') * (1 + CONFIG.ZOMBIE_SCALE_PER_HERO * (activeHeroCount() - 1))));
 
 // "Incoming" preview: bosses first, then the most numerous types across all packs
 function incomingPreview(wave) {
@@ -7137,6 +7239,8 @@ function beginCountdown(index) {
   state.waveIndex = index;
   state.phase = 'countdown';
   state.waveTimer = CONFIG.waveCountdown;
+  state.boonOffer = null; renderBoonPick();   // offerBoons() opens a new one after a cleared wave
+  state.mutator = state.mutators?.[index] || null;
   const E = state.engagement;
   E.theme = selectTheme(index); if (E.theme) E.lastTheme = E.theme.key;
   E.quiet = 0;
@@ -7145,7 +7249,9 @@ function beginCountdown(index) {
   const title = document.getElementById('bannerTitle');
   title.textContent = index === WAVES.length - 1 ? 'Final wave' : `Wave ${index + 1}`;
   title.classList.remove('pop'); void title.offsetWidth; title.classList.add('pop');
-  document.getElementById('bannerSub').textContent = `${E.theme ? E.theme.name + ' · ' : ''}Incoming: ${incomingPreview({ packs: state.packs })}`;
+  const M = state.mutator;
+  document.getElementById('bannerSub').textContent = `${E.theme ? E.theme.name + ' · ' : ''}${M ? `⚠ ${M.name}: ${M.text} · ` : ''}` +
+    `Incoming: ${incomingPreview({ packs: state.packs })}`;
   rollBossSlot(index);
 }
 
@@ -7195,6 +7301,7 @@ function bossSlotAgents(R, index) {
 
 // Queue every pack of the wave; each pack's zombies are spread (shuffled) over CONFIG.spawnBurst seconds
 function startWave(index) {
+  if (state.boonOffer) takeBoon();   // the countdown ran out: the highlighted boon
   state.waveIndex = index;
   state.phase = 'active';
   state.stats.waveStartT = state.time; state.stats.waveStartHp = state.statueHp;
@@ -7281,6 +7388,8 @@ addEventListener('keydown', e => {
   if (DEBUG) debugKey(e);
   if (e.code === 'Tab' || e.code === 'BracketRight') switchSquadMember(e.shiftKey ? -1 : 1);
   if (e.code === 'BracketLeft') switchSquadMember(-1);
+  // Between waves: ← → + Enter pick a boon
+  if (state.boonOffer && /^(ArrowLeft|ArrowRight|Enter|NumpadEnter)$/.test(e.code)) { e.preventDefault(); boonKey(e.code); return; }
   // Hero controls: queued presses, read into the player's input next frame
   if (e.code === 'Space') pressed.jump = true;
   if (e.code === 'KeyR') pressed.reload = true;
@@ -7698,7 +7807,7 @@ function readPlayerInput(h) {
 
 function updateHero(h, dt) {
   const P = h.stats, W = h.weapon, AB = h.abilities, PLAYER_CENTER_Y = h.centerY;
-  for (const k in h.cd) h.cd[k] = Math.max(0, h.cd[k] - dt);
+  for (const k in h.cd) h.cd[k] = Math.max(0, h.cd[k] - dt * boon('cooldown'));
   if (!h.active) return;
   if (h.dead) {
     if (h.downed) updateDowned(h, dt);   // the teammate waits for a revive (see Teammate AI)
@@ -7735,7 +7844,7 @@ function updateHero(h, dt) {
   if (floating) { h.floatT -= dt; inp.jump = false; }
   const rooted = heroRooted(h);   // after this frame's ability toggles (Gatling, Sunbeam, drone)
   const speed = rooted ? 0 : P.speed * (1 - (1 - P.aimSpeedMult) * h.zoom) * (1 + (P.sprintMult - 1) * h.sprint)
-    * (h.jam > 0 ? CONFIG.ENGINEER.sonic.slowMult : 1) * (h.plant.speedMult?.(h) ?? 1);
+    * (h.jam > 0 ? CONFIG.ENGINEER.sonic.slowMult : 1) * (h.plant.speedMult?.(h) ?? 1) * boon('speed');
   if (rooted) { v.x = v.z = 0; inp.jump = false; }
   const floatK = floating ? h.floatSlow : 1;
   // In the air with no input, keep momentum (so Husk Hop carries you)
@@ -7811,7 +7920,7 @@ function updateHero(h, dt) {
   h.fireTimer = Math.max(h.fireTimer - dt, -dt);   // carry leftover time so fire rate is frame-rate independent
   h.bloom = Math.max(0, h.bloom - W.bloomRecovery * dt);
   if (h.reloading) {
-    h.reloadT -= dt;
+    h.reloadT -= dt * boon('reload');
     if (h.reloadT <= 0) { h.reloading = false; h.ammo = W.clip; }
   }
   if (h.plant.stanceFire?.(h)) {
@@ -8175,7 +8284,7 @@ function knockHero(h, from, power, up = 4) {
 // src (optional): the zombie, position or projectile origin the hit came from (hit-direction arcs)
 function damageHero(h, amount, src = null) {
   if (!targetable(h)) return;
-  amount *= DIFF().zombieDamage;
+  amount *= DIFF().zombieDamage * mutator('damage');
   if (h.plant.absorb) { amount = h.plant.absorb(h, amount, src); if (amount <= 0) return; }   // Peel Shield
   recordStat(h, 'taken', Math.min(amount, h.hp));
   h.hp -= amount;
@@ -10570,7 +10679,7 @@ function moveZombie(z, dir, dt, mult = 1) {
   steer.y = 0;
   if (steer.lengthSq() < 1e-6) return;
   steer.normalize();
-  const speed = def.speed * z.speedMul * z.buff.speed * mult * (z.climbing ? 0.4 : 1) * (z.hurry || 1) * (z.pfx?.speed ?? 1);
+  const speed = def.speed * z.speedMul * z.buff.speed * mult * (z.climbing ? 0.4 : 1) * (z.hurry || 1) * (z.pfx?.speed ?? 1) * mutator('speed');
   pos.addScaledVector(steer, speed * dt);
   faceDir(z, dir.lengthSq() > 0 ? dir : steer, dt);
   z.wantsMove = true;
@@ -20412,7 +20521,8 @@ function removeDeadZombies() {
 function damageZombie(z, amount, at, reduced = false, heavy = false, owner = null) {
   if (z.dead || z.buried) return;
   const def = z.def;
-  amount /= DIFF().zombieHp;   // difficulty: tougher zombies soak more of every hit
+  amount /= DIFF().zombieHp * mutator('hp');   // difficulty / wave mutator: tougher zombies soak more of every hit
+  if (owner?.stats) amount *= boon('damage');   // squad boon
   if (owner) { z.lastHitBy = owner; z.lastHitT = state.time; }
   const mine = owner === player;   // hit / kill markers are for the human's hits only
   if (z.imp?.mech) {
@@ -21225,13 +21335,13 @@ function downHero(h) {
   recordStat(h, 'downs', 1);
   h.vanquishChain = null;
   h.downed = true;
-  h.downT = h.respawnTimer = CONFIG.squad.respawnDelay;
+  h.downT = h.respawnTimer = respawnDelay();
   h.reviveT = 0;
   h.reloading = false;
   h.brain.state = 'downed'; h.brain.stateT = 0; h.brain.path = []; h.brain.target = null; h.brain.pendingHop = null;
   burstLeaves(h.mesh.position, 18);
   for (let i = 0; i < 14; i++) spawnParticle('chip', 0xffd23a, h.mesh.position, rand3(8, 4), { life: 1 });
-  setMessage(`${h.name} #${h.squadIndex + 1} fell · respawns in ${CONFIG.squad.respawnDelay}s${h === player ? ' · Tab to switch' : ' · hold X nearby to revive'}`, 3);
+  setMessage(`${h.name} #${h.squadIndex + 1} fell · respawns in ${Math.round(respawnDelay())}s${h === player ? ' · Tab to switch' : ' · hold X nearby to revive'}`, 3);
   SFX.play('mateDown', h.mesh.position);
 }
 function nearestDownedHero() {
@@ -21430,6 +21540,7 @@ function updateWaves(dt) {
     document.getElementById('bannerCount').textContent = `Starting in ${Math.max(1, Math.ceil(state.waveTimer))}`;
     if (bannerReady) updateLaneArrow();
     updateBossSlot(dt);
+    updateBoonPick(dt);
     if (state.waveTimer <= 0) startWave(state.waveIndex);
     return;
   }
@@ -21460,6 +21571,7 @@ function updateWaves(dt) {
       callout(`Wave ${state.waveIndex + 1} cleared`, 'Get ready for the next wave', glow);
       state.bannerAt = state.time + CONFIG.feedback.clearBannerDelay;
       beginCountdown(state.waveIndex + 1);
+      offerBoons();
     }
   }
 }
@@ -21803,7 +21915,7 @@ function updateHud(dt) {
   for (const h of heroes) {
     const id = `squad-${h.squadIndex}`, box = hud(id), fallen = h.dead || h.downed, left = respawnLeft(h);
     // Fallen: the bar becomes the respawn clock (drains to empty as the plant comes back)
-    setHudBar(id, fallen ? left / CONFIG.squad.respawnDelay : h.hp / h.stats.hp, dt, (h.regen || h.healedUntil > state.time) && !fallen);
+    setHudBar(id, fallen ? left / respawnDelay() : h.hp / h.stats.hp, dt, (h.regen || h.healedUntil > state.time) && !fallen);
     box.classList.toggle('controlled', h === player);
     box.classList.toggle('fallen', fallen);
     setText(box.querySelector('.label'), `${h.squadIndex + 1} · ${h.name}${h === player && !spectator.active ? ' · YOU' : ''}`);
@@ -21951,6 +22063,7 @@ const TIPS = {
   revive: 'An ally is down! Stand next to them and hold <kbd>X</kbd> to revive before the timer runs out.',
   downed: 'You\'re down. Press <kbd>Tab</kbd> to keep fighting as another plant while you wait to respawn.',
   boss: '<b>Boss incoming!</b> Its health bar is at the top. Bosses hunt plants: keep moving and save your abilities for it.',
+  boons: '<b>Pick a squad boon</b> for the rest of the match: <kbd>←</kbd> <kbd>→</kbd> to choose, <kbd>Enter</kbd> to take it.',
   extract: '<b>Extraction!</b> Run to the green landing zone and stand in it until it charges. More plants inside = faster.',
 };
 const tipEl = hud('tip'), tipQueue = [];
