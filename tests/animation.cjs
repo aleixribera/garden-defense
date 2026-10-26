@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { gameServer } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -13,7 +14,7 @@ const expose = `window.__anTest={THREE,renderer,scene,camera,spawnAgent,updateZo
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 assert.ok(html.includes(expose), 'test hooks must replace the animation loop');
 const out = process.argv[2] || path.join(root, 'docs');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,

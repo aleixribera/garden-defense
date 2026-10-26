@@ -2,6 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const expose = `window.__scaleTest={HORDE_MODELS,hordeKit,updateZombieLook,swapImpDef,IMP_MECH_DEF,boardZMech,
@@ -9,7 +10,7 @@ const expose = `window.__scaleTest={HORDE_MODELS,hordeKit,updateZombieLook,swapI
   get corpses(){return agentCorpses},get gargCorpses(){return gargantuarCorpses}};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 assert.ok(html.includes(expose));
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   let browser;

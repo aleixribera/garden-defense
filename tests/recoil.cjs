@@ -6,13 +6,11 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const cp = require('node:child_process');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(process.env.GARDEN_TEST_HTML || path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = `window.__recoilTest = { resetGame, updateCamera, addCameraRecoil, takeControl,
   fireKernel, firePea, fireSunPulse, fireCactusSpike, toggleGarlicDrone, endGarlicDrone, renderer };`;
-const server = http.createServer((req, res) => {
-  res.setHeader('Content-Type', 'text/html');
-  res.end(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>'));
-});
+const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>'));
 
 (async () => {
   const syntaxFile = path.join(os.tmpdir(), `garden-recoil-${process.pid}.mjs`);

@@ -4,12 +4,10 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = 'window.__controlsTest = { updateHero, updateCamera, clearHumanInput, addCameraRecoil, keys, pressed };';
-const server = http.createServer((req, res) => {
-  res.setHeader('Content-Type', 'text/html');
-  res.end(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>'));
-});
+const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>'));
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   let browser;

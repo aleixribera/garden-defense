@@ -6,6 +6,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const moduleSource = source.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
@@ -23,7 +24,7 @@ const expose = `window.__sunTest = { THREE, renderer, sun, rimLight, updateHero,
 const html = source.replace(/loop\(\);\s*<\/script>\s*<\/body>/, expose + '</script></body>')
   .replace('new THREE.WebGLRenderer({', 'new THREE.WebGLRenderer({ preserveDrawingBuffer: true,');
 assert.ok(html.includes(expose), 'The test must replace the frame loop');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true,

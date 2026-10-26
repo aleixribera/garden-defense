@@ -115,7 +115,7 @@
     text-shadow: 0 3px 0 #6a4a12, 0 6px 0 #3d2a08, 0 10px 24px rgba(0,0,0,0.45); }
   @media (max-width: 700px) { body.preMatch #overlayTitle { font-size: 32px; letter-spacing: 4px; } }
   #overlay small { text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
-  body.preMatch #overlay small { color: #f0f6e8; }
+  body.preMatch #overlay small { color: #f0f6e8; padding: 8px 18px; border-radius: 12px; background: rgba(8,20,10,0.55); }
   /* Loading bar: a transform-only animation keeps moving even while the main thread builds the world */
   #loadBar { display: none; width: min(420px, 80vw); height: 8px; margin: 18px 0 4px; border-radius: 6px; overflow: hidden;
     background: rgba(0,0,0,0.35); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
@@ -123,6 +123,11 @@
     animation: loadSweep 1.1s ease-in-out infinite; }
   @keyframes loadSweep { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
   body.loading #loadBar { display: block; }
+  /* Start / boot problems (mouse capture refused, files failed to load): said on the menu, never a dead button */
+  #overlayNotice { max-width: min(560px, 90vw); margin: 0 0 14px; padding: 9px 16px; border-radius: 10px; font-size: 13px; line-height: 1.5;
+    background: rgba(60,8,4,0.8); box-shadow: inset 0 0 0 1px rgba(255,90,74,0.6); color: #ffe2dc; }
+  #overlayNotice:empty { display: none; }
+  #overlayNotice button { margin-left: 8px; }
   #overlay small { font-size: 14px; margin-top: 18px; color: var(--dim); line-height: 1.9; max-width: 640px; }
   #overlay small b { color: var(--accent); }
   #overlay { cursor: default; padding: 24px; box-sizing: border-box; overflow-y: auto; justify-content: safe center; }
@@ -150,9 +155,9 @@
   #matchButton:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
   #matchButton:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #b08a14, 0 4px 10px rgba(0,0,0,0.35); }
   #matchButton:disabled { cursor: progress; filter: saturate(0.6) brightness(0.92); }
-  #watchButton { margin-top: 12px; padding: 4px 10px; background: none; border: 0; color: var(--dim);
-    font: inherit; font-size: 11px; cursor: pointer; opacity: 0.65; }
-  #watchButton:hover, #watchButton:focus-visible { opacity: 1; color: var(--accent); text-decoration: underline; }
+  #watchButton { margin-top: 12px; padding: 5px 14px; background: rgba(8,20,10,0.55); border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 14px; color: #f0f6e8; font: inherit; font-size: 12px; cursor: pointer; }
+  #watchButton:hover, #watchButton:focus-visible { color: var(--accent); border-color: rgba(255,216,74,0.6); }
   body.loading #watchButton, body.paused #watchButton { display: none; }
   #spectatorHud { display: none; position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
     width: min(530px, 60vw); text-align: center; pointer-events: none; font-size: 11px; line-height: 1.7; }
@@ -314,7 +319,8 @@
   /* Radar (top right): rotates with the view */
   #radar { position: fixed; top: 26px; right: 18px; width: 172px; height: 172px; pointer-events: none; border-radius: 50%;
     box-shadow: 0 4px 18px rgba(0,0,0,0.3); }
-  #radarLegend { position: fixed; top: 202px; right: 18px; width: 172px; text-align: center; font-size: 10px; color: var(--dim);
+  #radarLegend { position: fixed; top: 206px; right: 18px; width: 172px; box-sizing: border-box; padding: 2px 6px; border-radius: 8px;
+    text-align: center; font-size: 10px; color: rgba(244,247,239,0.8); background: rgba(12,18,14,0.45);
     letter-spacing: 0.5px; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
   #radarLegend b { font-weight: 800; } #radarLegend .z { color: #ff6a5a; } #radarLegend .a { color: #ff9a3a; } #radarLegend .s { color: #49b8e8; } #radarLegend .g { color: #5fd0a0; }
   /* Hit direction arcs around the crosshair */
@@ -337,15 +343,17 @@
     border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 6px #ff5a4a; }
   /* Help panel (H) and first-match tips */
   #helpPanel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(620px, 92vw); display: none; z-index: 5;
-    pointer-events: none; padding: 18px 22px; font-size: 13px; line-height: 1.6; }
+    pointer-events: none; padding: 18px 22px; font-size: 13px; line-height: 1.6; background: rgba(12,20,14,0.9); }
+  body.helpOpen #banner, body.helpOpen #tip, body.helpOpen #callout { visibility: hidden; }
   #helpPanel h3 { margin: 0 0 4px; font-size: 18px; } #helpPanel .role { color: var(--accent); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; }
   #helpPanel .grid { display: grid; grid-template-columns: 34px 1fr; gap: 6px 10px; margin: 12px 0; align-items: baseline; }
   #helpPanel kbd, #tip kbd { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 4px; text-align: center; background: rgba(0,0,0,0.45);
     border: 1px solid rgba(255,216,74,0.55); color: var(--accent); font: 800 11px/18px inherit; }
   #helpPanel .keys { color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
-  #tip { position: fixed; bottom: 172px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90vw); display: none; pointer-events: none;
-    padding: 9px 16px; border-radius: 10px; background: rgba(12,24,14,0.78); box-shadow: inset 0 0 0 1px rgba(255,216,74,0.35);
-    font-size: 13px; line-height: 1.5; text-align: center; color: #f2f6e8; }
+  /* Tips sit bottom-right above the ammo panel: clear of the plant (low-left of the crosshair) and the crosshair */
+  #tip { position: fixed; bottom: 128px; right: 20px; max-width: min(360px, 42vw); display: none; pointer-events: none;
+    padding: 9px 16px; border-radius: 10px; background: rgba(12,24,14,0.82); box-shadow: inset 0 0 0 1px rgba(255,216,74,0.35);
+    font-size: 13px; line-height: 1.5; text-align: left; color: #f2f6e8; }
   #tip b { color: var(--accent); }
   body.preMatch #radar, body.preMatch #radarLegend, body.preMatch #gardenAlert, body.preMatch #tip, body.preMatch #stragglers { visibility: hidden; }
   @media (max-width: 700px) { #radar { width: 120px; height: 120px; } #radarLegend { display: none; } }
@@ -429,22 +437,46 @@
   <div id="spectatorSettings"><label>Watch <select id="spectatorSelect" aria-label="Plant to spectate"></select></label>
     <button class="ghostButton" id="spectatorCameraButton">FREE CAMERA</button></div>
   <div id="loadBar"><i></i></div>
+  <div id="overlayNotice" role="alert"></div>
   <button id="matchButton">DEFEND THE GARDEN</button>
   <button id="watchButton" title="Let every selected plant play itself while you watch">◉ Watch squad</button>
   <div id="pauseActions"><button class="ghostButton" id="abandonButton">ABANDON MATCH</button></div>
   <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · 1–4 or Tab switch plants · Hold X near a downed ally to revive · H help · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
 
+<script>
+// Boot guard (plain script, so it also catches a module that fails to parse): until the garden is ready, any
+// uncaught error or failed download replaces the loading screen with the reason and a reload button.
+window.gardenBoot = { ready: false, failed: false };
+function gardenBootFailed(reason) {
+  if (gardenBoot.ready || gardenBoot.failed) return;
+  gardenBoot.failed = true;
+  const fileHint = location.protocol === 'file:' ? ' Browsers block the game files on file:// — open it through a web server (for example <code>python -m http.server</code> in the game folder) or the online build.' : '';
+  const notice = document.getElementById('overlayNotice'), button = document.getElementById('matchButton');
+  document.body.classList.remove('loading');
+  document.getElementById('overlayTitle').textContent = 'THE GARDEN FAILED TO LOAD';
+  notice.textContent = String(reason || 'Unknown error').slice(0, 300);
+  notice.insertAdjacentHTML('beforeend', fileHint);
+  button.disabled = false; button.textContent = 'RELOAD'; button.onclick = () => location.reload();
+}
+addEventListener('error', e => {
+  if (e.filename && !e.filename.startsWith(location.href.split(/[?#]/)[0].replace(/[^/]*$/, ''))) return;   // extensions, other sites
+  gardenBootFailed(e.error?.message || e.message);
+});
+addEventListener('unhandledrejection', e => gardenBootFailed(e.reason?.message || e.reason));
+</script>
+<!-- three.js r160 ships with the game (vendor/three: the npm package's build + the three addons used), so the game
+     never depends on a CDN being up. Serve the folder over http(s); browsers block module files on file://. -->
 <script type="importmap">
 { "imports": {
-  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  "three": "./vendor/three/build/three.module.js",
+  "three/addons/": "./vendor/three/examples/jsm/"
 } }
 </script>
 <script type="module">
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.29.2';
+const VERSION = 'v1.29.3';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -1316,7 +1348,8 @@ const CONFIG = {
       med:  { name: 'Med',  shadows: true,  shadowMap: 1024, pixelRatio: 1,    particles: 300 },
       high: { name: 'High', shadows: true,  shadowMap: 2048, pixelRatio: 2,    particles: 450 },
     },
-  },  debugPackSize: 4,             // zombies spawned per debug key press (keys 1–9)
+  },
+  debugPackSize: 4,             // zombies spawned per debug key press (Shift + 1–8)
   // -------------------------------------------------------------------
   // THE MAP — grey-box layout. x = east, z = south (north is -z). Statue at the origin.
   // Sunken Statue Court (tier 0) → open mid ring (tier 3) walled by cliffs (tier 14), with four
@@ -1709,7 +1742,7 @@ const WAVES = CONFIG.WAVES;
 const W = CONFIG.weapon;
 const AB = CONFIG.abilities;
 
-// Debug keys 1..9 spawn a pack of these types, in order.
+// Debug keys Shift + 1..8 spawn a pack of these types, in order.
 const DEBUG_SPAWN_KEYS = ['shambler', 'sprinter', 'plated', 'spitter', 'bomber', 'banner', 'climber', 'howler'];
 
 // =====================================================================
@@ -9109,9 +9142,9 @@ addEventListener('keydown', e => {
     if (e.code === 'KeyR') { resetSpectatorCamera(); syncSpectatorUi(); }
     return;
   }
-  // 1–4: take control of that squad member (the number on its squad card)
+  // 1–4: take control of that squad member (the number on its squad card); debug spawns use Shift + number
   const slot = /^Digit([1-4])$/.exec(e.code);
-  if (slot && !DEBUG) { const h = heroes[slot[1] - 1]; if (h && h !== player) takeControlOf(h); }
+  if (slot && !(DEBUG && e.shiftKey)) { const h = heroes[slot[1] - 1]; if (h && h !== player) takeControlOf(h); }
   if (DEBUG) debugKey(e);
   if (e.code === 'Tab' || e.code === 'BracketRight') switchSquadMember(e.shiftKey ? -1 : 1);
   if (e.code === 'BracketLeft') switchSquadMember(-1);
@@ -9125,15 +9158,15 @@ addEventListener('keydown', e => {
 });
 // Developer keys (?debug / ?autoplay only)
 function debugKey(e) {
-  // Debug: Digit1..Digit9 spawn a small pack of that type at the spawn point
-  const m = /^Digit([1-9])$/.exec(e.code);
+  // Debug: Shift + 1..8 spawn a small pack of that type at the spawn point (plain 1–4 switch plants)
+  const m = e.shiftKey && /^Digit([1-9])$/.exec(e.code);
   const type = m && DEBUG_SPAWN_KEYS[m[1] - 1];
   if (type) {
     for (let i = 0; i < CONFIG.debugPackSize; i++) spawnZombie(type);
     setMessage(`[debug] spawned ${CONFIG.debugPackSize} ${type}`, 1.5);
   }
-  // Debug: 0 = drop one of every tactical agent at the spawn nearest the squad
-  if (e.code === 'Digit0') {
+  // Debug: Shift + 0 = drop one of every tactical agent at the spawn nearest the squad
+  if (e.code === 'Digit0' && e.shiftKey) {
     for (const k of Object.keys(ZT)) if (ZT[k].agent) spawnAgent(k);
     setMessage('[debug] spawned every tactical agent', 1.5);
   }
@@ -9179,15 +9212,31 @@ function startMatch(watch = false) {
     matchStarted = true;
     document.body.classList.remove('preMatch');
   }
-  renderer.domElement.requestPointerLock();
+  lockPointer();
   SFX.init();
 }
+// The match runs while the mouse is captured. Browsers can refuse: Chrome blocks a re-capture for about a second
+// after Esc, and embedded frames may never allow it. Say so on the menu instead of leaving a button that does nothing.
+const overlayNotice = document.getElementById('overlayNotice');
+let lockRefusals = 0;
+function pointerLockRefused() {
+  lockRefusals++;
+  overlayNotice.textContent = window.top !== window || lockRefusals >= 3
+    ? 'This browser window will not let the game capture the mouse. Open the game in a normal browser tab to play.'
+    : 'The browser did not capture the mouse (it waits about a second after Esc). Click the button again.';
+}
+function lockPointer() {
+  overlayNotice.textContent = '';
+  try { renderer.domElement.requestPointerLock()?.catch?.(pointerLockRefused); } catch { pointerLockRefused(); }
+}
+document.addEventListener('pointerlockerror', pointerLockRefused);
 document.getElementById('matchButton').addEventListener('click', () => startMatch(false));
 document.getElementById('watchButton').addEventListener('click', () => startMatch(true));
 document.getElementById('spectatorSelect').addEventListener('change', e => spectateHero(heroes[+e.target.value]));
 document.getElementById('spectatorCameraButton').addEventListener('click', () => toggleSpectatorCamera());
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
+  if (locked) lockRefusals = 0;
   overlay.style.display = locked ? 'none' : 'flex';
   clearHumanInput();
   document.body.classList.toggle('paused', !locked && !state.over && matchStarted);
@@ -23786,11 +23835,12 @@ function showHelp() {
     `<div class="grid"><kbd>LMB</kbd><span>${player.loadout && player.loadout !== 'Classic' ? `${player.loadout}: ${EG.loadouts[player.type].description}` : I.primary}</span>` +
     ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<kbd>${'QEF'[n]}</kbd><span><b>${d.abilityIcons[k]} ${d.abilityNames[k]}</b> · ${I[k]}</span>`).join('') +
     `</div><div class="keys"><kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump · <kbd>RMB</kbd> zoom · <kbd>R</kbd> reload · ` +
-    `<kbd>1</kbd>–<kbd>4</kbd> / <kbd>Tab</kbd> switch plant · <kbd>X</kbd> revive · between waves <kbd>C</kbd> buy, <kbd>Z</kbd> pot type, <kbd>Enter</kbd> ready · <kbd>Esc</kbd> pause · <kbd>H</kbd> close</div>`;
+    `<kbd>1</kbd>–<kbd>4</kbd> / <kbd>Tab</kbd> switch plant · <kbd>X</kbd> revive · <kbd>Esc</kbd> pause · <kbd>H</kbd> close</div>`;
 }
 function toggleHelp(open = !helpOpen) {
   helpOpen = open;
   hud('helpPanel').style.display = open ? 'block' : 'none';
+  document.body.classList.toggle('helpOpen', open);   // the banner and tips hide under the panel
   if (open) showHelp();
 }
 document.getElementById('abandonButton').addEventListener('click', () => {
@@ -23985,72 +24035,80 @@ updateSquadSummary(); rebuildSquadHud();
 
 const clock = new THREE.Clock();
 let fpsAvg = 60;
-function loop() {
-  if (AUTOPLAY) setTimeout(loop, 16); else requestAnimationFrame(loop);   // background panes may get no frames
-  const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
-  if (raw > 0) fpsAvg += (1 / raw - fpsAvg) * 0.05;
-  const playing = matchStarted && (AUTOPLAY || (!document.hidden && document.hasFocus() && document.pointerLockElement === renderer.domElement)) && !state.over;
-
-  if (playing) {
-    state.time += dt;
-    if (!spectator.active) readPlayerInput(player);
-    updateGardenAlert(dt);
-    for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); }
-    for (const h of heroes) updateHero(h, dt);
-    updateZombies(dt);
-    updateProjectiles(dt);
-    updateRockets(dt);
-    updateBarrages(dt);
-    updateBeanBombs(dt);
-    updateSunflowerWorld(dt);
-    updateEnemyProjectiles(dt);
-    updatePirateWorld(dt);
-    updateMechaWorld(dt);
-    updateGargantuarWorld(dt);
-    updateSoldierWorld(dt);
-    updateImpWorld(dt);
-    updateScientistWorld(dt);
-    updateEngineerWorld(dt);
-    updateAllStarWorld(dt);
-    updateAgentCorpses(dt);
-    updateCactusWorld(dt);
-    updateNewPlantWorld(dt);
-    updateEffects(dt);
-    updateSkulls(dt, state.time);
-    animateMarkers(state.time);
-    updateParticles(dt);
-    for (const h of heroes) if (h.active) { h.plant.animate(h, dt); heroJuice(h, dt); }
+// One simulation step, in order (the playing branch of loop). Tests step the same list with simulate(dt, skip),
+// skipping systems by name (e.g. ['input', 'waves']), so a new system added here is simulated by them too.
+const SIM_SYSTEMS = [
+  ['input', () => { if (!spectator.active) readPlayerInput(player); }],
+  ['gardenAlert', dt => updateGardenAlert(dt)],
+  ['plantAI', dt => { for (const h of heroes) if (h.isAI && h.active) { h.plant.drive(h, dt); finaleSteer(h, dt); aiRootedWatchdog(h, dt); aiUnstick(h, dt); } }],
+  ['heroes', dt => { for (const h of heroes) updateHero(h, dt); }],
+  ['zombies', dt => updateZombies(dt)],
+  ['projectiles', dt => updateProjectiles(dt)],
+  ['cornWorld', dt => { updateRockets(dt); updateBarrages(dt); updateBeanBombs(dt); }],
+  ['sunflowerWorld', dt => updateSunflowerWorld(dt)],
+  ['enemyProjectiles', dt => updateEnemyProjectiles(dt)],
+  ['agentWorlds', dt => {
+    updatePirateWorld(dt); updateMechaWorld(dt); updateGargantuarWorld(dt); updateSoldierWorld(dt); updateImpWorld(dt);
+    updateScientistWorld(dt); updateEngineerWorld(dt); updateAllStarWorld(dt); updateAgentCorpses(dt);
+  }],
+  ['cactusWorld', dt => updateCactusWorld(dt)],
+  ['newPlantWorld', dt => updateNewPlantWorld(dt)],
+  ['effects', dt => { updateEffects(dt); updateSkulls(dt, state.time); animateMarkers(state.time); updateParticles(dt); }],
+  ['animate', dt => { for (const h of heroes) if (h.active) { h.plant.animate(h, dt); heroJuice(h, dt); } }],
+  ['feedback', dt => {
     muzzleLight.intensity *= Math.exp(-dt * 30);
     if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) setMessage(''); }
-    // Difficulty: scale whatever the garden lost this frame (many systems write statueHp directly)
+  }],
+  ['gardenDamage', () => {   // difficulty: scale whatever the garden lost this frame (many systems write statueHp directly)
     if (state.statueHp < state.statueSeen) {
       state.statueHp = state.statueSeen - (state.statueSeen - state.statueHp) * DIFF().statueDamage;
       state.gardenHurtT = state.time; statueHit();
     }
     state.statueSeen = state.statueHp;
-    updateEngagement(dt);
-    if (state.statueHp <= 0 && !state.over) endGame(false);
-    else updateWaves(dt);
+  }],
+  ['engagement', dt => updateEngagement(dt)],
+  ['waves', dt => { if (state.statueHp <= 0 && !state.over) endGame(false); else updateWaves(dt); }],
+];
+// Error boundary: a system that throws is logged once (then counted) and skips that frame; every other system, the
+// HUD and rendering keep running, so one bad entity can't freeze the picture. Tests still see the console error.
+const loopErrors = new Map();
+function guarded(name, fn, dt) {
+  try { fn(dt); } catch (err) {
+    const n = (loopErrors.get(name) || 0) + 1;
+    loopErrors.set(name, n);
+    if (n === 1) { console.error(`Garden Defense: "${name}" failed and skips its frame`, err); setMessage('⚠ Something went wrong · details in the console', 3); }
   }
-  updateCamera(spectator.active && !playing ? 0 : dt);
-  // Silence everything while paused / tabbed out (game-over stings still play)
-  SFX.setActive((document.pointerLockElement === renderer.domElement || AUTOPLAY || state.over) && !document.hidden && document.hasFocus());
-  SFX.update(dt);
-  updatePopups(playing ? dt : 0);
-  updateHud(playing ? dt : 0);
-  updateAwareness(playing ? dt : 0);
-  drawRadar();
-  if (!spectator.active) updateTips(playing ? dt : 0);
-  updateCactusHud();
-  updateSunflowerHud();
-  updateRevivePrompt();
-  mateDebug.draw();
-  updateZombieBatches(playing ? dt : 0);
-  updateParticleBatches();
-  updateShaderGuard();
-  skyDome.position.copy(camera.position);
-  for (const sp of artSpin) sp.obj.rotation.z += sp.rate * dt;
-  updateGardenStatue(playing ? dt : 0);
+}
+function simulate(dt, skip = []) {
+  state.time += dt;
+  for (const [name, fn] of SIM_SYSTEMS) if (!skip.includes(name)) guarded(name, fn, dt);
+}
+const FRAME_SYSTEMS = [
+  ['camera', (dt, playing) => updateCamera(spectator.active && !playing ? 0 : dt)],
+  ['audio', dt => {   // silence everything while paused / tabbed out (game-over stings still play)
+    SFX.setActive((document.pointerLockElement === renderer.domElement || AUTOPLAY || state.over) && !document.hidden && document.hasFocus());
+    SFX.update(dt);
+  }],
+  ['hud', (dt, playing) => {
+    const t = playing ? dt : 0;
+    updatePopups(t); updateHud(t); updateAwareness(t); drawRadar();
+    if (!spectator.active) updateTips(t);
+    updateCactusHud(); updateSunflowerHud(); updateRevivePrompt(); mateDebug.draw();
+  }],
+  ['batches', (dt, playing) => { updateZombieBatches(playing ? dt : 0); updateParticleBatches(); updateShaderGuard(); }],
+  ['scenery', (dt, playing) => {
+    skyDome.position.copy(camera.position);
+    for (const sp of artSpin) sp.obj.rotation.z += sp.rate * dt;
+    updateGardenStatue(playing ? dt : 0);
+  }],
+];
+function loop() {
+  if (AUTOPLAY) setTimeout(loop, 16); else requestAnimationFrame(loop);   // background panes may get no frames
+  const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
+  if (raw > 0) fpsAvg += (1 / raw - fpsAvg) * 0.05;
+  const playing = matchStarted && (AUTOPLAY || (!document.hidden && document.hasFocus() && document.pointerLockElement === renderer.domElement)) && !state.over;
+  if (playing) simulate(dt);
+  for (const [name, fn] of FRAME_SYSTEMS) guarded(name, () => fn(dt, playing));
   renderer.render(scene, camera);
   debugMap.draw();
 }
@@ -24061,7 +24119,8 @@ if (AUTOPLAY) { matchStarted = true; document.body.classList.remove('preMatch');
 // Debug handle for the browser console (inspect / pose the hero)
 window.__game = { CONFIG, PLANT_TYPES, get state() { return state; }, get corn() { return corn; }, camera, scene, spawnZombie, spawnAgent, explodeAt, get zombies() { return zombies; },
   heightAt, groundAt, losClear, debugMap, NAV, STATUE_FIELD, ZROUTE, distractAt, heroes, get player() { return player; }, get mate() { return mate; },
-  get matchStarted() { return matchStarted; }, findPath, configureSquad, switchSquadMember, damageHero, SFX, get fps() { return fpsAvg; } };
+  get matchStarted() { return matchStarted; }, findPath, configureSquad, switchSquadMember, damageHero, SFX, get fps() { return fpsAvg; },
+  simulate, SIM_SYSTEMS, loopErrors };
 // Engineer inspection hooks (model viewer / browser tests)
 Object.assign(window.__game, { get engineerShells() { return engineerShells; }, get sonicGrenades() { return sonicGrenades; },
   engineerTemplate, turretTemplate, makeEngineerBody, throwSonicGrenade, spawnTurret });
@@ -24203,6 +24262,7 @@ prewarmAssets();
   const button = document.getElementById('matchButton');
   button.disabled = false;
   document.body.classList.remove('loading');
+  gardenBoot.ready = true;
   if (bootSelection) {
     configureSquad(initialSquad);
     matchStarted = true;

@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { gameServer } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -10,7 +11,7 @@ const script = source.split('<script type="module">')[1].split('</script>')[0];
 new (Object.getPrototypeOf(async function () {}).constructor)(script.replace(/^import .*$/gm, ''));
 const expose = `window.__peaTest={THREE,renderer,sun,resetGame,respawnHero,makeHero,newInput,takeControl,animatePeashooter,updateHero,updateProjectiles,firePea,throwChiliBean,togglePeaGatling,useHyper,updateBeanBombs,drivePeashooter,peaTargetScore,peaBeanArcClear,updateHud,damageZombie,shotClear,stopPeaGatling,get beans(){return beanBombs},get shots(){return projectiles},clear(){for(const p of projectiles)scene.remove(p.mesh);projectiles=[];clearBeanBombs();for(const z of zombies)scene.remove(z.mesh);zombies=[];state.distractions=[];state.spawnQueue=[];state.over=false;}};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: ['--enable-unsafe-swiftshader'] });

@@ -15,14 +15,15 @@ const expose = `window.__cactusTest = { THREE, renderer, resetGame, respawnHero,
   get enemyProjectiles() { return enemyProjectiles; },
   clearEnemies() { zombies.forEach(z => scene.remove(z.mesh)); zombies = []; },
   scene };`;
-const server = http.createServer((req, res) => {
+const server = gameServer(req => {
   let source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   if (req.url.includes('deterministic')) source = source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>');
   else if (req.url.includes('live')) source = source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\nloop();\n</script>');
-  res.setHeader('Content-Type', 'text/html'); res.end(source);
+  return source;
 });
 (async () => {
   const syntaxFile = path.join(require('node:os').tmpdir(), `garden-cactus-check-${process.pid}.mjs`);
+const { gameServer } = require('./lib/game-server.cjs');
   fs.writeFileSync(syntaxFile, fs.readFileSync(path.join(root, 'index.html'), 'utf8').match(/<script type="module">([\s\S]*?)<\/script>/)[1]);
   cp.execFileSync(process.execPath, ['--check', syntaxFile]); fs.unlinkSync(syntaxFile);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

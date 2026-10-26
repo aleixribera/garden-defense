@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { gameServer } = require('../tests/lib/game-server.cjs');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
@@ -37,7 +38,7 @@ const expose = `window.__plantLab={THREE,renderer,scene,camera,sun,rimLight,make
   PLANT_TYPES,LAB:typeof LAB!=='undefined'?LAB:null};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 if (!html.includes(expose)) throw Error('test hooks must replace the animation loop');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));

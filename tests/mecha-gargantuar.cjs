@@ -1,6 +1,7 @@
 // Real-renderer model previews and deterministic combat/lifecycle regression checks.
 // NODE_PATH can point to the desktop's bundled node_modules; no game build step.
 const fs = require('fs'), path = require('path'), http = require('http'), assert = require('assert/strict');
+const { gameServer } = require('./lib/game-server.cjs');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -11,7 +12,7 @@ const expose = `window.__mgTest={THREE,renderer,scene,camera,resetGame,respawnHe
   clear(){resetGame();state.spawnQueue=[];state.over=false;state.phase='active';}};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 assert.ok(html.includes(expose));
-const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(html);});
+const server = gameServer(html);
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined,args:['--enable-unsafe-swiftshader']});

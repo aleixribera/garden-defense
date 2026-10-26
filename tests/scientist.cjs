@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { gameServer } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -11,7 +12,7 @@ const expose = `window.__sciTest={THREE,renderer,scene,camera,resetGame,respawnH
   get pellets(){return gooPellets},get balls(){return stickyBalls},get zombies(){return zombies},
   clear(){clearScientistWorld();for(const z of zombies)scene.remove(z.mesh);zombies=[];state.spawnQueue=[];state.over=false;}};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: ['--enable-unsafe-swiftshader'] });

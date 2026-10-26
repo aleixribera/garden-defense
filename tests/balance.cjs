@@ -6,6 +6,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const root = path.resolve(__dirname, '..'), baseline = process.argv.includes('--baseline');
 const source = baseline ? execFileSync('git', ['show', 'HEAD:index.html'], { cwd: root, encoding: 'utf8', maxBuffer: 4e6 })
   : fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -18,7 +19,7 @@ const expose = `window.__balance = { THREE, resetGame, respawnHero, newInput, up
 };`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 assert.ok(html.includes(expose));
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   let browser;

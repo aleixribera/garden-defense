@@ -3,13 +3,14 @@
 // knocked off its route or walled in, and the horde actually reaches the statue without getting stuck.
 // Writes docs/routing-map.png (debug map with every planned route) for eyeballing.
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
+const { gameServer } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const expose = `window.__rtTest={THREE,resetGame,updateZombies,removeDeadZombies,think,statueFaceDist,cactusWalls,get zombies(){return zombies}};`;
 const html = source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>');
 assert.ok(html.includes(expose), 'test hooks must replace the animation loop');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   const syntax = path.join(os.tmpdir(), `garden-routing-${process.pid}.mjs`);
   try { fs.writeFileSync(syntax, source.match(/<script type="module">([\s\S]*?)<\/script>/)[1]); cp.execFileSync(process.execPath, ['--check', syntax]); }

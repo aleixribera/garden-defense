@@ -3,13 +3,14 @@
 // nav steps work both ways, ledges (cliff tops, ramp sides) are marked and routes keep off them, a hero can walk
 // A* paths all over the map without jumping, and zombies are never shoved off a ledge (knockback still throws them).
 const fs = require('fs'), path = require('path'), http = require('http');
+const { gameServer } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = 'window.__terrainTest = { updateHero, updateZombies, constrainZombie, MAP };';
 const html = source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>');
 assert.ok(html.includes(expose), 'test hooks must replace the animation loop');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const server = gameServer(html);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   let browser;

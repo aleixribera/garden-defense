@@ -5,10 +5,11 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8')
   .replace(/\nloop\(\);\s*<\/script>/, '\nwindow.__polishTest = { updateCamera };\nloop();\n</script>');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
+const server = gameServer(html);
 
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

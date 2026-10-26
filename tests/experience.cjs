@@ -6,11 +6,12 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 
 // Keep the scheduled loop alive, but freeze its work during captures so software rendering cannot starve screenshots.
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8')
   .replace('const raw = clock.getDelta()', 'if (window.__captureFrame) return; const raw = clock.getDelta()');
-const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
+const server = gameServer(html);
 const SHOTS = path.resolve(__dirname, '..', 'docs');
 
 (async () => {

@@ -1,15 +1,18 @@
 # Garden Defense — Agent Guide
 **Keep this file small:** short, current facts only; replace outdated lines, never append history.
-**Always commit, tag, push:** bump `VERSION` in `index.html` and the version below, commit, tag it, push with tags.
+**Always commit, tag, push:** bump `VERSION` in `index.html`, `package.json` and the version below, commit, tag it, push with tags.
 If another session is making changes, only commit, tag, push your changes, and let the other session handle its own changes.
 
 ## Game
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.29.2)
-- Single file `index.html`, three.js 0.160 from unpkg (dynamic `import()`), no build step, procedural geometry and
-  WebAudio only (no external models, textures or samples).
+## Current state (v1.29.3)
+- Single file `index.html`, three.js 0.160 vendored in `vendor/three` (import map, dynamic `import()`; serve over http,
+  not file://), no build step, procedural geometry and WebAudio only (no external models, textures or samples).
+- **Failure handling:** a plain boot-guard script turns any error before `gardenBoot.ready` into a menu message + Reload;
+  refused pointer lock says so on the menu (`lockPointer`). `loop()` steps `SIM_SYSTEMS` via `simulate(dt, skip)`, then
+  `FRAME_SYSTEMS`, each `guarded()` (a throwing system is logged once, counted in `loopErrors`, and skips the frame).
 - **Loading rule:** the main menu shows instantly. All loading (three.js, map, nav fields, models, templates, shader
   compiles) runs after the squad is chosen, behind the loading screen (section "Main menu + boot"). Anything built
   lazily must be prewarmed in `prewarmAssets()`; per-spawn procedural rigs come from `RIG_POOL` via `takeRig()`.
@@ -97,10 +100,10 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Wave tuning was eased zombie-side in v1.27.1 (Normal = 1×; levers in docs/balance.md "Wave difficulty").
 - Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, music, camera motion, FOV, quality;
   menu + Esc pause panel; systems register appliers with `onSettings()`. Focus loss pauses and clears input.
-- Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, 1–8 spawn packs, 0 all agents, N next wave, B/V bosses,
-  M map, K stress horde. Normal play: 1–4 take a plant, H help.
-  `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright). `npm test` = the short tests in
-  pairs (~3.5 min); `npm run test:full` adds the slow real-time runs listed in `SLOW` (tests/run-all.cjs: boss-finale,
+- Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, Shift+1–8 spawn packs, Shift+0 all agents, N next wave,
+  B/V bosses, M map, K stress horde. 1–4 always take a plant, H help.
+  `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright), served by `tests/lib/game-server.cjs`
+  (the patched page + repo files). `npm test` = the short tests in pairs (~6 min); `npm run test:full` adds the slow real-time runs listed in `SLOW` (tests/run-all.cjs: boss-finale,
   experience, full-match, polish, cactus). Keep new tests short (one boot, simulated steps, no real-time waits).
 
 ## Code rules

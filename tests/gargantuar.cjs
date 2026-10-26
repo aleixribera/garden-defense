@@ -1,6 +1,7 @@
 // Real browser regression scenarios plus reproducible studio views of the procedural boss.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict'),os=require('node:os'),cp=require('node:child_process');
 const {chromium}=require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const expose=`window.__ggTest={THREE,renderer,scene,camera,resetGame,respawnHero,updateZombies,updateGargantuarWorld,
   updateParticles,updateEffects,updateHeroInfo,gargantuarBehavior,gargantuarSlam,gargantuarBegin,damageZombie,
@@ -8,7 +9,7 @@ const expose=`window.__ggTest={THREE,renderer,scene,camera,resetGame,respawnHero
   toggleSunbeam,togglePeaGatling,OBSTACLES,feetY,constrainZombie,clearGargantuarWorld,gargantuarImpBlast,gargantuarCorpses,think};`;
 const html=source.replace(/\nloop\(\);\s*<\/script>/,'\n'+expose+'\n</script>');
 assert.ok(html.includes(expose));
-const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(html);});
+const server = gameServer(html);
 (async()=>{
   const syntax=path.join(os.tmpdir(),`garden-gargantuar-${process.pid}.mjs`);
   try{fs.writeFileSync(syntax,source.match(/<script type="module">([\s\S]*?)<\/script>/)[1]);cp.execFileSync(process.execPath,['--check',syntax]);}finally{fs.rmSync(syntax,{force:true});}
