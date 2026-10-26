@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.29.3)
+## Current state (v1.29.5)
 - Single file `index.html`, three.js 0.160 vendored in `vendor/three` (import map, dynamic `import()`; serve over http,
   not file://), no build step, procedural geometry and WebAudio only (no external models, textures or samples).
 - **Failure handling:** a plain boot-guard script turns any error before `gardenBoot.ready` into a menu message + Reload;
