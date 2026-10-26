@@ -7,7 +7,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.31.0)
+## Current state (v1.32.0)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
   dependencies) and `src/plants/models.js` (Corn / Peashooter / Sunflower models, imported after three.js). three.js 0.160
   vendored in `vendor/three` (import map; serve over http, not file://). Procedural geometry + WebAudio only.
@@ -91,10 +91,14 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Human jumps have landing buffering / ledge grace (`CONFIG.movement`). Tests: `tests/controls.cjs`, `tests/camera-walls.cjs`.
 - Music (section "Music" inside the audio module, `CONFIG.music`): procedural 16-step sequencer; mode calm / combat /
   boss / off from match state fades layer gains. Music volume setting. Feedback: `callout()` for wave start / clear /
-  boss, pooled damage numbers (`spawnPopup` style: yours / 'minor' allies / 'kill'). HUD writes go through
+  boss, pooled damage numbers (`spawnPopup` style: yours / 'minor' allies (numbers off: `feedback.allyDamageNumbers`) / 'kill'). HUD writes go through
   `setText` / `setHtml` (DOM only on change). Polish audit: docs/experience.md. Test: `tests/polish.cjs`.
-- Match flow: always-on vanquish HUD (controlled plant + squad match totals); `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
-  between-waves summary (`showWaveSummary`, under the countdown banner) and end-of-match table (`showMatchStats`).
+- HUD v2 / Menu v2 (stylesheet sections, appended last so they override): information only when it matters, toggled by
+  body classes set in `updateHud` (`betweenWaves`, `firstWave`, `soloSquad`, `debug`) and `matchOver` / `settingsOpen`.
+  Top strip = garden bar + `renderWavePips` + `#waveLine` + `#waveTags`; things under it follow `--topB`. `#opsHud` stays
+  hidden (kept for tests). Rationale table: docs/experience.md "HUD and menu redesign". Test: `tests/hud.cjs`.
+- Match flow: vanquishes on the player plate (squad total while spectating); `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
+  between-waves summary (`showWaveSummary`: totals + MVP, under the countdown banner) and end-of-match table (`showMatchStats`).
 - Spectator: discreet Watch squad menu button makes every selected plant AI; `spectator.view` = plant (default: the
   player camera + full HUD aimed by the AI via `followPlantAim`; feedback via `ownsView(h)`) / orbit / free. Tab / [ ] /
   1–4 watch plants; F cycles views, R plant view; orbit: mouse + wheel; free: WASD + E/Q fly, Shift faster; Esc pause.

@@ -91,7 +91,7 @@ const server = gameServer(html);
       const kill = [...document.querySelectorAll('#popups .pop')].find(e => e.classList.contains('kill') && e.style.display !== 'none')?.className;
       return { mine, theirs, nodes, kill };
     });
-    assert.equal(r.mine, 'pop'); assert.equal(r.theirs, 'pop minor'); assert.equal(r.kill, 'pop kill');
+    assert.equal(r.mine, 'pop'); assert.equal(r.theirs, undefined, 'ally damage numbers stay hidden'); assert.equal(r.kill, 'pop kill');
     assert.ok(r.nodes <= 60, `popup nodes stay pooled: ${r.nodes}`);
     console.log(`PASS: damage numbers (yours "${r.mine}", ally "${r.theirs}", kill "${r.kill}"), ${r.nodes} pooled nodes after 122 hits`);
 

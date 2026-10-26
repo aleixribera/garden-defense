@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const cp = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const { chromium } = require('playwright');
+const { gameServer } = require('./lib/game-server.cjs');
 const expose = `window.__cactusTest = { THREE, renderer, resetGame, respawnHero, updateHero, newInput,
   updateCactusWorld, animateCactus, fireCactusSpike, plantPotatoMine, plantTallnut, toggleGarlicDrone,
   callDroneCornStrike, endGarlicDrone, damageCactusWall, pushCactusWalls, cactusWallAt, solidAt,

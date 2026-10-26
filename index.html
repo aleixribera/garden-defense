@@ -374,20 +374,179 @@
   #tip b { color: var(--accent); }
   body.preMatch #radar, body.preMatch #radarLegend, body.preMatch #gardenAlert, body.preMatch #tip, body.preMatch #stragglers { visibility: hidden; }
   @media (max-width: 700px) { #radar { width: 120px; height: 120px; } #radarLegend { display: none; } }
+
+  /* =====================================================================
+     HUD v2: one warm "garden glass" look, and information only while it matters.
+     Always: garden + wave strip (top), radar, your plant, squad chips, abilities, ammo.
+     Situational: boss bar, wave theme / mutator tags, mastery (between waves), radar legend + ability names
+     (first wave, or with H), squad totals + hints (spectating), FPS (?debug), version (menus).
+     ===================================================================== */
+  :root { --panel: linear-gradient(180deg, rgba(30,46,31,0.82), rgba(11,20,13,0.82)); --edge: rgba(255,236,170,0.17);
+    --display: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif; }
+  .panel { border-radius: 16px; backdrop-filter: blur(6px) saturate(1.15);
+    box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 rgba(255,255,255,0.07), 0 8px 24px rgba(0,0,0,0.32); }
+  .hbar { border-radius: 99px; background: rgba(0,0,0,0.5); }
+  .hbar .fill { background: linear-gradient(180deg, color-mix(in srgb, var(--c, var(--hp)) 65%, #fff), var(--c, var(--hp)) 60%); }
+  .hbar .fill::after { display: none; }
+  /* Top: garden strip */
+  #top { top: 12px; width: min(500px, 60vw); padding: 10px 18px 9px; }
+  #gardenBox .label { color: #dff7e9; letter-spacing: 3px; }
+  #gardenBox .gnome { font-style: normal; margin-right: 7px; letter-spacing: 0; }
+  #gardenNum { font: 900 16px var(--display); color: #dff7e9; }
+  #gardenBox .hbar { height: 14px; }
+  #wavePips { display: flex; justify-content: center; gap: 6px; margin-top: 15px; }
+  #wavePips .pip { position: relative; width: 24px; height: 6px; border-radius: 4px; background: rgba(255,255,255,0.16); font-style: normal; }
+  #wavePips .pip.done { background: var(--garden); }
+  #wavePips .pip.now { background: var(--accent); box-shadow: 0 0 10px rgba(255,216,74,0.7); animation: pipNow 1.2s ease-in-out infinite; }
+  #wavePips .pip.boss::after { content: '☠'; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); font-size: 10px;
+    line-height: 1; color: var(--boss); }
+  #wavePips .pip.extract { width: 10px; background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.4); }
+  #wavePips .pip.extract.now { background: var(--accent); }
+  @keyframes pipNow { 50% { filter: brightness(1.4); } }
+  #waveLine { margin-top: 6px; font-size: 12px; letter-spacing: 0.5px; }
+  #waveTags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 7px; }
+  #waveTags:empty { display: none; }
+  #waveTags .tag { padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; color: #ffe9a0;
+    background: rgba(255,216,74,0.13); box-shadow: inset 0 0 0 1px rgba(255,216,74,0.3); }
+  #waveTags .tag.mut { color: #ffd6cf; background: rgba(255,90,74,0.16); box-shadow: inset 0 0 0 1px rgba(255,90,74,0.42); }
+  #bossHud { margin-top: 10px; }
+  #bossHud .hbar { height: 10px; }
+  #opsHud { display: none !important; }   /* superseded by #waveTags + #waveLine */
+  /* Bottom left: squad chips over your plant's plate */
+  #heroes { left: 18px; bottom: 18px; width: 300px; }
+  #squadHud { display: flex; gap: 6px; margin-bottom: 8px; }
+  body.soloSquad #squadHud { display: none; }
+  #squadHud .squadMember { position: relative; display: block; flex: 1; min-width: 0; padding: 5px 6px 7px; border-radius: 12px; text-align: center;
+    background: var(--panel); box-shadow: inset 0 0 0 1px var(--edge); }
+  #squadHud .squadMember .icon { font-size: 21px; line-height: 1.15; }
+  #squadHud .squadMember .key { position: absolute; top: 3px; left: 7px; font: 800 10px var(--display); color: var(--dim); }
+  #squadHud .squadMember .row { display: none; }
+  #squadHud .squadMember .hbar { height: 4px; margin-top: 4px; }
+  #squadHud .squadMember.controlled { box-shadow: inset 0 0 0 2px var(--accent), 0 0 14px rgba(255,216,74,0.22); }
+  #squadHud .squadMember.controlled .key { color: var(--accent); }
+  #squadHud .squadMember.fallen .row { display: flex; position: absolute; inset: 0; align-items: center; justify-content: center; margin: 0 !important; }
+  #squadHud .squadMember.fallen .label { display: none; }
+  #squadHud .squadMember.fallen .num { padding: 1px 7px; border-radius: 8px; font: 900 13px var(--display); color: #ffd6cf; background: rgba(60,8,4,0.8); }
+  #playerBox { padding: 10px 14px; }
+  #playerBox .row { align-items: center; }
+  #playerBox .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #playerIcon { font-size: 22px; line-height: 1; }
+  #playerLabel { font: 800 12px var(--display); letter-spacing: 1.5px; color: var(--text) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #playerHpNum { font: 900 28px var(--display); }
+  #playerBox .hbar { height: 12px; }
+  #playerBox .foot { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+  #masteryHud { display: none; flex: 1; margin: 0; }
+  body.betweenWaves #masteryHud { display: block; }
+  #killCounter { display: flex; align-items: baseline; gap: 5px; margin: 0 0 0 auto; padding: 0; border: 0; font-size: 11px; color: var(--dim); }
+  #killCount { font-size: 18px; }
+  #squadKillTotal { display: none; margin: 0; }
+  body.spectating #squadKillTotal { display: inline; }
+  #squadHint { display: none; }
+  body.spectating #squadHint { display: block; }
+  /* Abilities + ammo */
+  #abilities { bottom: 32px; gap: 18px; }
+  .ab { width: 62px; height: 62px; border-radius: 17px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--edge), 0 6px 16px rgba(0,0,0,0.3); }
+  .ab .icon { font-size: 27px; line-height: 62px; }
+  .ab .key { top: -7px; left: -7px; width: 20px; height: 20px; border-radius: 50%; font: 800 10px/20px var(--display); color: var(--text);
+    background: #1d2b1f; box-shadow: inset 0 0 0 1px var(--edge); }
+  .ab .cd { background: rgba(4,8,5,0.72); }
+  .ab .cdt { font: 900 20px var(--display); }
+  .ab.ready { box-shadow: inset 0 0 0 2px var(--accent), 0 0 16px rgba(255,216,74,0.2), 0 6px 16px rgba(0,0,0,0.3); }
+  .ab.ready .key { color: #2a2208; background: var(--accent); }
+  .ab .name { top: 68px; display: none; color: rgba(255,255,255,0.78); }
+  body.firstWave .ab .name, body.betweenWaves .ab .name, body.helpOpen .ab .name { display: block; }
+  #ammo { right: 18px; bottom: 18px; min-width: 168px; padding: 10px 16px 9px; }
+  #ammo .n { font: 900 44px var(--display); }
+  #ammo .label { letter-spacing: 2.5px; }
+  #reloadBar { width: 100%; height: 4px; }
+  /* Radar, feed, tips, banners */
+  #radar { box-shadow: 0 0 0 2px var(--edge), 0 8px 24px rgba(0,0,0,0.35); }
+  #radarLegend { display: none; }
+  body.firstWave #radarLegend, body.helpOpen #radarLegend { display: block; }
+  #rewardFeed { top: 214px; right: 18px; line-height: 1.5; }
+  #rewardFeed > * { display: table; margin: 0 0 4px auto; padding: 2px 10px; border-radius: 99px; background: rgba(12,22,14,0.62);
+    box-shadow: inset 0 0 0 1px rgba(255,216,74,0.18); }
+  #tip { border-radius: 14px; background: var(--panel); box-shadow: inset 0 0 0 1px rgba(255,216,74,0.35), 0 8px 24px rgba(0,0,0,0.3); }
+  #banner .title, #callout, body.preMatch #overlayTitle { font-family: var(--display); }
+  #callout { font-size: 44px; }
+  #waveSummary { font-size: 13px; line-height: 1.6; }
+  #fps { display: none; }
+  body.debug #fps { display: block; }
+  #version { display: none; }
+  body.preMatch #version, body.paused #version { display: block; }
+  /* Everything hanging under the top strip follows its height (--topB, kept by a ResizeObserver) */
+  #laneArrow { top: calc(var(--topB, 112px) + 10px); }
+  #gardenAlert { top: calc(var(--topB, 112px) + 64px); }
+  #banner { top: calc(var(--topB, 112px) + 84px); }   /* below the lane arrow */
+  #callout { top: max(20%, calc(var(--topB, 112px) + 28px)); }
+  body:has(#boonPick.open) #tip { bottom: 236px; }   /* clear of the boon cards */
+
+  /* Menu v2: the squad is the hero of the screen, Play always fits, settings fold away until asked for (open on pause) */
+  #overlay { gap: 0; }
+  #overlay > * { flex-shrink: 0; }   /* scroll instead of squashing panels on short screens */
+  body.preMatch #overlayTitle { font-size: clamp(40px, 6vw, 64px); margin-top: 4px; }
+  #squadPicker { width: min(920px, 94vw); margin: 18px 0 20px; padding: 20px 22px 18px; border: 0; border-radius: 20px;
+    background: linear-gradient(180deg, rgba(26,44,29,0.93), rgba(10,20,12,0.93));
+    box-shadow: inset 0 0 0 1px rgba(255,236,170,0.16), inset 0 1px 0 rgba(255,255,255,0.08), 0 18px 48px rgba(0,0,0,0.38); }
+  #squadPicker h2 { font: 900 24px var(--display); letter-spacing: 0.5px; }
+  #squadPicker p { margin: 0 0 16px; font-size: 13px; }
+  #squadSlots { gap: 12px; }
+  #squadSlots label { grid-template-rows: auto auto 1fr auto; gap: 7px; padding: 12px; border-radius: 14px; background: rgba(0,0,0,0.22);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); font-size: 10px; letter-spacing: 1.5px; }
+  #squadSlots label:first-child { background: rgba(255,216,74,0.08); box-shadow: inset 0 0 0 1.5px rgba(255,216,74,0.45); }
+  #squadSlots select, #overlay select { background: #1b2e1f; border: 1px solid rgba(255,236,170,0.22); border-radius: 9px; padding: 9px 8px;
+    font-weight: 700; cursor: pointer; }
+  #squadSlots select:hover, #overlay select:hover { border-color: rgba(255,216,74,0.55); }
+  .plantCard { min-height: 0; font-size: 11.5px; }
+  .plantCard .face { display: block; font-size: 40px; line-height: 1.1; text-align: center; margin: 2px 0 6px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4)); }
+  .plantCard b { margin-bottom: 2px; }
+  .plantCard .mastery { display: block; margin-top: 6px; color: #ffe9a0; font-size: 11px; }
+  .plantCard .weapon { margin-top: 6px; font-size: 11px; opacity: 0.8; }
+  .loadoutPick { padding: 6px 8px !important; font-size: 12px !important; font-weight: 600 !important; }
+  .loadoutPick:disabled { visibility: hidden; }
+  #squadSummary { display: inline-block; margin: 14px 18px 0 0; font-size: 12px; vertical-align: middle; }
+  #difficultyPick { display: inline-flex; margin-top: 14px; vertical-align: middle; }
+  #matchButton { font: 900 18px var(--display); letter-spacing: 2px; padding: 16px 52px; border-radius: 14px; }
+  #menuRow { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+  #menuRow button, #settingsToggle { margin: 0; padding: 6px 16px; background: rgba(8,20,10,0.6); border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 99px; color: #f0f6e8; font: 600 12px var(--display); cursor: pointer; }
+  #settingsToggle:hover, #settingsToggle:focus-visible, body.settingsOpen #settingsToggle { color: var(--accent); border-color: rgba(255,216,74,0.6); }
+  body.loading #settingsToggle, body.paused #settingsToggle { display: none; }
+  #settingsPanel { order: 1; margin: 16px 0 0; border: 0; border-radius: 16px; background: linear-gradient(180deg, rgba(26,44,29,0.93), rgba(10,20,12,0.93));
+    box-shadow: inset 0 0 0 1px rgba(255,236,170,0.16), 0 12px 32px rgba(0,0,0,0.3); }
+  body:not(.paused):not(.settingsOpen) #settingsPanel, body.loading #settingsPanel { display: none; }
+  /* Match over: the verdict sits right under VICTORY / DEFEAT, the squad picker below it */
+  #overlayTitle { order: -3; }
+  body.matchOver #overlaySub { order: -2; margin: 4px 0 0; font-size: 16px; color: #f0f6e8; }
+  body.matchOver #matchStats { order: -1; margin: 16px 0 0; border: 0; border-radius: 16px; background: linear-gradient(180deg, rgba(26,44,29,0.93), rgba(10,20,12,0.93));
+    box-shadow: inset 0 0 0 1px rgba(255,236,170,0.16), 0 12px 32px rgba(0,0,0,0.3); }
+  body.matchOver #squadPicker p, body.matchOver .plantCard > :not(.face):not(b), body.matchOver .loadoutPick { display: none; }
+  body.matchOver .plantCard { font-size: 0; }
+  body.matchOver .plantCard b { font-size: 10px; }
+  body.matchOver #overlay { background: radial-gradient(ellipse at center, rgba(10,20,12,0.78), rgba(0,0,0,0.92)); }
+  body.matchOver :is(#hud, #popups, #fallenTags, #abilities, #ammo, #rewardFeed, #radar, #radarLegend, #hitDirs, #crosshair, #tip,
+    #boonPick, #banner, #callout, #stragglers, #gardenAlert, #laneArrow) { visibility: hidden; }
+  body.paused #settingsPanel { order: 0; margin: 0 0 20px; }
+  #overlaySub { order: 2; }
+  #overlay small { font-size: 12px; line-height: 1.8; margin-top: 16px; }
+  #overlay small b { font-weight: 700; }
+  body.preMatch #overlay small { padding: 6px 16px; }
+  @media (max-height: 820px) { body.preMatch #overlayTitle { font-size: 38px; } #squadPicker { margin: 10px 0 14px; padding: 14px 18px; }
+    .plantCard .face { font-size: 30px; margin: 0 0 2px; } .plantCard .weapon { display: none; } #squadPicker p { margin-bottom: 10px; }
+    #menuRow { margin-top: 10px; } body.preMatch #overlay small { display: none; } }
 </style>
 </head>
 <body class="preMatch">
 <div id="hud">
   <div id="top" class="panel">
     <div class="hbox" id="gardenBox">
-      <div class="row"><span class="label">Garden</span><span class="num" id="gardenNum"></span></div>
+      <div class="row"><span class="label"><i class="gnome" aria-hidden="true">🏡</i>Garden</span><span class="num" id="gardenNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
     </div>
+    <div id="wavePips" aria-hidden="true"></div>
     <div id="waveLine"></div>
-    <div id="killCounter" title="Match vanquishes for the currently controlled plant, plus the squad total">
-      <span aria-hidden="true">☠</span><span id="killCount">0</span><span>VANQUISHES</span>
-      <span id="squadKillTotal">Squad: <span id="squadKillCount">0</span></span>
-    </div>
+    <div id="waveTags"></div>
     <div class="hbox" id="bossHud">
       <div class="row"><span class="label" id="bossName">Boss</span><span class="num" id="bossNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
@@ -396,9 +555,11 @@
   <div id="heroes">
     <div id="squadHud"></div>
     <div class="hbox panel" id="playerBox">
-      <div class="row"><span class="label" id="playerLabel">Kernel Corn</span><span id="playerHpNum"></span></div>
+      <div class="row"><span class="who"><span id="playerIcon" aria-hidden="true"></span><span class="label" id="playerLabel">Kernel Corn</span></span><span id="playerHpNum"></span></div>
       <div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>
-      <div id="masteryHud"></div>
+      <div class="foot"><div id="masteryHud"></div>
+        <div id="killCounter" title="Match vanquishes for the plant you control (squad total while spectating)">
+          <span aria-hidden="true">☠</span><span id="killCount">0</span><span id="squadKillTotal">· squad <span id="squadKillCount">0</span></span></div></div>
     </div>
     <div id="squadHint">Tab · next plant &nbsp; [ / ] · previous / next</div>
   </div>
@@ -440,7 +601,7 @@
 </div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
   <div id="squadPicker"><h2>Choose your squad</h2>
-    <p>Choose your plant and up to three autonomous companions. Random picks never repeat a squad plant.<br>Each plant keeps its health, ammo and cooldowns when you switch.</p>
+    <p>Play one plant, bring up to three AI companions, and swap between them any time with 1–4 or Tab.</p>
     <div id="squadSlots"></div><div id="squadSummary"></div>
     <label id="difficultyPick">Difficulty <select id="setDifficulty" aria-label="Difficulty"></select></label>
   </div>
@@ -458,9 +619,10 @@
   <div id="loadBar"><i></i></div>
   <div id="overlayNotice" role="alert"></div>
   <button id="matchButton">DEFEND THE GARDEN</button>
-  <button id="watchButton" title="Let every selected plant play itself while you watch">◉ Watch squad</button>
+  <div id="menuRow"><button id="watchButton" title="Let every selected plant play itself while you watch">◉ Watch squad</button>
+    <button id="settingsToggle" aria-expanded="false" aria-controls="settingsPanel">⚙ Settings</button></div>
   <div id="pauseActions"><button class="ghostButton" id="abandonButton">ABANDON MATCH</button></div>
-  <small id="overlaySub">WASD move · Shift sprint · Mouse aim · LMB fire · RMB zoom · Space jump · R reload<br>Q / E / F abilities · 1–4 or Tab switch plants · Hold X near a downed ally to revive · H help · Esc pause &amp; settings<br>Each plant keeps its state when you switch. Fallen plants respawn at the garden.</small></div>
+  <small id="overlaySub"><b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> aim · <b>LMB</b> fire · <b>RMB</b> zoom · <b>Space</b> jump · <b>R</b> reload<br><b>Q E F</b> abilities · <b>1–4 / Tab</b> switch plants · hold <b>X</b> to revive · <b>H</b> help · <b>Esc</b> pause</small></div>
 
 <script>
 // Boot guard (plain script, so it also catches a module that fails to parse): until the garden is ready, any
@@ -500,7 +662,7 @@ addEventListener('error', e => {
 import { CONFIG } from './src/config.js';
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.31.0';
+const VERSION = 'v1.32.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -556,6 +718,7 @@ function masteryLevel(type) {
   while (xp >= need && level < EG.maxLevel) { xp -= need; level++; need += EG.levelGrowth; }
   return { level, xp, need, title: EG.titles[Math.min(EG.titles.length - 1, Math.floor((level - 1) / EG.titleEvery))] };
 }
+const PLANT_ICONS = { corn: '🌽', peashooter: '🫛', sunflower: '🌻', cactus: '🌵', citron: '🍊', rose: '🌹', chomper: '🦷' };
 const squadSlots = document.getElementById('squadSlots');
 // Pick a visible, editable plant once on menu creation; automated boots keep their stable fixture default.
 const playerChoices = Object.keys(CONFIG.PLANTS);
@@ -581,17 +744,24 @@ for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
       cardType = select.value;
     }
     loadout.disabled = !d;
-    card.innerHTML = select.value === 'random' ? '<b>Random plant</b>Chosen from the available roster at match start. No repeats within the squad.' :
-      !d ? '<i>No companion</i>' : `<b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
+    card.innerHTML = select.value === 'random' ? '<span class="face">🎲</span><b>Random plant</b>A different squadmate each match, never a repeat.' :
+      !d ? '<span class="face" style="opacity:.25">🪴</span><i>Empty slot</i>' :
+      `<span class="face">${PLANT_ICONS[select.value] || '🌱'}</span><b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
       ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span><kbd>${'QEF'[n]}</kbd>${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>' +
       `<span class="mastery">${m.title} · Level ${m.level}${m.level < EG.maxLevel ? ` · ${Math.floor(m.xp)} / ${m.need} XP` : ' · ★'}</span>` +
-      `<div>${loadout.value === 'variant' ? variant.description : d.info.primary}</div>`;
+      (i === 0 ? `<div class="weapon">${loadout.value === 'variant' ? variant.description : d.info.primary}</div>` : '');
   };
   select.showCard();
   select.addEventListener('change', () => { select.showCard(); updateSquadSummary(); });
   loadout.addEventListener('change', () => select.showCard());
   label.append(select, card, loadout); squadSlots.append(label);
 }
+// Settings fold away on the menu; the pause screen always shows them
+document.getElementById('settingsToggle').addEventListener('click', e => {
+  const open = document.body.classList.toggle('settingsOpen');
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+  if (open) document.getElementById('settingsPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
 function readSquadSelection() {
   return [...squadSlots.querySelectorAll('select[id^="pick-"]')].map(select => select.value).filter(Boolean);
 }
@@ -6906,8 +7076,10 @@ function drawEngagement() {
   const E = state.engagement, m = masteryLevel(player.type), chain = player.vanquishChain;
   setHtml(hud('masteryHud'), `${m.title} · LV ${m.level} · +${Math.floor(state.stats.match[player.squadIndex]?.xp || 0)} XP this match` +
     `<progress max="${m.need}" value="${m.level >= EG.maxLevel ? m.need : m.xp}" aria-label="Plant mastery progress"></progress>`);
-  setHtml(hud('opsHud'), state.phase === 'extract' ? '<b>Last stand</b><div>Hold the landing zone together!</div>' :
-    `<b>${E.theme ? E.theme.name : 'Garden Ops'}</b><div class="muted">${E.theme?.hint || (spectator.active ? 'All plants on AI · follow the action' : 'Defend · support · switch plants')}</div>`);
+  // This wave's theme and mutator, as tags under the wave strip while it runs (the countdown banner announces them)
+  const M = state.mutator, live = state.phase === 'active';
+  setHtml(hud('waveTags'), (live && E.theme ? `<span class="tag">${E.theme.name} · ${E.theme.hint}</span>` : '') +
+    (live && M ? `<span class="tag mut">⚠ ${M.name} · ${M.text}</span>` : ''));
   const notices = E.feed.map(n => `<div>${n.text}${n.count > 1 ? ` ×${n.count}` : ''}</div>`).join('');
   setHtml(hud('rewardFeed'), notices + (chain && state.time - chain.t <= EG.chain.window && chain.count > 1 ? `<b>${chain.count} vanquish chain</b>` : ''));
 }
@@ -6926,12 +7098,9 @@ function showWaveSummary(index) {
   const kills = S.wave.reduce((n, l) => n + l.kills, 0), lost = Math.max(0, S.waveStartHp - state.statueHp);
   const mvp = mvpIndex(S.wave);
   el.innerHTML = `<div class="head">Wave ${index + 1} cleared · ${fmtTime(state.time - S.waveStartT)}</div>` +
-    `<div>${kills} zombies vanquished · garden ${lost > 0 ? `−${Math.round(lost)}` : 'untouched'} (${Math.max(0, Math.ceil(state.statueHp))} / ${CONFIG.statue.hp})</div>` +
-    heroes.map((h, i) => { const l = S.wave[i];
-      return `<div${i === mvp ? ' class="mvp"' : ''}>${PLANT_ICONS[h.type] || '🌱'} ${h.name} #${i + 1} · ${l.kills} kills · ${fmtNum(l.damage)} dmg` +
-        `${l.assists ? ` · ${l.assists} assists` : ''}${l.healing ? ` · ${fmtNum(l.healing)} healed` : ''}` +
-        `${l.downs ? ` · ${l.downs} down${l.downs > 1 ? 's' : ''}` : ''}${l.revives ? ` · ${l.revives} revive${l.revives > 1 ? 's' : ''}` : ''} · +${Math.floor(l.xp)} XP${i === mvp ? ' ★' : ''}</div>`; }).join('') +
-    `<div>${state.engagement.theme?.name || 'Garden Ops'}</div>`;
+    `<div>${kills} zombies vanquished · garden ${lost > 0 ? `−${Math.round(lost)}` : 'untouched'}</div>` +
+    (heroes[mvp] && S.wave[mvp].kills + S.wave[mvp].damage > 0 ? (l => `<div class="mvp">★ ${PLANT_ICONS[heroes[mvp].type] || '🌱'} ${heroes[mvp].name} #${mvp + 1} · ` +
+      `${l.kills} kills · ${fmtNum(l.damage)} dmg${l.healing ? ` · ${fmtNum(l.healing)} healed` : ''}${l.revives ? ` · ${l.revives} revives` : ''}</div>`)(S.wave[mvp]) : '');
   S.wave = heroes.map(newStatLine); S.waveStartHp = state.statueHp; S.waveStartT = state.time;
 }
 // End-of-match table on the overlay
@@ -7452,7 +7621,7 @@ function startMatch(watch = false) {
     spectator.active = watch;
     configureSquad(readSquadSelection()); fillRigPools(); warmUpload();   // restart: rebuild spent rigs before play
     matchStarted = true;
-    document.body.classList.remove('preMatch');
+    document.body.classList.remove('preMatch', 'matchOver', 'settingsOpen');
   }
   lockPointer();
   SFX.init();
@@ -7552,6 +7721,7 @@ function endGame(won) {
   }
   saveMastery();
   state.over = true;
+  document.body.classList.add('matchOver');
   for (const select of squadSlots.querySelectorAll('select[id^="pick-"]')) select.showCard();
   updateSquadSummary();
   SFX.play(won ? 'victory' : 'defeat');
@@ -7576,6 +7746,7 @@ function endGame(won) {
 const popupPool = [], POPUP_CAP = CONFIG.feedback.popupCap, POPUP_MINOR_RANGE = CONFIG.feedback.allyPopupRange;
 function spawnPopup(pos, amount, color, style = '') {
   if (style === 'minor' && pos.distanceTo(camera.position) > POPUP_MINOR_RANGE) return;
+  if (style === 'minor' && typeof amount === 'number' && !CONFIG.feedback.allyDamageNumbers) return;   // allies' plain damage: noise
   if (popups.length >= POPUP_CAP) { const old = popups.shift(); old.el.style.display = 'none'; popupPool.push(old.el); }
   let el = popupPool.pop();
   if (!el) { el = document.createElement('div'); document.getElementById('popups').appendChild(el); }
@@ -9414,7 +9585,7 @@ function absorbPeelShield(h, amount, from) {
   c.absorb -= amount; c.shieldHit = 0.25; c.shieldHp = Math.max(0, c.absorb / h.abilities.butterBarrage.absorb);
   SFX.play('citShieldHit', pos, h.isAI);
   const at = pos.clone().addScaledVector(f, 1.1).setY(pos.y + 0.3);
-  spawnPopup(at, Math.round(amount), '#ffc46b', 'minor');
+  spawnPopup(at, Math.round(amount), '#ffc46b', ownsView(h) ? '' : 'minor');   // your own shield's soak always shows
   if (c.absorb > 0) return 0;
   lowerPeelShield(h, true);
   return -c.absorb;
@@ -21875,6 +22046,23 @@ function setHudBar(id, ratio, dt, regen) {
   box.classList.toggle('regen', !!regen);
 }
 let fpsShownAt = 0;
+// Wave progress pips under the garden bar: done / current / to come, boss waves marked, then the extraction
+let wavePipKey = '';
+new ResizeObserver(([e]) => document.documentElement.style.setProperty('--topB', `${Math.round(e.target.getBoundingClientRect().bottom)}px`))
+  .observe(document.getElementById('top'));
+function renderWavePips() {
+  const key = `${state.waveIndex}|${state.phase}|${WAVES.length}`;
+  if (key === wavePipKey) return;
+  wavePipKey = key;
+  const extract = state.phase === 'extract', pips = WAVES.map((_, i) => {
+    const p = document.createElement('i');
+    p.className = 'pip' + (extract || i < state.waveIndex ? ' done' : '') + (!extract && i === state.waveIndex ? ' now' : '') +
+      (CONFIG.BOSS_SLOT.waves.includes(i) ? ' boss' : '');
+    return p;
+  });
+  const last = document.createElement('i'); last.className = 'pip extract' + (extract ? ' now' : '');
+  hud('wavePips').replaceChildren(...pips, last);
+}
 function updateHud(dt) {
   const P = player.stats, W = player.weapon, AB = player.abilities;
   drawEngagement();
@@ -21892,8 +22080,8 @@ function updateHud(dt) {
   const f = state.finale, clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   setHtml(hud('waveLine'), state.phase === 'extract'
     ? `<b>EXTRACTION</b> &nbsp;·&nbsp; zone <b>${Math.floor(f.charge * 100)}%</b>${f.inside ? ` (${f.inside} in)` : ''} &nbsp;·&nbsp; <b>${clock(Math.max(0, f.t))}</b>`
-    : `Wave <b>${state.waveIndex + 1}</b> / ${WAVES.length}` +
-      (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'}` : ''));
+    : `Wave <b>${state.waveIndex + 1}</b> of ${WAVES.length}` +
+      (state.phase === 'active' ? ` &nbsp;·&nbsp; <b>${left}</b> zombie${left === 1 ? '' : 's'} left` : ' &nbsp;·&nbsp; get ready'));
   const boss = zombies.find(z => z.def.boss);
   hud('bossHud').style.display = boss ? 'block' : 'none';
   if (boss) {
@@ -21911,6 +22099,14 @@ function updateHud(dt) {
   setHudBar('playerBox', player.hp / P.hp, dt, (player.regen || player.healedUntil > state.time) && !player.dead);
   setHtml(hud('playerHpNum'), `${Math.ceil(player.hp)}<small> / ${P.hp}</small>`);
   setText(hud('playerLabel'), `${player.name} #${player.squadIndex + 1}`);
+  setText(hud('playerIcon'), PLANT_ICONS[player.type] || '🌱');
+  // What the HUD shows depends on the moment (see "HUD v2" in the stylesheet)
+  const body = document.body.classList;
+  body.toggle('betweenWaves', state.phase === 'countdown' || player.dead);
+  body.toggle('firstWave', state.waveIndex === 0 && state.phase !== 'extract');
+  body.toggle('soloSquad', heroes.length < 2);
+  body.toggle('debug', DEBUG);
+  renderWavePips();
   setText(hud('weaponLabel'), player.loadout && player.loadout !== 'Classic' ? player.loadout : player.def.weaponName);
   for (const h of heroes) {
     const id = `squad-${h.squadIndex}`, box = hud(id), fallen = h.dead || h.downed, left = respawnLeft(h);
@@ -21919,7 +22115,7 @@ function updateHud(dt) {
     box.classList.toggle('controlled', h === player);
     box.classList.toggle('fallen', fallen);
     setText(box.querySelector('.label'), `${h.squadIndex + 1} · ${h.name}${h === player && !spectator.active ? ' · YOU' : ''}`);
-    setText(box.querySelector('.num'), fallen ? `${h.downed ? 'DOWN' : 'RESPAWN'} ${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`);
+    setText(box.querySelector('.num'), fallen ? `${h.downed ? '✚ ' : ''}${Math.ceil(left)}s` : `${Math.ceil(h.hp)} / ${h.stats.hp}`);
     updateFallenTag(h, fallen, left);
     h.bar.group.position.copy(h.mesh.position).setY(h.mesh.position.y + h.centerY + 0.4);
     h.bar.group.visible = h.active && h !== player && !h.dead && keepBarReadable(h.bar.group, 20, 3.5);
@@ -22190,7 +22386,6 @@ function drawRadar(force = false) {
 // Only inputs and camera ownership change on handoff; combat state and zombie targets stay attached
 // to the original hero objects (including projectiles, attack slots, cooldowns and respawn clocks).
 // =====================================================================
-const PLANT_ICONS = { corn: '🌽', peashooter: '🫛', sunflower: '🌻', cactus: '🌵', citron: '🍊', rose: '🌹', chomper: '🦷' };
 // Seconds until a fallen plant is back (downed: revivable countdown; dead: plain respawn), or 0 when standing
 const respawnLeft = h => h.downed ? Math.max(0, h.downT) : h.dead ? Math.max(0, h.respawnTimer) : 0;
 function rebuildSquadHud() {
@@ -22200,7 +22395,8 @@ function rebuildSquadHud() {
   for (const h of heroes) {
     hud('spectatorSelect').add(new Option(`${h.name} #${h.squadIndex + 1}`, String(h.squadIndex)));
     const box = document.createElement('div'); box.id = `squad-${h.squadIndex}`; box.className = 'hbox squadMember';
-    box.innerHTML = `<div class="icon">${PLANT_ICONS[h.type] || '🌱'}</div><div class="row"><span class="label"></span><span class="num"></span></div><div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>`;
+    box.title = `${h.squadIndex + 1} · ${h.name}`;
+    box.innerHTML = `<div class="icon">${PLANT_ICONS[h.type] || '🌱'}</div><span class="key">${h.squadIndex + 1}</span><div class="row"><span class="label"></span><span class="num"></span></div><div class="hbar"><div class="lag"></div><div class="fill"></div><div class="flash"></div></div>`;
     hud('squadHud').append(box);
     const tag = document.createElement('div'); tag.className = 'tag'; tag.id = `fallen-${h.squadIndex}`; tag.style.display = 'none';
     hud('fallenTags').append(tag);

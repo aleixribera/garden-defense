@@ -62,3 +62,25 @@ Menu preview: [polish-menu.png](polish-menu.png).
 
 Control regression coverage: `tests/controls.cjs` exercises all four plants, expired presses, double-jump prevention,
 focus loss, saved settings, and a stable camera with motion disabled.
+
+## HUD and menu redesign (v1.32.0)
+
+The HUD had grown one panel per feature, all on screen all the time. It now shows what a decision needs at that moment.
+Look: one warm "garden glass" panel style, heavier numbers, gradient bars (stylesheet section "HUD v2" / "Menu v2").
+Previews: [hud-wave.png](hud-wave.png), [hud-match-over.png](hud-match-over.png), [polish-menu.png](polish-menu.png).
+
+| Information | Before | Now |
+| --- | --- | --- |
+| Wave progress | "Wave 4 / 10" text | Garden bar plus 10 wave pips (done / current / to come, ☠ on boss-roll waves, ring = extraction) and a short line ("47 zombies left" / "get ready") |
+| Wave theme, mutator | Separate ops panel, always on | Tags under the wave strip while the wave runs; the countdown banner announces them |
+| Squad | Four tall cards with names and HP numbers | Icon chips with key number and slim bar; a fallen plant shows its countdown; hidden when solo |
+| Vanquishes | Big counter under the garden bar | Small "☠ N" on your plate; squad total only while spectating |
+| Mastery bar | Always | Between waves and while you are down |
+| Ability names, radar legend | Always | First wave, between waves, or with H |
+| Allies' damage numbers | Small and dim | Hidden (`CONFIG.feedback.allyDamageNumbers`); heals, your own shield soak and words still show |
+| Wave summary | One line per plant | Kills and garden loss, then the wave MVP; the full table waits for the end of the match |
+| FPS, version | Always | FPS with `?debug`; version on menus |
+| Menu | Long text, settings always open, Play below the fold at 900 px | Plant portraits, one-line intro, settings behind ⚙ (always shown on pause), fits 1280×720 |
+| Match over | Verdict at the bottom, HUD visible behind | Verdict under the title, stats table next, compact squad picker; HUD hidden |
+
+Elements under the top strip (lane arrow, garden alert, banner, call-outs) follow its height (`--topB`).

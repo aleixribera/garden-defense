@@ -1063,7 +1063,8 @@ export const CONFIG = {
   // Situational awareness HUD (section "Situational awareness"): radar, hit arcs, garden alert, straggler pips
   // One-time onboarding tips (section "Situational awareness"): seen keys persist in localStorage
   tips: { storageKey: 'gardenDefense.tipsSeen', time: 8, gap: 2.5, abilitiesAt: 25, squadAt: 50 },
-  feedback: { popupCap: 48, allyPopupRange: 45, clearBannerDelay: 1.7 },
+  feedback: { popupCap: 48, allyPopupRange: 45, clearBannerDelay: 1.7,
+    allyDamageNumbers: false },   // allies' plain damage numbers (heals and words always show)
   // Adaptive procedural score (section "Music"): one 16-step sequencer, layers fade in/out with the match state.
   // calm = countdown, combat = wave running, boss = a boss alive or the extraction finale. Notes are MIDI.
   music: {
