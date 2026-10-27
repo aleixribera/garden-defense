@@ -47,6 +47,7 @@ const server = gameServer(fs.readFileSync(path.join(__dirname, '..', 'index.html
     assert.equal(r.solo, W.heroes < 2);
     assert.ok(Math.abs(r.topB - r.topBottom) <= 1, '--topB follows the top strip');
     assert.ok(!r.squadTotal, 'squad vanquish total only while spectating');
+    assert.ok(r.fps, 'the FPS counter always shows');
     console.log('PASS first wave');
 
     // Wave 4 with a theme + mutator: tags while it runs, no onboarding extras

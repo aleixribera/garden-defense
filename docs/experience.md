@@ -79,7 +79,7 @@ Previews: [hud-wave.png](hud-wave.png), [hud-match-over.png](hud-match-over.png)
 | Ability names, radar legend | Always | First wave, between waves, or with H |
 | Allies' damage numbers | Small and dim | Hidden (`CONFIG.feedback.allyDamageNumbers`); heals, your own shield soak and words still show |
 | Wave summary | One line per plant | Kills and garden loss, then the wave MVP; the full table waits for the end of the match |
-| FPS, version | Always | FPS with `?debug`; version on menus |
+| Version | Always | On menus only (FPS stays on, top right) |
 | Menu | Long text, settings always open, Play below the fold at 900 px | Plant portraits, one-line intro, settings behind ⚙ (always shown on pause), fits 1280×720 |
 | Match over | Verdict at the bottom, HUD visible behind | Verdict under the title, stats table next, compact squad picker; HUD hidden |
 

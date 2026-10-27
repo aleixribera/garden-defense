@@ -7,10 +7,12 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.32.0)
+## Current state (v1.32.1)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
-  dependencies) and `src/plants/models.js` (Corn / Peashooter / Sunflower models, imported after three.js). three.js 0.160
-  vendored in `vendor/three` (import map; serve over http, not file://). Procedural geometry + WebAudio only.
+  dependencies) and `src/plants/<plant>.js` (one per plant: model, gadget models, animator, render poses; loaded in
+  parallel after three.js, section "Plant models"; helpers + particle hook `usePlantFx` in `src/plants/shared.js`;
+  combat / AI / HUD stay in index.html). three.js 0.160 vendored in `vendor/three` (import map; serve over http, not
+  file://). Procedural geometry + WebAudio only.
 - **Failure handling:** a plain boot-guard script turns any error before `gardenBoot.ready` into a menu message + Reload;
   refused pointer lock says so on the menu (`lockPointer`). `loop()` steps `SIM_SYSTEMS` via `simulate(dt, skip)`, then
   `FRAME_SYSTEMS`, each `guarded()` (a throwing system is logged once, counted in `loopErrors`, and skips the frame).
@@ -94,7 +96,7 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   boss, pooled damage numbers (`spawnPopup` style: yours / 'minor' allies (numbers off: `feedback.allyDamageNumbers`) / 'kill'). HUD writes go through
   `setText` / `setHtml` (DOM only on change). Polish audit: docs/experience.md. Test: `tests/polish.cjs`.
 - HUD v2 / Menu v2 (stylesheet sections, appended last so they override): information only when it matters, toggled by
-  body classes set in `updateHud` (`betweenWaves`, `firstWave`, `soloSquad`, `debug`) and `matchOver` / `settingsOpen`.
+  body classes set in `updateHud` (`betweenWaves`, `firstWave`, `soloSquad`; FPS always shows) and `matchOver` / `settingsOpen`.
   Top strip = garden bar + `renderWavePips` + `#waveLine` + `#waveTags`; things under it follow `--topB`. `#opsHud` stays
   hidden (kept for tests). Rationale table: docs/experience.md "HUD and menu redesign". Test: `tests/hud.cjs`.
 - Match flow: vanquishes on the player plate (squad total while spectating); `state.stats` (per squad slot, match + wave) via `recordStat` from `damageZombie`/`damageHero`/`downHero`/revive;
