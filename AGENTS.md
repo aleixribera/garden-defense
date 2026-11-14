@@ -1,13 +1,14 @@
 # Garden Defense — Agent Guide
 **Keep this file small:** short, current facts only; replace outdated lines, never append history.
 **Always commit, tag, push:** bump `VERSION` in `index.html`, `package.json` and the version below, commit, tag it, push with tags.
+A release players can notice also adds its entry at the top of `changelog.json` (players' words; the Arcade page on the home server shows it). Tooling and refactors stay out.
 If another session is making changes, only commit, tag, push your changes, and let the other session handle its own changes.
 
 ## Game
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.32.1)
+## Current state (v1.32.2)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
   dependencies) and `src/plants/<plant>.js` (one per plant: model, gadget models, animator, render poses; loaded in
   parallel after three.js, section "Plant models"; helpers + particle hook `usePlantFx` in `src/plants/shared.js`;
