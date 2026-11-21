@@ -2,7 +2,8 @@
 
 Garden Defense plays fully with a game controller (Gamepad API, "standard" mapping; glyphs are PlayStation-style,
 since the arcade cabinet uses a DualShock 4). Code: `src/gamepad.js` (pad polling, menu navigation) and the
-"Game controller" blocks of `index.html` (glyphs + menus before boot, `padGame` in a match). Tuning: `CONFIG.gamepad`. Test: `tests/gamepad.cjs`;
+"Game controller" blocks of `index.html` (glyphs + menus before boot, `padGame` in a match). Tuning: `CONFIG.gamepad`. Tests: `tests/gamepad.cjs` (play), `tests/gamepad-screens.cjs` (every menu screen reachable at TV and phone size, the
+Arcade iframe, a failed boot);
 screenshots: `node tools/pad-shots.cjs <outDir> [W] [H]`.
 
 ## Button map
@@ -11,7 +12,7 @@ screenshots: `node tools/pad-shots.cjs <outDir> [W] [H]`.
 |---|---|---|
 | Left stick | move (analog) | move focus |
 | L3 | sprint (toggle, ends when the stick eases off) | |
-| Right stick | aim (response curve, slows over a zombie) | |
+| Right stick | aim (response curve, slows over a zombie) | scroll a long screen |
 | R2 | fire / confirm Butter Barrage | |
 | L2 | zoom / cancel targeting | |
 | ✕ | jump (hold to glide) | select, or advance a list / slider |
@@ -33,6 +34,10 @@ L3 fast), L2 / R2 orbit zoom.
 - A pad press can't take pointer lock, so a match started from the pad runs with `padPlaying` instead
   (`captured()` = lock or `padPlaying`). Clicking the canvas hands control back to the mouse. A pad that drops out
   pauses the match; buttons held when play resumes count only after they are released (`padState.ignore`).
+- Menus: the first press only shows the focus (on the screen's main button); every control is reachable with the
+  d-pad and back. A failed boot reloads on ✕.
+- Embedded (the Arcade's same-origin iframe): focus means focus anywhere on the top page (`pageFocused`), so the pad
+  plays without the frame ever being focused, and presses in another window never reach the game.
 - Browsers may not count pad presses as the gesture that unlocks audio; any key or click unlocks it too.
 - `inputMode` ('kbm' / 'pad') follows the last real input. In pad mode `body.padMode` shows the focus highlight,
   a one-column settings list and, on screens ≥ 1600×900, a larger HUD for a TV. Text with key names goes through

@@ -109,7 +109,8 @@ function visible(el) {
   const s = getComputedStyle(el);
   return s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0.05;
 }
-// Nearest visible control from `from` toward `dir`, scored by distance with a penalty for leaving the axis.
+// Nearest visible control from `from` toward `dir`, scored by distance with a penalty for the gap across the axis
+// (none for a control that overlaps the current one sideways, so a wide list under a slider is the next stop).
 // `sameRow` (left / right) only accepts controls that overlap the current one vertically.
 function neighbour(list, from, dir, sameRow) {
   const a = from.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
@@ -119,7 +120,9 @@ function neighbour(list, from, dir, sameRow) {
     const b = el.getBoundingClientRect(), bx = b.left + b.width / 2, by = b.top + b.height / 2;
     const dx = bx - ax, dy = by - ay;
     const along = dir === 'left' ? -dx : dir === 'right' ? dx : dir === 'up' ? -dy : dy;
-    const across = dir === 'left' || dir === 'right' ? Math.abs(dy) : Math.abs(dx);
+    const vertical = dir === 'up' || dir === 'down';
+    const gap = vertical ? Math.max(0, b.left - a.right, a.left - b.right) : Math.max(0, b.top - a.bottom, a.top - b.bottom);
+    const across = gap + (vertical ? Math.abs(dx) : Math.abs(dy)) * 0.1;
     if (along <= 4) continue;
     if (sameRow && (b.bottom < a.top + 4 || b.top > a.bottom - 4)) continue;
     const score = along + across * 2.2;
@@ -128,7 +131,7 @@ function neighbour(list, from, dir, sameRow) {
   return best;
 }
 
-// Menu navigation over a root element. Returns { update(pad), focus(el), first() }.
+// Menu navigation over a root element. Returns { update(pad), focus(el), controls(root), adjust(el, step), next(list, el, dir) }.
 // options.root(): the element whose controls are navigable now (null = menu closed)
 // options.primary(root): the control to focus when nothing in the root has focus
 // options.back(): Circle
@@ -161,6 +164,11 @@ export function createMenuNav({ root, primary, back, onMove }) {
     }
     return false;
   }
+  // Where focus goes from `cur` toward `dir` (null: it stays, and ← → may change the control's value instead)
+  function step(list, cur, dir) {
+    const horizontal = dir === 'left' || dir === 'right';
+    return horizontal && cur.type === 'range' ? null : neighbour(list, cur, dir, horizontal);
+  }
   function update(pad) {
     const r = root();
     if (!r) return false;
@@ -174,7 +182,7 @@ export function createMenuNav({ root, primary, back, onMove }) {
       const horizontal = dir === 'left' || dir === 'right';
       // A slider takes ← → as its value; a select only when nothing sits beside it
       if (horizontal && cur.type === 'range') { if (adjust(cur, dir === 'left' ? -1 : 1)) onMove?.(); return true; }
-      const next = neighbour(list, cur, dir, horizontal);
+      const next = step(list, cur, dir);
       if (next) { focus(next); onMove?.(); }
       else if (horizontal && adjust(cur, dir === 'left' ? -1 : 1)) onMove?.();
       return true;
@@ -188,5 +196,5 @@ export function createMenuNav({ root, primary, back, onMove }) {
     if (pad.pressed('circle')) { back?.(); return true; }
     return false;
   }
-  return { update, focus, controls, adjust };
+  return { update, focus, controls, adjust, next: (list, cur, dir) => step(list, cur, dir) };
 }

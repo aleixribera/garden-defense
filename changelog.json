@@ -1,4 +1,5 @@
 [
+  {"version": "v1.33.1", "date": "2026-11-21", "title": "Every menu on the controller", "text": "Every button on every screen can be reached with the d-pad, including the Quality setting. The first press only shows where you are, Options also unpauses, and the results table fits on a phone."},
   {"version": "v1.33.0", "date": "2026-11-21", "title": "Play with a controller", "text": "The whole game plays on a controller, from the menu to the victory screen: move and aim with the sticks, fire with R2, abilities on L1, R1 and triangle, and the d-pad switches plants and picks boons. Button hints change to match whatever you last touched, and the HUD grows on a big screen."},
   {"version": "v1.32.0 – v1.32.1", "date": "2026-10-27", "title": "A cleaner screen", "text": "The HUD and the menus are redrawn: what you need shows up when it matters and gets out of the way when it doesn't. The frame counter is always on."},
   {"version": "v1.31.0", "date": "2026-10-26", "title": "Boons and mutators", "text": "Between waves you pick one of three boons for the squad, and every match rolls its own wave mutators: tougher, faster, more or harder-hitting zombies."},
