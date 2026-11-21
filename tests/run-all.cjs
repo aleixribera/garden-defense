@@ -11,7 +11,7 @@ const path = require('node:path');
 const SLOW = ['boss-finale', 'experience', 'full-match', 'polish', 'cactus'];
 // Time budget (seconds, wall clock) on the idle 16-thread test laptop (GPU WebGL); over it the run warns loudly and
 // fails in CI. TEST_BUDGET=s overrides (CI: software WebGL on 4 vCPUs). See AGENTS.md.
-const BUDGET = { fast: 150, full: 420 }, FILE_BUDGET = 120;
+const BUDGET = { fast: 150, full: 270 }, FILE_BUDGET = 120;
 const args = process.argv.slice(2), full = args.includes('--full'), verbose = args.includes('--verbose');
 const only = args.filter(a => !a.startsWith('--'));
 const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.cjs') && f !== path.basename(__filename) && !f.startsWith('_'))
