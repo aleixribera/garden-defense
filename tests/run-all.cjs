@@ -10,7 +10,7 @@ const path = require('node:path');
 // Whole matches / long real-time scenarios: opt-in only (npm run test:full)
 const SLOW = ['boss-finale', 'experience', 'full-match', 'polish', 'cactus'];
 // Time budget (seconds, wall clock) on the idle 16-thread test laptop (GPU WebGL); over it the run warns loudly and
-// fails in CI. TEST_BUDGET=s overrides (CI: software WebGL on 4 vCPUs). See AGENTS.md.
+// fails when CI is set. TEST_BUDGET=s overrides (e.g. software WebGL: TEST_GL=swiftshader is ~5-10x slower). See AGENTS.md.
 const BUDGET = { fast: 150, full: 270 }, FILE_BUDGET = 120;
 const args = process.argv.slice(2), full = args.includes('--full'), verbose = args.includes('--verbose');
 const only = args.filter(a => !a.startsWith('--'));

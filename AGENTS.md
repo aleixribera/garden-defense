@@ -38,7 +38,7 @@ Third-person co-op wave defense (PvZ Garden Warfare 2 Garden Ops): plant heroes 
   real-time waits). Run `tests/gamepad-screens.cjs` after changing any menu. Renders go to `tests/.logs/renders`;
   `DOC_RENDERS=1` refreshes the committed images in `docs/`.
 - **Test time budget:** `npm test` (fast tier) <= 150 s, `npm run test:full` <= 270 s on the idle 16-thread laptop;
-  the runner prints `TEST TIME BUDGET EXCEEDED` past it (and fails in CI). A file over 120 s is flagged SLOW.
+  the runner prints `TEST TIME BUDGET EXCEEDED` past it (a failure when `CI` is set). A file over 120 s is flagged SLOW.
 - While working run only what you touched: `npm test -- routing hud` (file-name prefixes). The slow real-time tier
   (`SLOW` in tests/run-all.cjs: boss-finale, experience, full-match, polish, cactus) runs in `npm run test:full`, once
   before a release. Output is one line per file; a failing file prints its log, all logs are in `tests/.logs/`.
