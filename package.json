@@ -1,6 +1,6 @@
 {
   "name": "garden-defense",
-  "version": "1.33.2",
+  "version": "1.33.3",
   "private": true,
   "description": "Third-person co-op wave shooter: plant heroes defend a garden gnome from zombies (three.js, native ES modules, no build step).",
   "scripts": {

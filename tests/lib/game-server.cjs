@@ -39,8 +39,11 @@ function renderDir() {
 // (ANGLE on Vulkan): boot and frames cost ~5x less CPU than software SwiftShader, which every machine without a GPU
 // (CI) falls back to. TEST_GL=swiftshader forces software rendering, TEST_GL=gpu forces the GPU flags.
 function glArgs(extra = []) {
-  const mode = process.env.TEST_GL || (process.platform === 'linux' && fs.existsSync('/dev/dri/renderD128') ? 'gpu' : 'swiftshader');
-  const gl = mode === 'gpu' ? ['--use-angle=vulkan', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader']
+  const gpu = process.platform === 'win32' || (process.platform === 'linux' && fs.existsSync('/dev/dri/renderD128'));
+  const mode = process.env.TEST_GL || (gpu ? 'gpu' : 'swiftshader');
+  // Windows (Aleix's PC, where tests run now) draws through ANGLE on Direct3D 11, Linux through Vulkan.
+  const angle = process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan';
+  const gl = mode === 'gpu' ? [angle, '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader']
     : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
   return [...gl, ...extra];
 }

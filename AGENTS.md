@@ -8,7 +8,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person co-op wave defense (PvZ Garden Warfare 2 Garden Ops): plant heroes defend the garden statue from 10 waves.
 **Systems reference: `docs/systems.md`** (where each system lives, its CONFIG block, docs and test). Read the part you touch.
 
-## Current state (v1.33.2)
+## Current state (v1.33.3)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
   dependencies) and `src/plants/<plant>.js` (one per plant: model, gadget models, animator, render poses; loaded in
   parallel after three.js, section "Plant models"; helpers + particle hook `usePlantFx` in `src/plants/shared.js`;
@@ -39,6 +39,8 @@ Third-person co-op wave defense (PvZ Garden Warfare 2 Garden Ops): plant heroes 
   `DOC_RENDERS=1` refreshes the committed images in `docs/`.
 - **Test time budget:** `npm test` (fast tier) <= 150 s, `npm run test:full` <= 270 s on the idle 16-thread laptop;
   the runner prints `TEST TIME BUDGET EXCEEDED` past it (a failure when `CI` is set). A file over 120 s is flagged SLOW.
+  WebGL runs on the GPU (Direct3D on Windows, Vulkan on the laptop): about half the time of software SwiftShader, which
+  times out on hud.cjs; `TEST_GL=swiftshader` forces software. On Windows 3 files run at a time (`TEST_WORKERS=n`).
 - While working run only what you touched: `npm test -- routing hud` (file-name prefixes). The slow real-time tier
   (`SLOW` in tests/run-all.cjs: boss-finale, experience, full-match, polish, cactus) runs in `npm run test:full`, once
   before a release. Output is one line per file; a failing file prints its log, all logs are in `tests/.logs/`.

@@ -1,7 +1,8 @@
 // npm test: the short browser tests in parallel (each file boots its own headless Chromium). Quiet: one line per file;
 // a failing file's full output is printed, every file's output is kept in tests/.logs/<file>.log.
 // npm run test:full adds the slow real-time runs below. Pass names to run a subset: npm test -- routing cactus
-// Options: --verbose (print every file's output), TEST_WORKERS=n (default: CPU threads / 2, 2..8).
+// Options: --verbose (print every file's output), TEST_WORKERS=n (default: CPU threads / 2, 2..8; 3 on Windows, the PC
+// Aleix plays on, where each headless game takes 1-4 GB).
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -18,7 +19,7 @@ const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.cjs') && f !== 
   .filter(f => only.length ? only.some(name => f.startsWith(name)) : full || !SLOW.includes(f.replace(/\.cjs$/, ''))).sort();
 if (!files.length) { console.log(`no test file matches: ${only.join(' ')}`); process.exit(1); }
 const cpus = os.availableParallelism?.() || os.cpus().length;
-const workers = Math.max(1, Math.min(files.length, Number(process.env.TEST_WORKERS) || Math.max(2, Math.min(8, Math.floor(cpus / 2)))));
+const workers = Math.max(1, Math.min(files.length, Number(process.env.TEST_WORKERS) || (process.platform === 'win32' ? 3 : Math.max(2, Math.min(8, Math.floor(cpus / 2))))));
 const logs = path.join(__dirname, '.logs');
 fs.mkdirSync(logs, { recursive: true });
 
