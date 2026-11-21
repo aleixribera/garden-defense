@@ -8,7 +8,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person wave defense inspired by *PvZ Garden Warfare 2 — Garden Ops*: a squad of plant heroes defends the
 garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves of zombies, agents and bosses.
 
-## Current state (v1.32.2)
+## Current state (v1.33.0)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
   dependencies) and `src/plants/<plant>.js` (one per plant: model, gadget models, animator, render poses; loaded in
   parallel after three.js, section "Plant models"; helpers + particle hook `usePlantFx` in `src/plants/shared.js`;
@@ -114,6 +114,9 @@ garden statue (center, 1000 HP; 0 = lose) on a 440×440 m map against 10 waves o
   Wave tuning was eased zombie-side in v1.27.1 (Normal = 1×; levers in docs/balance.md "Wave difficulty").
 - Settings (`CONFIG.settings`, `SETTINGS` in localStorage): sensitivity, volume, music, camera motion, FOV, quality;
   menu + Esc pause panel; systems register appliers with `onSettings()`. Focus loss pauses and clears input.
+- Game controller (docs/controller.md, `src/gamepad.js`, `CONFIG.gamepad`): follows the last-used pad; menus by DOM
+  focus (`createMenuNav`); a pad match runs without pointer lock (`padPlaying`, `captured()`); hint text goes through
+  `key()` / `kbd()` / `glyphText()` and re-renders via `onGlyphs()` when `inputMode` flips. Test: `tests/gamepad.cjs`.
 - Debug keys only with `?debug` (or `?autoplay`): F1 AI overlay, Shift+1–8 spawn packs, Shift+0 all agents, N next wave,
   B/V bosses, M map, K stress horde. 1–4 always take a plant, H help.
   `window.__game` exposes state and hooks. Browser tests: `tests/*.cjs` (Playwright), served by `tests/lib/game-server.cjs`

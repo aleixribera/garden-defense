@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Garden Defense</title>
+<meta name="description" content="A third-person co-op shooter: play a plant hero with up to three AI squadmates and keep ten waves of zombies and bosses off the garden gnome, then hold the extraction zone.">
 <style>
   /* ---- Design tokens: one dark glass panel style, one accent per meaning ---- */
   :root {
@@ -533,6 +534,22 @@
   @media (max-height: 820px) { body.preMatch #overlayTitle { font-size: 38px; } #squadPicker { margin: 10px 0 14px; padding: 14px 18px; }
     .plantCard .face { font-size: 30px; margin: 0 0 2px; } .plantCard .weapon { display: none; } #squadPicker p { margin-bottom: 10px; }
     #menuRow { margin-top: 10px; } body.preMatch #overlay small { display: none; } }
+  /* Controller: a bold focus ring on whatever the d-pad selected; the row it sits in lights up too */
+  body.padMode #overlay :is(button, select, input):focus { outline: 3px solid var(--accent); outline-offset: 3px;
+    box-shadow: 0 0 0 7px rgba(255,216,74,0.22); }
+  body.padMode #squadSlots label:focus-within { box-shadow: inset 0 0 0 2px var(--accent); background: rgba(255,216,74,0.12); }
+  body.padMode #settingsPanel label:focus-within { color: var(--accent); }
+  body.padMode #overlay input[type=range]:focus { outline-offset: 6px; }
+  /* Pad: settings as a list, one per row, so ← → always change the focused value */
+  body.padMode #settingsPanel { width: min(560px, 94vw); grid-template-columns: 1fr; gap: 8px; }
+  body.padMode #settingsPanel label { grid-template-columns: 1fr 64px 1.3fr; align-items: center; font-size: 12px; }
+  body.padMode #settingsPanel select { grid-column: 2 / -1; }
+  /* TV: a controller on a big screen means the couch, so the HUD and menus grow for reading from a few metres */
+  @media (min-width: 1600px) and (min-height: 900px) {
+    body.padMode :is(#top, #heroes, #abilities, #ammo, #radar, #radarLegend, #rewardFeed, #tip, #boonPick, #helpPanel,
+      #targetHint, #sunflowerStatus, #spectatorHud, #droneHud) { zoom: 1.3; }
+    body.padMode #overlay > * { zoom: 1.2; }
+  }
 </style>
 </head>
 <body class="preMatch">
@@ -599,7 +616,7 @@
 </div>
 <div id="overlay"><div id="overlayTitle">GARDEN DEFENSE</div>
   <div id="squadPicker"><h2>Choose your squad</h2>
-    <p>Play one plant, bring up to three AI companions, and swap between them any time with 1–4 or Tab.</p>
+    <p id="squadIntro">Play one plant, bring up to three AI companions, and swap between them any time with 1–4 or Tab.</p>
     <div id="squadSlots"></div><div id="squadSummary"></div>
     <label id="difficultyPick">Difficulty <select id="setDifficulty" aria-label="Difficulty"></select></label>
   </div>
@@ -620,7 +637,7 @@
   <div id="menuRow"><button id="watchButton" title="Let every selected plant play itself while you watch">◉ Watch squad</button>
     <button id="settingsToggle" aria-expanded="false" aria-controls="settingsPanel">⚙ Settings</button></div>
   <div id="pauseActions"><button class="ghostButton" id="abandonButton">ABANDON MATCH</button></div>
-  <small id="overlaySub"><b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> aim · <b>LMB</b> fire · <b>RMB</b> zoom · <b>Space</b> jump · <b>R</b> reload<br><b>Q E F</b> abilities · <b>1–4 / Tab</b> switch plants · hold <b>X</b> to revive · <b>H</b> help · <b>Esc</b> pause</small></div>
+  <small id="overlaySub" data-controls="1"><b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> aim · <b>LMB</b> fire · <b>RMB</b> zoom · <b>Space</b> jump · <b>R</b> reload<br><b>Q E F</b> abilities · <b>1–4 / Tab</b> switch plants · hold <b>X</b> to revive · <b>H</b> help · <b>Esc</b> pause</small></div>
 
 <script>
 // Boot guard (plain script, so it also catches a module that fails to parse): until the garden is ready, any
@@ -658,9 +675,10 @@ addEventListener('error', e => {
 <script type="module">
 // three.js is imported dynamically after the main menu (section "Main menu + boot"), so the menu shows instantly.
 import { CONFIG } from './src/config.js';
+import { BUTTON, createPad, createMenuNav } from './src/gamepad.js';
 
 // Always shown bottom-right, including before the menu gate; bump on every release (matches the git tag).
-const VERSION = 'v1.32.2';
+const VERSION = 'v1.33.0';
 document.getElementById('version').textContent = VERSION;
 
 // =====================================================================
@@ -716,6 +734,82 @@ function masteryLevel(type) {
   while (xp >= need && level < EG.maxLevel) { xp -= need; level++; need += EG.levelGrowth; }
   return { level, xp, need, title: EG.titles[Math.min(EG.titles.length - 1, Math.floor((level - 1) / EG.titleEvery))] };
 }
+// ---------------------------------------------------------------------
+// Game controller (src/gamepad.js): input mode, hint glyphs and menu navigation. It runs from the main menu on,
+// before three.js loads. The match itself runs under the pad without pointer lock (padPlaying, section "Input");
+// `padGame` (set there) takes the pad while a match is being played, menus get it otherwise.
+// ---------------------------------------------------------------------
+const pad = createPad({ deadzone: CONFIG.gamepad.deadzone });
+let inputMode = 'kbm';   // 'pad' while the last input came from a controller: every hint shows pad glyphs
+// Hint label per action: [keyboard / mouse, PS4 pad]
+const GLYPHS = {
+  move: ['WASD', 'L-stick'], aim: ['Mouse', 'R-stick'], fire: ['LMB', 'R2'], zoom: ['RMB', 'L2'], jump: ['Space', '✕'],
+  sprint: ['Shift', 'L3'], reload: ['R', '☐'], q: ['Q', 'L1'], e: ['E', 'R1'], f: ['F', '△'], revive: ['X', '☐'],
+  help: ['H', 'Touchpad'], pause: ['Esc', 'Options'], switchPlant: ['Tab', 'D-pad ← →'], cancel: ['RMB', '◯'],
+  choose: ['← →', 'D-pad ← →'], take: ['Enter', 'D-pad ↑'],
+};
+const key = name => GLYPHS[name][inputMode === 'pad' ? 1 : 0];
+const kbd = name => `<kbd>${key(name)}</kbd>`;
+// Key names inside free text (plant descriptions, weapon labels) become pad glyphs in pad mode
+const PAD_WORDS = { LMB: 'R2', RMB: 'L2', WASD: 'L-stick', Space: '✕', Ctrl: '◯', Shift: 'L3', Esc: 'Options', Tab: 'D-pad ← →',
+  Mouse: 'R-stick', Q: 'L1', E: 'R1', F: '△', R: '☐', X: '☐', H: 'Touchpad', click: 'press R2' };
+const glyphText = s => inputMode !== 'pad' ? s
+  : String(s).replace(/(?<![\w'’-])(LMB|RMB|WASD|Space|Ctrl|Shift|Esc|Tab|Mouse|click|[QEFRXH])(?![\w'’-])/g, m => PAD_WORDS[m]);
+const glyphAppliers = [];
+function onGlyphs(apply) { glyphAppliers.push(apply); apply(); }
+function setInputMode(mode) {
+  if (mode === inputMode) return;
+  inputMode = mode;
+  document.body.classList.toggle('padMode', mode === 'pad');
+  for (const apply of glyphAppliers) apply();
+}
+addEventListener('keydown', () => setInputMode('kbm'), true);
+addEventListener('pointerdown', () => setInputMode('kbm'), true);
+addEventListener('wheel', () => setInputMode('kbm'), { capture: true, passive: true });
+addEventListener('mousemove', e => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 4) setInputMode('kbm'); }, true);
+// The main-menu controls line (pause and match-over screens replace it with their own text)
+const overlaySubEl = document.getElementById('overlaySub');
+onGlyphs(() => {
+  if (overlaySubEl.dataset.controls !== '1') return;
+  overlaySubEl.innerHTML = inputMode === 'pad'
+    ? '<b>L-stick</b> move · <b>L3</b> sprint · <b>R-stick</b> aim · <b>R2</b> fire · <b>L2</b> zoom · <b>✕</b> jump · <b>☐</b> reload<br>' +
+      '<b>L1 R1 △</b> abilities · <b>D-pad ← →</b> switch plants · hold <b>☐</b> to revive · <b>Touchpad</b> help · <b>Options</b> pause<br>' +
+      'Menus: <b>✕</b> select or change · <b>◯</b> back · <b>← →</b> change a setting'
+    : '<b>WASD</b> move · <b>Shift</b> sprint · <b>Mouse</b> aim · <b>LMB</b> fire · <b>RMB</b> zoom · <b>Space</b> jump · <b>R</b> reload<br>' +
+      '<b>Q E F</b> abilities · <b>1–4 / Tab</b> switch plants · hold <b>X</b> to revive · <b>H</b> help · <b>Esc</b> pause';
+});
+// Menus: d-pad / left stick move the focus over the overlay's controls, Cross presses or changes, Circle backs out
+const overlayEl = document.getElementById('overlay');
+const menuOpen = () => overlayEl.style.display !== 'none' && getComputedStyle(overlayEl).display !== 'none';
+const menuPrimary = () => { const b = document.getElementById('matchButton'); return b.disabled || !b.offsetParent ? null : b; };
+let padBack = () => { if (document.body.classList.contains('settingsOpen')) document.getElementById('settingsToggle').click(); };
+let padMenuSound = () => {};
+let padGame = null;   // (dt) => true while a match is being played (it then owns the pad this frame)
+let padLost = null, padResume = null;   // match hooks: the pad went away / Options on the pause menu
+const menuNav = createMenuNav({ root: () => menuOpen() ? overlayEl : null, primary: menuPrimary,
+  back: () => padBack(), onMove: () => padMenuSound() });
+{
+  let last = performance.now(), seen = 0;
+  const padLoop = now => {
+    requestAnimationFrame(padLoop);
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+    pad.poll();
+    if (pad.activity > seen) { seen = pad.activity; setInputMode('pad'); }
+    if (!pad.connected) { padLost?.(); return; }   // a pad match pauses when its pad drops out
+    if (padGame?.(dt)) return;
+    if (inputMode !== 'pad' || !menuOpen()) return;
+    if (pad.pressed('options') && padResume?.()) return;   // Options toggles the pause
+    // A menu that just opened (or lost its focus) starts on its main button
+    if (!overlayEl.contains(document.activeElement) || document.activeElement === overlayEl) {
+      const primary = menuPrimary();
+      menuNav.focus(primary);
+      if (primary && document.activeElement === primary) return;   // this press only shows where the focus is
+    }
+    menuNav.update(pad);
+  };
+  requestAnimationFrame(padLoop);
+}
+
 const PLANT_ICONS = { corn: '🌽', peashooter: '🫛', sunflower: '🌻', cactus: '🌵', citron: '🍊', rose: '🌹', chomper: '🦷' };
 const squadSlots = document.getElementById('squadSlots');
 // Pick a visible, editable plant once on menu creation; automated boots keep their stable fixture default.
@@ -745,15 +839,20 @@ for (let i = 0; i <= CONFIG.squad.maxCompanions; i++) {
     card.innerHTML = select.value === 'random' ? '<span class="face">🎲</span><b>Random plant</b>A different squadmate each match, never a repeat.' :
       !d ? '<span class="face" style="opacity:.25">🪴</span><i>Empty slot</i>' :
       `<span class="face">${PLANT_ICONS[select.value] || '🌱'}</span><b>${d.info.role}</b> ${d.info.blurb}<div class="kit">` +
-      ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span><kbd>${'QEF'[n]}</kbd>${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>' +
+      ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<span>${kbd('qef'[n])}${d.abilityIcons[k]} ${d.abilityNames[k]}</span>`).join('') + '</div>' +
       `<span class="mastery">${m.title} · Level ${m.level}${m.level < EG.maxLevel ? ` · ${Math.floor(m.xp)} / ${m.need} XP` : ' · ★'}</span>` +
-      (i === 0 ? `<div class="weapon">${loadout.value === 'variant' ? variant.description : d.info.primary}</div>` : '');
+      (i === 0 ? `<div class="weapon">${glyphText(loadout.value === 'variant' ? variant.description : d.info.primary)}</div>` : '');
   };
   select.showCard();
   select.addEventListener('change', () => { select.showCard(); updateSquadSummary(); });
   loadout.addEventListener('change', () => select.showCard());
   label.append(select, card, loadout); squadSlots.append(label);
 }
+onGlyphs(() => {
+  for (const select of squadSlots.querySelectorAll('select[id^="pick-"]')) select.showCard();
+  document.getElementById('squadIntro').textContent = 'Play one plant, bring up to three AI companions, and swap between them any time with ' +
+    (inputMode === 'pad' ? 'the d-pad.' : '1–4 or Tab.');
+});
 // Settings fold away on the menu; the pause screen always shows them
 document.getElementById('settingsToggle').addEventListener('click', e => {
   const open = document.body.classList.toggle('settingsOpen');
@@ -1387,7 +1486,7 @@ function updateCactusHero(h, dt) {
   if (c.drone) {
     const d = c.drone;
     d.move = h.input.move.clone(); d.aim = h.input.aimPoint.clone(); d.firing = h.input.fire;
-    d.yaw = h.input.yaw; d.rise = h.input.jumpHeld; d.descend = !h.isAI && h === player && (keys.ControlLeft || keys.ControlRight);
+    d.yaw = h.input.yaw; d.rise = h.input.jumpHeld; d.descend = !h.isAI && h === player && (keys.ControlLeft || keys.ControlRight || padHeld('circle'));
     h.input.move.set(0, 0, 0); h.input.fire = h.input.zoom = h.input.jump = false; h.input.yaw = d.savedYaw; h.vel.x = h.vel.z = 0;
   }
 }
@@ -1694,7 +1793,7 @@ function updateCactusHud() {
     hud('ammoN').textContent = drone.overheated > 0 ? 'COOLING' : `${Math.round((1 - drone.heat) * 100)}%`;
     hud('ammoMax').textContent = ''; hud('weaponLabel').textContent = 'GARLIC NEEDLES · HEAT';
     hud('reloadFill').style.width = `${Math.min(1, drone.heat) * 100}%`;
-    hud('droneHud').innerHTML = `<b>GARLIC DRONE</b> &nbsp; ${drone.hp} HP &nbsp; · &nbsp; ${Math.ceil(drone.life)}s<br><span>WASD fly · Space rise · Ctrl descend · Q Corn Strike · E return</span>`;
+    hud('droneHud').innerHTML = `<b>GARLIC DRONE</b> &nbsp; ${drone.hp} HP &nbsp; · &nbsp; ${Math.ceil(drone.life)}s<br><span>${glyphText('WASD fly · Space rise · Ctrl descend · Q Corn Strike · E return')}</span>`;
   }
 }
 
@@ -4950,8 +5049,13 @@ function updateLaneArrow() {
 // Input
 // =====================================================================
 const keys = {};
+// The match runs while the mouse is captured, or under a game controller (padPlaying: a pad started or resumed it,
+// which needs no pointer lock; Options / Esc pause it).
+let padPlaying = false;
+const captured = () => document.pointerLockElement === renderer.domElement || padPlaying;
 addEventListener('keydown', e => {
-  const inMatch = matchStarted && (document.pointerLockElement === renderer.domElement || AUTOPLAY) && !state.over;
+  if (e.code === 'Escape' && padPlaying && document.pointerLockElement !== renderer.domElement) { pausePadPlay(); return; }
+  const inMatch = matchStarted && (captured() || AUTOPLAY) && !state.over;
   if (inMatch && (e.code === 'Tab' || e.code === 'BracketLeft' || e.code === 'BracketRight')) e.preventDefault();
   if (!inMatch) return;
   keys[e.code] = true;
@@ -5040,8 +5144,20 @@ function startMatch(watch = false) {
     matchStarted = true;
     document.body.classList.remove('preMatch', 'matchOver', 'settingsOpen');
   }
-  lockPointer();
+  if (inputMode === 'pad') startPadPlay(); else lockPointer();
   SFX.init();
+}
+function startPadPlay() {
+  overlayNotice.textContent = '';
+  padPlaying = true;
+  padState.ignore = new Set(Object.keys(BUTTON).filter(n => pad.held(n)));   // the press that resumed isn't play input
+  document.activeElement?.blur?.();
+  syncCapture();
+}
+function pausePadPlay() {
+  padPlaying = false;
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();   // pointerlockchange syncs
+  else syncCapture();
 }
 // The match runs while the mouse is captured. Browsers can refuse: Chrome blocks a re-capture for about a second
 // after Esc, and embedded frames may never allow it. Say so on the menu instead of leaving a button that does nothing.
@@ -5063,21 +5179,29 @@ document.getElementById('watchButton').addEventListener('click', () => startMatc
 document.getElementById('spectatorSelect').addEventListener('change', e => spectateHero(heroes[+e.target.value]));
 document.getElementById('spectatorCameraButton').addEventListener('click', () => toggleSpectatorCamera());
 document.addEventListener('pointerlockchange', () => {
-  const locked = document.pointerLockElement === renderer.domElement;
-  if (locked) lockRefusals = 0;
+  if (document.pointerLockElement === renderer.domElement) lockRefusals = 0;
+  else padPlaying = false;   // Esc released the mouse: pause, even if a pad was also playing
+  syncCapture();
+});
+// Show / hide the pause overlay for the current capture state (mouse lock or pad play)
+function syncCapture() {
+  const locked = captured();
   overlay.style.display = locked ? 'none' : 'flex';
   clearHumanInput();
   document.body.classList.toggle('paused', !locked && !state.over && matchStarted);
   if (!locked && !state.over && matchStarted) {
     document.getElementById('squadPicker').style.display = 'none';
     document.getElementById('overlayTitle').textContent = 'PAUSED';
-    document.getElementById('overlaySub').textContent = spectator.active ? 'Spectator mode · choose a plant or camera above, then resume watching.' : 'Your squad is ready. Resume to return to the match.';
+    delete overlaySubEl.dataset.controls;
+    overlaySubEl.textContent = spectator.active ? 'Spectator mode · choose a plant or camera above, then resume watching.' : 'Your squad is ready. Resume to return to the match.';
     document.getElementById('matchButton').textContent = 'RESUME';
+    if (inputMode === 'pad') menuNav.focus(menuPrimary());
   }
-});
+}
 function pauseOnFocusLoss() {
   clearHumanInput();
-  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  if (padPlaying) pausePadPlay();
+  else if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
 }
 addEventListener('blur', pauseOnFocusLoss);
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseOnFocusLoss(); });
@@ -5096,6 +5220,8 @@ document.addEventListener('mousemove', e => {
   state.pitch = THREE.MathUtils.clamp(state.pitch + e.movementY * sens, -0.6, 1.2);
 });
 addEventListener('mousedown', e => {
+  // A click on the game while a pad plays hands the match back to the mouse (no pause in between)
+  if (padPlaying && e.target === renderer.domElement && document.pointerLockElement !== renderer.domElement) { lockPointer(); return; }
   if (document.pointerLockElement !== renderer.domElement) return;
   if (spectator.active) return;
   if (e.button === 0) {
@@ -5116,6 +5242,75 @@ addEventListener('wheel', e => {
   spectator.distance = THREE.MathUtils.clamp(spectator.distance + e.deltaY * CONFIG.spectator.zoomSpeed,
     CONFIG.spectator.minDistance, CONFIG.spectator.maxDistance);
 }, { passive: false });
+// ---- Game controller in a match (button map: docs/controller.md). Presses go through the same queues as keys.
+const padState = { sprint: false, fireBlock: false, ignore: new Set() };
+// A button held when play (re)started counts only after it is released once
+const padHeld = name => pad.held(name) && !padState.ignore.has(name);
+const _padRay = new THREE.Vector3();
+padGame = dt => {
+  if (!matchStarted || state.over || !captured()) return false;   // menus take the pad
+  for (const n of padState.ignore) if (!pad.held(n)) padState.ignore.delete(n);
+  const G = CONFIG.gamepad, look = pad.stick('right');
+  if (pad.pressed('options')) { pausePadPlay(); return true; }
+  if (pad.pressed('touchpad') || pad.pressed('share')) toggleHelp();
+  // Right stick: rate-based look with a response curve (fine aim near the centre)
+  const turn = look.mag ? Math.pow(look.mag, G.curve) / look.mag * SETTINGS.sensitivity * dt : 0;
+  if (spectator.active) {
+    if (pad.pressed('left')) switchSquadMember(-1);
+    if (pad.pressed('right')) switchSquadMember(1);
+    if (pad.pressed('triangle')) toggleSpectatorCamera();
+    if (pad.pressed('square')) { resetSpectatorCamera(); syncSpectatorUi(); }
+    if (spectator.view !== 'plant' && turn) {
+      state.yaw -= look.x * turn * G.lookYaw;
+      state.pitch = THREE.MathUtils.clamp(state.pitch + look.y * turn * G.lookPitch, CONFIG.spectator.minPitch, CONFIG.spectator.maxPitch);
+    }
+    if (spectator.view === 'orbit') spectator.distance = THREE.MathUtils.clamp(
+      spectator.distance + (pad.value('r2') - pad.value('l2')) * G.orbitZoom * dt, CONFIG.spectator.minDistance, CONFIG.spectator.maxDistance);
+    return true;
+  }
+  if (turn) {
+    const zoomK = THREE.MathUtils.lerp(1, player.plant.camera?.sensitivity ?? CONFIG.camera.aimSensitivity, player.zoom);
+    // Aim assist: the look slows while the reticle sits on a zombie (pads can't flick like a mouse)
+    const onTarget = rayZombie(camera.position, camera.getWorldDirection(_padRay), 90, 0.35).victim;
+    const k = turn * zoomK * (onTarget ? G.aimAssist : 1);
+    state.yaw -= look.x * k * G.lookYaw;
+    state.pitch = THREE.MathUtils.clamp(state.pitch + look.y * k * G.lookPitch, -0.6, 1.2);
+  }
+  // D-pad: switch plants, or choose / take a squad boon while one is on offer
+  if (state.boonOffer) {
+    if (pad.pressed('left')) boonKey('ArrowLeft');
+    if (pad.pressed('right')) boonKey('ArrowRight');
+    if (pad.pressed('up')) boonKey('Enter');
+  } else {
+    if (pad.pressed('left')) switchSquadMember(-1);
+    if (pad.pressed('right')) switchSquadMember(1);
+  }
+  if (pad.pressed('cross')) pressed.jump = true;
+  if (pad.pressed('square')) pressed.reload = true;
+  if (pad.pressed('l1')) pressed.shuck = true;
+  if (pad.pressed('r1')) pressed.hop = true;
+  // Ground-targeted ability (Butter Barrage and kin): △ opens the reticle, R2 calls it in, ◯ / L2 / △ cancel
+  if (state.targeting && pad.pressed('r2')) { confirmButterBarrage(); padState.fireBlock = true; }
+  else if (state.targeting && (pad.pressed('circle') || pad.pressed('l2'))) cancelButterTargeting();
+  else if (pad.pressed('triangle')) toggleButterTargeting();
+  if (!pad.held('r2')) padState.fireBlock = false;   // the R2 that confirmed a strike doesn't also fire
+  // L3 toggles sprint until the stick comes back to the centre
+  if (pad.pressed('l3')) padState.sprint = !padState.sprint;
+  if (pad.stick('left').mag < G.sprintRelease) padState.sprint = false;
+  return true;
+};
+padBack = () => {
+  if (matchStarted && !state.over && document.body.classList.contains('paused')) { startPadPlay(); return; }   // ◯ on pause = resume
+  if (document.body.classList.contains('settingsOpen')) document.getElementById('settingsToggle').click();
+};
+padMenuSound = () => { SFX.init(); SFX.play('tick', true); };
+padLost = () => { if (padPlaying) pausePadPlay(); };
+padResume = () => {
+  if (!matchStarted || state.over || !document.body.classList.contains('paused')) return false;
+  startPadPlay(); return true;
+};
+// Browsers may not count pad presses as a gesture that unlocks audio: any key or click does
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { try { SFX.init(); } catch {} }, { capture: true, passive: true });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -5142,7 +5337,7 @@ function endGame(won) {
   for (const select of squadSlots.querySelectorAll('select[id^="pick-"]')) select.showCard();
   updateSquadSummary();
   SFX.play(won ? 'victory' : 'defeat');
-  document.exitPointerLock();
+  padPlaying = false; document.exitPointerLock();
   document.getElementById('overlayTitle').textContent = won ? 'VICTORY' : 'DEFEAT';
   const why = won ? (state.finale ? 'The squad got out. The garden is safe.' : 'The garden is safe.')
     : state.abandoned ? 'Match abandoned.' : state.finale?.timeUp ? 'The rescue left without you.' : 'The statue fell.';
@@ -5150,7 +5345,7 @@ function endGame(won) {
   toggleHelp(false);
   showExtractZone(null);
   document.getElementById('laneArrow').style.display = 'none';
-  document.getElementById('overlaySub').innerHTML = why + '<br>Pick a squad and press <b>Defend again</b>';
+  delete overlaySubEl.dataset.controls; overlaySubEl.innerHTML = why + '<br>Pick a squad and press <b>Defend again</b>';
   showMatchStats(won);
   document.getElementById('squadPicker').style.display = 'block';
   document.getElementById('watchButton').style.display = '';
@@ -5380,14 +5575,16 @@ function readPlayerInput(h) {
   if (keys.KeyS) inp.move.sub(fwd);
   if (keys.KeyD) inp.move.add(right);
   if (keys.KeyA) inp.move.sub(right);
-  if (inp.move.lengthSq() > 0) inp.move.normalize();
+  const ls = pad.stick('left');   // analog: a half-tilted stick walks
+  if (ls.mag) inp.move.addScaledVector(fwd, -ls.y).addScaledVector(right, ls.x);
+  if (inp.move.lengthSq() > 1) inp.move.normalize();
   inp.yaw = state.yaw;
   if (standing(h)) inp.aimPoint.copy(getAimPoint());
-  inp.zoom = rightDown && !state.targeting;
-  inp.fire = mouseDown && !state.targeting;
-  inp.sprint = !!(keys.ShiftLeft || keys.ShiftRight);
-  inp.jumpHeld = !!keys.Space;
-  inp.interact = !!keys.KeyX;
+  inp.zoom = (rightDown || padHeld('l2')) && !state.targeting;
+  inp.fire = (mouseDown || (padHeld('r2') && !padState.fireBlock)) && !state.targeting;
+  inp.sprint = !!(keys.ShiftLeft || keys.ShiftRight || padState.sprint);
+  inp.jumpHeld = !!keys.Space || padHeld('cross');
+  inp.interact = !!keys.KeyX || padHeld('square');
   inp.jump = pressed.jump; inp.reload = pressed.reload; inp.shuck = pressed.shuck; inp.hop = pressed.hop; inp.butter = pressed.butter;
   pressed.jump = pressed.reload = pressed.shuck = pressed.hop = false; pressed.butter = null;
   if (state.targeting) updateButterReticle();
@@ -6325,7 +6522,7 @@ function updateSunflowerHud() {
     hud('ab-huskHop').querySelector('.cdt').textContent = s.deploy > 0 ? 'ROOT' : 'EXIT';
   }
   const healText = ally ? `✚ ${ally.name} · ${Math.ceil(ally.hp)} / ${ally.stats.hp}` : '';
-  status.textContent = beam ? `${s.deploy > 0 ? 'Rooting…' : 'SUNBEAM · E / Space to uproot'}${healText ? `   ·   ${healText}` : ''}`
+  status.textContent = beam ? `${s.deploy > 0 ? 'Rooting…' : glyphText('SUNBEAM · E / Space to uproot')}${healText ? `   ·   ${healText}` : ''}`
     : healText || 'Q · Heal Beam    E · Sunbeam    F · Heal Flower';
   status.style.display = 'block';
 }
@@ -6356,7 +6553,7 @@ function peashooterHud(h) {
   if (!p) return;
   if (p.gatling) {
     setText(hud('ammoN'), p.gatlingAmmo); setText(hud('ammoMax'), ` / ${G.ammo}`);
-    setText(hud('weaponLabel'), p.deploy > 0 ? 'ROOTING…' : 'PEA GATLING · E TO UPROOT');
+    setText(hud('weaponLabel'), p.deploy > 0 ? 'ROOTING…' : glyphText('PEA GATLING · E TO UPROOT'));
     hud('reloadFill').style.width = `${Math.max(0, p.gatlingTime / G.duration) * 100}%`;
   }
   for (const [key, remaining, total] of [['huskHop', p.gatling ? p.gatlingTime : 0, G.duration],
@@ -6972,7 +7169,7 @@ function citronHud(h) {
   const AB = h.abilities;
   if (c.ball) {
     setText(hud('ammoN'), c.dashing > 0 ? 'DASH!' : c.dashCharge > 0 ? `${Math.round(c.dashCharge * 100)}%` : 'ROLL'); setText(hud('ammoMax'), '');
-    setText(hud('weaponLabel'), 'CITRON BALL · HOLD LMB: SPIN DASH · E: UNROLL');
+    setText(hud('weaponLabel'), glyphText('CITRON BALL · HOLD LMB: SPIN DASH · E: UNROLL'));
     hud('reloadFill').style.width = `${c.dashCharge * 100}%`;
   } else {
     setText(hud('ammoN'), c.overheated > 0 ? 'COOLING' : `${Math.round(c.heat * 100)}%`); setText(hud('ammoMax'), c.overheated > 0 ? '' : ' HEAT');
@@ -7486,7 +7683,7 @@ function chomperHud(h) {
   setText(hud('ammoN'), c.burrowed ? 'BURROWED' : c.chew > 0 ? 'CHEWING' : 'CHOMP'); setText(hud('ammoMax'), '');
   hud('ammoN').style.color = c.chew > 0 ? 'var(--dim)' : '';
   hud('reloadFill').style.width = c.chew > 0 ? `${(1 - c.chew / W.chew) * 100}%` : c.burrowed ? `${c.burrowT / h.abilities.huskHop.duration * 100}%` : '0';
-  if (c.burrowed) setText(hud('weaponLabel'), 'BURROW · LMB / E: POP UP AND SWALLOW');
+  if (c.burrowed) setText(hud('weaponLabel'), glyphText('BURROW · LMB / E: POP UP AND SWALLOW'));
   if (c.burrowed) {
     const el = hud('ab-huskHop'); el.classList.add('active'); el.classList.remove('ready');
     el.querySelector('.cd').style.height = `${(1 - c.burrowT / h.abilities.huskHop.duration) * 100}%`; setText(el.querySelector('.cdt'), `${Math.ceil(c.burrowT)}s`);
@@ -18729,7 +18926,7 @@ function downHero(h) {
   h.brain.state = 'downed'; h.brain.stateT = 0; h.brain.path = []; h.brain.target = null; h.brain.pendingHop = null;
   burstLeaves(h.mesh.position, 18);
   for (let i = 0; i < 14; i++) spawnParticle('chip', 0xffd23a, h.mesh.position, rand3(8, 4), { life: 1 });
-  setMessage(`${h.name} #${h.squadIndex + 1} fell · respawns in ${Math.round(respawnDelay())}s${h === player ? ' · Tab to switch' : ' · hold X nearby to revive'}`, 3);
+  setMessage(`${h.name} #${h.squadIndex + 1} fell · respawns in ${Math.round(respawnDelay())}s${h === player ? ` · ${key('switchPlant')} to switch` : ` · hold ${key('revive')} nearby to revive`}`, 3);
   SFX.play('mateDown', h.mesh.position);
 }
 function nearestDownedHero() {
@@ -18840,7 +19037,7 @@ function updateRevivePrompt() {
   reviveEl.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
   reviveEl.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
   reviveRing.style.strokeDashoffset = RING_LEN * (1 - h.reviveT / (h.reviveDuration || TM.revive.time));
-  reviveEl.querySelector('.txt').textContent = h.reviveNear ? (h.reviveT > 0 ? 'Reviving…' : 'Hold X to revive') : `${h.name} DOWN · respawn ${Math.ceil(h.downT)}s`;
+  reviveEl.querySelector('.txt').textContent = h.reviveNear ? (h.reviveT > 0 ? 'Reviving…' : `Hold ${key('revive')} to revive`) : `${h.name} DOWN · respawn ${Math.ceil(h.downT)}s`;
   reviveEl.classList.toggle('near', h.reviveNear);
 }
 
@@ -18975,9 +19172,12 @@ function addCameraRecoil(kick) {
 // Spectator mode never writes a hero's input, abilities or AI brain. `player` is only the observed HUD target.
 // Views: 'plant' = the player's camera and HUD aimed by the plant's AI; 'orbit' = mouse orbit; 'free' = fly.
 const SPECTATOR_VIEWS = {
-  plant: { mode: 'PLANT VIEW', button: 'ORBIT CAMERA', help: 'Tab / [ ] / 1–4 · plant &nbsp; F · orbit camera &nbsp; Esc · pause' },
-  orbit: { mode: 'ORBIT', button: 'FREE CAMERA', help: 'Mouse · orbit &nbsp; Wheel · zoom &nbsp; Tab / [ ] / 1–4 · plant<br>F · free camera &nbsp; R · plant view &nbsp; Esc · pause' },
-  free:  { mode: 'FREE CAMERA', button: 'PLANT VIEW', help: 'Mouse · look &nbsp; WASD · fly &nbsp; E / Space · up &nbsp; Q / Ctrl · down &nbsp; Shift · faster<br>Tab / [ ] / 1–4 · plant &nbsp; F · plant view &nbsp; R · plant view &nbsp; Esc · pause' },
+  plant: { mode: 'PLANT VIEW', button: 'ORBIT CAMERA', help: 'Tab / [ ] / 1–4 · plant &nbsp; F · orbit camera &nbsp; Esc · pause',
+    padHelp: 'D-pad ← → · plant &nbsp; △ · orbit camera &nbsp; Options · pause' },
+  orbit: { mode: 'ORBIT', button: 'FREE CAMERA', help: 'Mouse · orbit &nbsp; Wheel · zoom &nbsp; Tab / [ ] / 1–4 · plant<br>F · free camera &nbsp; R · plant view &nbsp; Esc · pause',
+    padHelp: 'R-stick · orbit &nbsp; L2 / R2 · zoom &nbsp; D-pad ← → · plant<br>△ · free camera &nbsp; ☐ · plant view &nbsp; Options · pause' },
+  free:  { mode: 'FREE CAMERA', button: 'PLANT VIEW', help: 'Mouse · look &nbsp; WASD · fly &nbsp; E / Space · up &nbsp; Q / Ctrl · down &nbsp; Shift · faster<br>Tab / [ ] / 1–4 · plant &nbsp; F · plant view &nbsp; R · plant view &nbsp; Esc · pause',
+    padHelp: 'R-stick · look &nbsp; L-stick · fly &nbsp; R1 · up &nbsp; L1 · down &nbsp; L3 · faster<br>D-pad ← → · plant &nbsp; △ / ☐ · plant view &nbsp; Options · pause' },
 };
 const SPECTATOR_NEXT = { plant: 'orbit', orbit: 'free', free: 'plant' };
 function resetSpectatorCamera() {
@@ -18989,11 +19189,11 @@ function syncSpectatorUi() {
   const V = SPECTATOR_VIEWS[spectator.view];
   document.body.classList.toggle('spectating', spectator.active);
   document.body.classList.toggle('detachedView', spectator.active && spectator.view !== 'plant');
-  setText(hud('squadHint'), spectator.active ? 'Tab / [ ] / 1–4 · spectate plant' : 'Tab · next plant   [ / ] · previous / next');
+  setText(hud('squadHint'), spectator.active ? (inputMode === 'pad' ? 'D-pad ← → · spectate plant' : 'Tab / [ ] / 1–4 · spectate plant') : 'Tab · next plant   [ / ] · previous / next');
   hud('spectatorSelect').value = String(player.squadIndex);
   setText(hud('spectatorCameraButton'), V.button);
   setText(hud('spectatorMode'), `SPECTATING · ${V.mode}`);
-  setHtml(hud('spectatorHelp'), V.help);
+  setHtml(hud('spectatorHelp'), inputMode === 'pad' ? V.padHelp : V.help);
 }
 // Fresh camera feedback state for a newly viewed plant (no carried-over shake, flinch or hurt flash)
 function resetViewFeedback(h) {
@@ -19048,9 +19248,11 @@ function updateSpectatorCamera(dt) {
     if (keys.KeyS) move.sub(forward);
     if (keys.KeyD) move.add(right);
     if (keys.KeyA) move.sub(right);
-    if (keys.KeyE || keys.Space) move.y++;
-    if (keys.KeyQ || keys.ControlLeft || keys.ControlRight) move.y--;
-    const speed = C.flySpeed * (keys.ShiftLeft || keys.ShiftRight ? C.fastMult : 1);
+    const ls = pad.stick('left');
+    if (ls.mag) move.addScaledVector(forward, -ls.y).addScaledVector(right, ls.x);
+    if (keys.KeyE || keys.Space || padHeld('r1') || padHeld('cross')) move.y++;
+    if (keys.KeyQ || keys.ControlLeft || keys.ControlRight || padHeld('l1') || padHeld('circle')) move.y--;
+    const speed = C.flySpeed * (keys.ShiftLeft || keys.ShiftRight || padHeld('l3') ? C.fastMult : 1);
     if (move.lengthSq()) spectator.position.addScaledVector(move.normalize(), speed * dt);
     const p = spectator.position;
     p.x = THREE.MathUtils.clamp(p.x, -HALF, HALF); p.z = THREE.MathUtils.clamp(p.z, -HALF, HALF);
@@ -19265,8 +19467,9 @@ function setHudBar(id, ratio, dt, regen) {
 let fpsShownAt = 0;
 // Wave progress pips under the garden bar: done / current / to come, boss waves marked, then the extraction
 let wavePipKey = '';
-new ResizeObserver(([e]) => document.documentElement.style.setProperty('--topB', `${Math.round(e.target.getBoundingClientRect().bottom)}px`))
-  .observe(document.getElementById('top'));
+const syncTopB = () => document.documentElement.style.setProperty('--topB', `${Math.round(hud('top').getBoundingClientRect().bottom)}px`);
+new ResizeObserver(syncTopB).observe(document.getElementById('top'));
+onGlyphs(() => requestAnimationFrame(syncTopB));   // the pad's TV zoom resizes the strip without a resize event
 function renderWavePips() {
   const key = `${state.waveIndex}|${state.phase}|${WAVES.length}`;
   if (key === wavePipKey) return;
@@ -19337,7 +19540,8 @@ function updateHud(dt) {
     h.bar.group.visible = h.active && h !== player && !h.dead && keepBarReadable(h.bar.group, 20, 3.5);
     h.bar.group.quaternion.copy(camera.quaternion); setWorldBar(h.bar, h.hp / h.stats.hp);
   }
-  setText(hud('squadHint'), spectator.active ? 'Tab / [ ] / 1–4 · spectate plant' : heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help');
+  setText(hud('squadHint'), inputMode === 'pad' ? (spectator.active ? 'D-pad ← → · spectate plant' : heroes.length > 1 ? 'D-pad ← → · switch plant   Touchpad · help' : 'Solo defense   Touchpad · help')
+    : spectator.active ? 'Tab / [ ] / 1–4 · spectate plant' : heroes.length > 1 ? (DEBUG ? 'Tab · next living plant   [ / ] · previous / next' : '1–4 · take a plant   Tab · next   H · help') : 'Solo defense   H · help');
   setWorldBar(statueHpBar, state.statueHp / CONFIG.statue.hp);
   statueHpBar.group.visible = keepBarReadable(statueHpBar.group, 45, 7);
   statueHpBar.group.quaternion.copy(camera.quaternion);
@@ -19469,13 +19673,13 @@ function updateAwareness(dt) {
 // ---- Onboarding: one-time contextual tips (remembered in localStorage) + the H help panel ----
 const TIPS = {
   start: 'Zombies march from the glowing <b>beacons</b> to the <b>garden statue</b>. Keep it standing for 10 waves! The <b>radar</b> (top right) shows the horde.',
-  abilities: 'Use your abilities: <kbd>Q</kbd> <kbd>E</kbd> <kbd>F</kbd> (names under the ability bar). Press <kbd>H</kbd> for your plant\'s full kit.',
-  squad: 'Press <kbd>1</kbd>–<kbd>4</kbd> or <kbd>Tab</kbd> to take over another plant. The rest of the squad fights on its own.',
+  abilities: () => `Use your abilities: ${kbd('q')} ${kbd('e')} ${kbd('f')} (names under the ability bar). Press ${kbd('help')} for your plant's full kit.`,
+  squad: () => `Press ${inputMode === 'pad' ? kbd('switchPlant') : '<kbd>1</kbd>–<kbd>4</kbd> or <kbd>Tab</kbd>'} to take over another plant. The rest of the squad fights on its own.`,
   garden: '<b>The garden is under attack!</b> Follow the arrow at the top, or look for flashing dots by the ◆ on the radar.',
-  revive: 'An ally is down! Stand next to them and hold <kbd>X</kbd> to revive before the timer runs out.',
-  downed: 'You\'re down. Press <kbd>Tab</kbd> to keep fighting as another plant while you wait to respawn.',
+  revive: () => `An ally is down! Stand next to them and hold ${kbd('revive')} to revive before the timer runs out.`,
+  downed: () => `You're down. Press ${kbd('switchPlant')} to keep fighting as another plant while you wait to respawn.`,
   boss: '<b>Boss incoming!</b> Its health bar is at the top. Bosses hunt plants: keep moving and save your abilities for it.',
-  boons: '<b>Pick a squad boon</b> for the rest of the match: <kbd>←</kbd> <kbd>→</kbd> to choose, <kbd>Enter</kbd> to take it.',
+  boons: () => `<b>Pick a squad boon</b> for the rest of the match: ${kbd('choose')} to choose, ${kbd('take')} to take it.`,
   extract: '<b>Extraction!</b> Run to the green landing zone and stand in it until it charges. More plants inside = faster.',
 };
 const tipEl = hud('tip'), tipQueue = [];
@@ -19499,7 +19703,7 @@ function updateTips(dt) {
   const key = tipQueue.shift();
   tipsSeen.add(key);
   try { localStorage.setItem(T.storageKey, JSON.stringify([...tipsSeen])); } catch { /* private mode */ }
-  tipEl.innerHTML = TIPS[key]; tipEl.style.display = 'block';
+  tipEl.innerHTML = typeof TIPS[key] === 'function' ? TIPS[key]() : TIPS[key]; tipEl.style.display = 'block';
   tipT = T.time; tipGap = T.gap;
   SFX.play('tick', true);
 }
@@ -19509,11 +19713,19 @@ function showHelp() {
   const d = player.def, I = d.info, el = hud('helpPanel');
   helpFor = player;
   el.innerHTML = `<div class="role">${I.role}</div><h3>${PLANT_ICONS[player.type] || ''} ${d.name}</h3><div>${I.blurb}</div>` +
-    `<div class="grid"><kbd>LMB</kbd><span>${player.loadout && player.loadout !== 'Classic' ? `${player.loadout}: ${EG.loadouts[player.type].description}` : I.primary}</span>` +
-    ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `<kbd>${'QEF'[n]}</kbd><span><b>${d.abilityIcons[k]} ${d.abilityNames[k]}</b> · ${I[k]}</span>`).join('') +
-    `</div><div class="keys"><kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump · <kbd>RMB</kbd> zoom · <kbd>R</kbd> reload · ` +
-    `<kbd>1</kbd>–<kbd>4</kbd> / <kbd>Tab</kbd> switch plant · <kbd>X</kbd> revive · <kbd>Esc</kbd> pause · <kbd>H</kbd> close</div>`;
+    `<div class="grid">${kbd('fire')}<span>${glyphText(player.loadout && player.loadout !== 'Classic' ? `${player.loadout}: ${EG.loadouts[player.type].description}` : I.primary)}</span>` +
+    ['shuckShot', 'huskHop', 'butterBarrage'].map((k, n) => `${kbd('qef'[n])}<span><b>${d.abilityIcons[k]} ${d.abilityNames[k]}</b> · ${glyphText(I[k])}</span>`).join('') +
+    `</div><div class="keys">${kbd('move')} move · ${kbd('sprint')} sprint · ${kbd('jump')} jump · ${kbd('zoom')} zoom · ${kbd('reload')} reload · ` +
+    `${inputMode === 'pad' ? kbd('switchPlant') : '<kbd>1</kbd>–<kbd>4</kbd> / <kbd>Tab</kbd>'} switch plant · ${inputMode === 'pad' ? 'hold ' : ''}${kbd('revive')} revive · ${kbd('pause')} pause · ${kbd('help')} close</div>`;
 }
+// Hints that name a control follow the last input device (keyboard / mouse or pad)
+onGlyphs(() => {
+  if (helpOpen) showHelp();
+  ['shuckShot', 'huskHop', 'butterBarrage'].forEach((k, n) => { hud(`ab-${k}`).querySelector('.key').textContent = key('qef'[n]); });
+  setHtml(hud('targetHint'), `BUTTER BARRAGE — ${key('fire')} to call the strike · ${key('cancel')} to cancel`);
+  setHtml(document.querySelector('#boonPick .hint'), `${kbd('choose')} choose &nbsp; ${kbd('take')} take`);
+  syncSpectatorUi();
+});
 function toggleHelp(open = !helpOpen) {
   helpOpen = open;
   hud('helpPanel').style.display = open ? 'block' : 'none';
@@ -19621,7 +19833,7 @@ function rebuildSquadHud() {
 function clearHumanInput(releaseKeys = true) {
   if (releaseKeys) for (const key of Object.keys(keys)) delete keys[key];
   for (const key of Object.keys(pressed)) pressed[key] = key === 'butter' ? null : false;
-  mouseDown = rightDown = false;
+  mouseDown = rightDown = false; padState.sprint = false; padState.fireBlock = true;   // a held R2 waits for a release
   if (player && !spectator.active) { player.input = newInput(); player.jumpQueuedUntil = player.lastGroundT = -Infinity; }
 }
 function takeControl(h) {
@@ -19755,7 +19967,7 @@ function simulate(dt, skip = []) {
 const FRAME_SYSTEMS = [
   ['camera', (dt, playing) => updateCamera(spectator.active && !playing ? 0 : dt)],
   ['audio', dt => {   // silence everything while paused / tabbed out (game-over stings still play)
-    SFX.setActive((document.pointerLockElement === renderer.domElement || AUTOPLAY || state.over) && !document.hidden && document.hasFocus());
+    SFX.setActive((captured() || AUTOPLAY || state.over) && !document.hidden && document.hasFocus());
     SFX.update(dt);
   }],
   ['hud', (dt, playing) => {
@@ -19775,7 +19987,7 @@ function loop() {
   if (AUTOPLAY) setTimeout(loop, 16); else requestAnimationFrame(loop);   // background panes may get no frames
   const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
   if (raw > 0) fpsAvg += (1 / raw - fpsAvg) * 0.05;
-  const playing = matchStarted && (AUTOPLAY || (!document.hidden && document.hasFocus() && document.pointerLockElement === renderer.domElement)) && !state.over;
+  const playing = matchStarted && (AUTOPLAY || (!document.hidden && document.hasFocus() && captured())) && !state.over;
   if (playing) simulate(dt);
   for (const [name, fn] of FRAME_SYSTEMS) guarded(name, () => fn(dt, playing));
   renderer.render(scene, camera);
@@ -19937,7 +20149,10 @@ prewarmAssets();
     matchStarted = true;
     document.body.classList.remove('preMatch');
     document.getElementById('overlayTitle').textContent = 'THE GARDEN IS READY';
-    button.textContent = spectator.active ? 'CLICK TO WATCH' : 'CLICK TO START';   // pointer lock needs a fresh click
+    // Pointer lock needs a fresh click; a pad press starts straight away
+    const verb = spectator.active ? 'WATCH' : 'START';
+    button.textContent = `CLICK TO ${verb}`;
+    onGlyphs(() => { if (/^(CLICK|PRESS ✕) TO /.test(button.textContent)) button.textContent = inputMode === 'pad' ? `PRESS ✕ TO ${verb}` : `CLICK TO ${verb}`; });
     document.getElementById('watchButton').style.display = 'none';
     button.focus();
   } else {   // automated boot without ?autoplay: the menu is the squad picker again

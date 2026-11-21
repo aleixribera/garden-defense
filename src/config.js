@@ -873,6 +873,10 @@ export const CONFIG = {
   },
   // Human jump timing: accept a slightly early landing press or a slightly late ledge press.
   movement: { jumpBuffer: 0.14, coyoteTime: 0.12 },
+  // Game controller (src/gamepad.js). Look speeds in rad/s at full right-stick tilt (× the sensitivity setting);
+  // curve > 1 gives fine aim near the centre. aimAssist slows the look while the reticle is on a zombie.
+  gamepad: { deadzone: 0.18, lookYaw: 3.4, lookPitch: 2.1, curve: 1.8, aimAssist: 0.55, sprintRelease: 0.3,
+    orbitZoom: 9 },
   // Player settings (menu / Esc pause screen), saved in localStorage. Quality: shadows, pixel ratio cap, particle cap
   settings: {
     storageKey: 'gardenDefense.settings',
