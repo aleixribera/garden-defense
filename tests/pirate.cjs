@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -18,7 +18,7 @@ const server = gameServer(html);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-    args: ['--enable-unsafe-swiftshader'] });
+    args: glArgs() });
   const page = await browser.newPage({ viewport: { width: 900, height: 1000 } });
   const errors = [];
   page.on('pageerror', e => { errors.push(e.message); console.log('BROWSER ERROR:', e.stack || e.message); });
@@ -43,7 +43,7 @@ const server = gameServer(html);
         return T.renderer.domElement.toDataURL('image/png');
       }, [yaw]);
     }
-    for (const [k, v] of Object.entries(shots)) fs.writeFileSync(path.join(root, 'docs', `pirate-${k}.png`), Buffer.from(v.split(',')[1], 'base64'));
+    for (const [k, v] of Object.entries(shots)) fs.writeFileSync(path.join(renderDir(), `pirate-${k}.png`), Buffer.from(v.split(',')[1], 'base64'));
     // 2. Behavior: a plant stands 30 m away; simulate and record what the kit does
     const res = await page.evaluate(() => {
       const T = window.__prTest, g = window.__game, dt = 1 / 60;

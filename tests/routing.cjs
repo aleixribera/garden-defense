@@ -3,7 +3,7 @@
 // knocked off its route or walled in, and the horde actually reaches the statue without getting stuck.
 // Writes docs/routing-map.png (debug map with every planned route) for eyeballing.
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -19,7 +19,7 @@ const server = gameServer(html);
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } }), errors = [];
     page.on('pageerror', e => { errors.push(e.message); console.error(e.stack); });
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { timeout: 60000 });
@@ -149,7 +149,7 @@ const server = gameServer(html);
       g.debugMap.toggle(); g.debugMap.draw(); g.debugMap.toggle();
       return g.debugMap.canvas.toDataURL('image/png');
     });
-    fs.writeFileSync(path.join(root, 'docs', 'routing-map.png'), Buffer.from(img.split(',')[1], 'base64'));
+    fs.writeFileSync(path.join(renderDir(), 'routing-map.png'), Buffer.from(img.split(',')[1], 'base64'));
     assert.equal(errors.length, 0, 'no page errors');
     console.log('routing: OK');
   } finally { if (browser) await browser.close(); server.close(); }

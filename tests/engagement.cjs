@@ -4,7 +4,7 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const expose = 'window.__engagementTest = { updateWaves, updateZombies, updateHud, updateCamera, respawnHero, mvpIndex, boardZMech, removeDeadZombies, resetGame };';
 const html = source.replace(/loop\(\);\s*<\/script>\s*<\/body>/, expose + '</script></body>');
@@ -15,7 +15,7 @@ const server = gameServer(html);
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }), errors = [];
     page.on('pageerror', e => { if (!errors.includes(e.message)) errors.push(e.message); });
     const url = `http://127.0.0.1:${server.address().port}/?autoplay`;
@@ -211,7 +211,7 @@ const server = gameServer(html);
       t.updateCamera(0); t.updateHud(0); g.renderer.render(g.scene, g.camera);
       document.getElementById('overlay').style.display = 'none';
     });
-    await page.screenshot({ path: path.resolve(__dirname, '..', 'docs', 'engagement.png') });
+    await page.screenshot({ path: path.join(renderDir(), 'engagement.png') });
     assert.deepEqual(errors, [], 'no runtime exceptions');
 
     // Human boot still waits at the instant menu, and the actual picker applies a variant through a skipped slot.
@@ -222,7 +222,7 @@ const server = gameServer(html);
     assert.equal(await menu.evaluate(() => !!window.__game), false, 'world does not load before selection');
     await menu.selectOption('#pick-0', 'corn'); await menu.selectOption('#loadout-0', 'variant');
     await menu.selectOption('#pick-1', ''); await menu.selectOption('#pick-2', 'cactus'); await menu.selectOption('#loadout-2', 'variant'); await menu.selectOption('#pick-3', '');
-    await menu.screenshot({ path: path.resolve(__dirname, '..', 'docs', 'engagement-menu.png') });
+    await menu.screenshot({ path: path.join(renderDir(), 'engagement-menu.png') });
     await menu.click('#matchButton'); await menu.waitForFunction(() => window.__engagementTest, null, { timeout: 90000 });
     assert.deepEqual(await menu.evaluate(() => __game.heroes.map(h => h.loadout)), ['Heavy Kernels', 'Repeater Spikes']);
     await menu.evaluate(() => __game.endGame(false));

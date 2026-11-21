@@ -3,7 +3,7 @@
 // nav steps work both ways, ledges (cliff tops, ramp sides) are marked and routes keep off them, a hero can walk
 // A* paths all over the map without jumping, and zombies are never shoved off a ledge (knockback still throws them).
 const fs = require('fs'), path = require('path'), http = require('http');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -16,7 +16,7 @@ const server = gameServer(html);
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage(), errors = [];
     page.on('pageerror', e => { errors.push(e.message); console.error(e.stack); });
     await page.goto(`http://127.0.0.1:${server.address().port}/?autoplay`, { timeout: 60000 });

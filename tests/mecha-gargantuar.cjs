@@ -1,7 +1,7 @@
 // Real-renderer model previews and deterministic combat/lifecycle regression checks.
 // NODE_PATH can point to the desktop's bundled node_modules; no game build step.
 const fs = require('fs'), path = require('path'), http = require('http'), assert = require('assert/strict');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -15,7 +15,7 @@ assert.ok(html.includes(expose));
 const server = gameServer(html);
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
-  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined,args:['--enable-unsafe-swiftshader']});
+  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined,args: glArgs()});
   const page=await browser.newPage({viewport:{width:1200,height:1200}}), errors=[];
   page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
   page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
@@ -33,7 +33,7 @@ const server = gameServer(html);
         T.scene.updateMatrixWorld(true);T.renderer.render(T.scene,T.camera);
         const out=T.renderer.domElement.toDataURL('image/png');T.scene.remove(key,key.target,rim,rim.target);return out;
       },yaw);
-      fs.writeFileSync(path.join(root,'docs',`mecha-${name}.png`),Buffer.from(image.split(',')[1],'base64'));
+      fs.writeFileSync(path.join(renderDir(),`mecha-${name}.png`),Buffer.from(image.split(',')[1],'base64'));
     }
     const result=await page.evaluate(()=>{
       const T=__mgTest,g=__game,C=g.CONFIG.MECHA,dt=1/60;T.clear();g.configureSquad(['corn']);

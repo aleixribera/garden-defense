@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -14,7 +14,7 @@ const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 const server = gameServer(html);
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: ['--enable-unsafe-swiftshader'] });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, args: glArgs() });
   const page = await browser.newPage({ viewport: { width: 1200, height: 1000 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', e => { errors.push(e.message); console.log('BROWSER ERROR:', e.message); });

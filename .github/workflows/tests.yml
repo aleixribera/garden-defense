@@ -1,0 +1,26 @@
+name: tests
+# Fast browser tier (npm test) on every push that touches the game or its tests. No GPU here: WebGL runs on SwiftShader.
+on:
+  push:
+    paths: ['index.html', 'src/**', 'vendor/**', 'tests/**', 'package*.json', '.github/workflows/tests.yml']
+  workflow_dispatch:
+concurrency: { group: tests-${{ github.ref }}, cancel-in-progress: true }
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - id: pw
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with: { path: ~/.cache/ms-playwright, key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }} }
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: npm test
+        env: { TEST_WORKERS: '3', TEST_GL: swiftshader, TEST_BUDGET: '600' }
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: test-logs, path: tests/.logs/, retention-days: 7 }

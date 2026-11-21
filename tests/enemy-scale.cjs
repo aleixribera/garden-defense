@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const expose = `window.__scaleTest={HORDE_MODELS,hordeKit,updateZombieLook,swapImpDef,IMP_MECH_DEF,boardZMech,
@@ -16,7 +16,7 @@ const server = gameServer(html);
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 1800, height: 1000 } }), errors = [];
     page.on('pageerror', e => { errors.push(e.message); console.error(e.stack); });
     await page.goto(`http://127.0.0.1:${server.address().port}/?autoplay`, { timeout: 90000 });
@@ -169,7 +169,7 @@ const server = gameServer(html);
       });
       return out.toDataURL('image/png');
     });
-    fs.writeFileSync(path.join(root, 'docs', 'enemy-scale.png'), Buffer.from(png.split(',')[1], 'base64'));
+    fs.writeFileSync(path.join(renderDir(), 'enemy-scale.png'), Buffer.from(png.split(',')[1], 'base64'));
     assert.deepEqual(errors, []);
     console.log('enemy-scale: all sizes, mech transitions and corpses passed; rendered docs/enemy-scale.png');
   } finally { await browser?.close(); server.close(); }

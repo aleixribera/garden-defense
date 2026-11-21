@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -13,12 +13,12 @@ const expose = `window.__anTest={THREE,renderer,scene,camera,spawnAgent,updateZo
   clear(){for(const z of zombies){z.parts.dispose?.();scene.remove(z.mesh);}zombies=[];clearAgentCorpses();state.spawnQueue=[];state.over=false;}};`;
 const html = source.replace(/loop\(\);\s*<\/script>/, expose + '</script>');
 assert.ok(html.includes(expose), 'test hooks must replace the animation loop');
-const out = process.argv[2] || path.join(root, 'docs');
+const out = process.argv[2] || renderDir();
 const server = gameServer(html);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-    args: ['--enable-unsafe-swiftshader'] });
+    args: glArgs() });
   const page = await browser.newPage({ viewport: { width: 1200, height: 300 } });
   const errors = [];
   page.on('pageerror', e => { errors.push(e.message); console.log('BROWSER ERROR:', e.stack || e.message); });

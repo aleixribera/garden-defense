@@ -4,7 +4,7 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = 'window.__controlsTest = { updateHero, updateCamera, clearHumanInput, addCameraRecoil, keys, pressed };';
 const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\n</script>'));
@@ -13,7 +13,7 @@ const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expo
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage(), errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/?autoplay`);

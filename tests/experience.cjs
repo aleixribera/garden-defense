@@ -6,13 +6,13 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 
 // Keep the scheduled loop alive, but freeze its work during captures so software rendering cannot starve screenshots.
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8')
   .replace('const raw = clock.getDelta()', 'if (window.__captureFrame) return; const raw = clock.getDelta()');
 const server = gameServer(html);
-const SHOTS = path.resolve(__dirname, '..', 'docs');
+const SHOTS = renderDir();
 
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -20,7 +20,7 @@ const SHOTS = path.resolve(__dirname, '..', 'docs');
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [];
     page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.stack); });
     const frame = () => page.waitForTimeout(80);

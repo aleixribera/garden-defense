@@ -6,7 +6,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const root = path.resolve(__dirname, '..'), baseline = process.argv.includes('--baseline');
 const source = baseline ? execFileSync('git', ['show', 'HEAD:index.html'], { cwd: root, encoding: 'utf8', maxBuffer: 4e6 })
   : fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -25,7 +25,7 @@ const server = gameServer(html);
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage(), errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.addInitScript(() => {
@@ -100,6 +100,9 @@ const server = gameServer(html);
       report.roseFar = 20000 - z.hp;
       // Solo AI brawl per class: movement, targeting, abilities, incoming damage and healing all run normally.
       report.bots = {};
+      // Route searches stop at a wall-clock ms cap per frame; lift it so the node budget alone decides and the
+      // seeded brawls play out the same on a fast or a busy machine
+      g.CONFIG.AI.path.budgetMs = 1e9;
       for (const type of Object.keys(report.primary)) {
         let seed = 127;
         Math.random = () => ((seed = Math.imul(seed, 1664525) + 1013904223 | 0) >>> 0) / 4294967296;

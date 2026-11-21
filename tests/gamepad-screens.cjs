@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = 'window.__padTest = { menuNav, overlayEl, get padPlaying() { return padPlaying; } };';
 const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\nloop();\n</script>'));
@@ -53,7 +53,7 @@ const AUDIT = () => {
   const errors = [];
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     for (const [W, H] of [[1920, 1080], [390, 844]]) {
       const page = await browser.newPage({ viewport: { width: W, height: H } });
       page.on('pageerror', e => errors.push(e.message));

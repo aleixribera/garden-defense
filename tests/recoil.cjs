@@ -6,7 +6,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const cp = require('node:child_process');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(process.env.GARDEN_TEST_HTML || path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = `window.__recoilTest = { resetGame, updateCamera, addCameraRecoil, takeControl,
   fireKernel, firePea, fireSunPulse, fireCactusSpike, toggleGarlicDrone, endGarlicDrone, renderer };`;
@@ -23,7 +23,7 @@ const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expo
   try {
     browser = await chromium.launch({ headless: true,
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ ignoreHTTPSErrors: true });
     const errors = [];
     page.on('pageerror', error => errors.push(error.stack));

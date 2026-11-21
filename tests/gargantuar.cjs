@@ -1,7 +1,7 @@
 // Real browser regression scenarios plus reproducible studio views of the procedural boss.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict'),os=require('node:os'),cp=require('node:child_process');
 const {chromium}=require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const expose=`window.__ggTest={THREE,renderer,scene,camera,resetGame,respawnHero,updateZombies,updateGargantuarWorld,
   updateParticles,updateEffects,updateHeroInfo,gargantuarBehavior,gargantuarSlam,gargantuarBegin,damageZombie,
@@ -15,7 +15,7 @@ const server = gameServer(html);
   try{fs.writeFileSync(syntax,source.match(/<script type="module">([\s\S]*?)<\/script>/)[1]);cp.execFileSync(process.execPath,['--check',syntax]);}finally{fs.rmSync(syntax,{force:true});}
   await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;
   try{
-    browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+    browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined,args: glArgs()});
     const page=await browser.newPage({viewport:{width:1100,height:1100},ignoreHTTPSErrors:true}),errors=[];
     page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
     await page.goto(`http://127.0.0.1:${server.address().port}/`,{timeout:60000});
@@ -43,7 +43,7 @@ const server = gameServer(html);
         z.parts.animate(z,1/60);z.parts.warning.visible=false;
         T.camera.position.set(-0.3,5.1,14.5);T.camera.lookAt(-0.3,3.5,0);T.camera.fov=40;T.camera.aspect=1;T.camera.updateProjectionMatrix();
         T.renderer.render(window.ggStudio,T.camera);return T.renderer.domElement.toDataURL('image/png');
-      },{angle,mode});fs.writeFileSync(path.join(root,'docs',`gargantuar-${name}.png`),Buffer.from(data.split(',')[1],'base64'));
+      },{angle,mode});fs.writeFileSync(path.join(renderDir(),`gargantuar-${name}.png`),Buffer.from(data.split(',')[1],'base64'));
     }
     const checks=await page.evaluate(()=>{
       const T=window.__ggTest,g=window.__game,C=g.CONFIG.GARGANTUAR,dt=1/60,results=[];

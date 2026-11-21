@@ -6,7 +6,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const moduleSource = source.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
@@ -29,7 +29,7 @@ const server = gameServer(html);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true,
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-    args: ['--enable-unsafe-swiftshader'] });
+    args: glArgs() });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 1100 }, ignoreHTTPSErrors: true });
     const errors = [];

@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
@@ -19,7 +19,7 @@ const only = process.argv[2];   // optional: a single clip name
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-    args: ['--enable-unsafe-swiftshader'] });
+    args: glArgs() });
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   const errors = [];
   page.on('pageerror', e => { errors.push(e.message); console.log('BROWSER ERROR:', e.stack || e.message); });
@@ -95,7 +95,7 @@ const only = process.argv[2];   // optional: a single clip name
         r.setScissorTest(false);
         return r.domElement.toDataURL('image/png');
       }, clip);
-      fs.writeFileSync(path.join(root, 'docs', `horde-${clip}.png`), Buffer.from(png.split(',')[1], 'base64'));
+      fs.writeFileSync(path.join(renderDir(), `horde-${clip}.png`), Buffer.from(png.split(',')[1], 'base64'));
       console.log('rendered', clip);
     }
     // Every type gets a kit, poses without NaNs, and corpses clear on reset

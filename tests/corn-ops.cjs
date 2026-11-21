@@ -4,7 +4,7 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 
 const root = path.resolve(__dirname, '..');
 const expose = `window.__cornTest = { THREE, resetBrain, pickTarget, thinkTeammate, driveTeammate,
@@ -20,7 +20,7 @@ const server = gameServer(html);
   try {
     browser = await chromium.launch({ headless: true,
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 960, height: 640 } });
     const errors = [];
     page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });

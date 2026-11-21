@@ -27,4 +27,22 @@ function gameServer(page) {
   });
 }
 
-module.exports = { gameServer, root };
+// Where tests save their renders / screenshots: docs/ only with DOC_RENDERS=1 (refreshing the committed images),
+// otherwise tests/.logs/renders, so a normal test run leaves the working tree clean.
+function renderDir() {
+  const dir = process.env.DOC_RENDERS ? path.join(root, 'docs') : path.join(__dirname, '..', '.logs', 'renders');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Chromium WebGL flags for every test browser. On Linux with a GPU render node (the test laptop) WebGL runs on the GPU
+// (ANGLE on Vulkan): boot and frames cost ~5x less CPU than software SwiftShader, which every machine without a GPU
+// (CI) falls back to. TEST_GL=swiftshader forces software rendering, TEST_GL=gpu forces the GPU flags.
+function glArgs(extra = []) {
+  const mode = process.env.TEST_GL || (process.platform === 'linux' && fs.existsSync('/dev/dri/renderD128') ? 'gpu' : 'swiftshader');
+  const gl = mode === 'gpu' ? ['--use-angle=vulkan', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader']
+    : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+  return [...gl, ...extra];
+}
+
+module.exports = { gameServer, root, renderDir, glArgs };

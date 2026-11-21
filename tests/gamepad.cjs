@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const expose = 'window.__padTest = { offerBoons, padState, get padPlaying() { return padPlaying; }, get inputMode() { return inputMode; }, pad };';
 const server = gameServer(source.replace(/\nloop\(\);\s*<\/script>/, '\n' + expose + '\nloop();\n</script>'));
@@ -27,7 +27,7 @@ const STUB = () => {
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });

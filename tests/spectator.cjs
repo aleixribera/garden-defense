@@ -4,7 +4,7 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const { gameServer } = require('./lib/game-server.cjs');
+const { gameServer, glArgs, renderDir } = require('./lib/game-server.cjs');
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const expose = `window.__spectatorTest = { updateCamera, updateHud, updateHero, updateWaves, updateFinale,
   readPlayerInput, clearHumanInput, keys, pressed, respawnHero, resetGame, endGarlicDrone, toggleGarlicDrone, damageHero };`;
@@ -16,7 +16,7 @@ const server = gameServer(html);
   let browser;
   try {
     browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
-      args: ['--enable-unsafe-swiftshader'] });
+      args: glArgs() });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
@@ -30,7 +30,7 @@ const server = gameServer(html);
     await page.click('#matchButton');
     await page.waitForFunction(() => document.pointerLockElement === __game.renderer.domElement);
     await page.evaluate(() => { __spectatorTest.updateCamera(0); __spectatorTest.updateHud(0); __game.renderer.render(__game.scene, __game.camera); });
-    await page.screenshot({ path: path.resolve(__dirname, '..', 'docs', 'spectator.png') });
+    await page.screenshot({ path: path.join(renderDir(), 'spectator.png') });
     assert.ok(await page.locator('#spectatorHud').isVisible());
     assert.ok(await page.locator('#abilities').isVisible(), "plant view shows the watched plant's HUD");
     assert.ok(await page.locator('#crosshair .t').isVisible());

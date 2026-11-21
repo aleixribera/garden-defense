@@ -2,3 +2,5 @@
 .claude/
 debug.log
 node_modules/
+# Test logs, timings and renders (npm test); DOC_RENDERS=1 writes renders to docs/ instead
+tests/.logs/
