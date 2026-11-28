@@ -8,7 +8,7 @@ If another session is making changes, only commit, tag, push your changes, and l
 Third-person co-op wave defense (PvZ Garden Warfare 2 Garden Ops): plant heroes defend the garden statue from 10 waves.
 **Systems reference: `docs/systems.md`** (where each system lives, its CONFIG block, docs and test). Read the part you touch.
 
-## Current state (v1.33.3)
+## Current state (v1.33.4)
 - `index.html` (game module) + native ES modules, no build step: `src/config.js` (CONFIG, imported statically: no
   dependencies) and `src/plants/<plant>.js` (one per plant: model, gadget models, animator, render poses; loaded in
   parallel after three.js, section "Plant models"; helpers + particle hook `usePlantFx` in `src/plants/shared.js`;
