@@ -47,7 +47,6 @@ Third-person co-op wave defense (PvZ Garden Warfare 2 Garden Ops): plant heroes 
 
 ## Code rules
 - All tuning numbers live in `CONFIG` (`src/config.js`); waves are data, never hardcoded logic.
-- Keep code readable and commented; match the surrounding style.
 - New zombie = `ZOMBIE_TYPES` entry + its own behavior function. New hero = `CONFIG.PLANTS` + `PLANT_TYPES` hooks.
 - Damage: zombies via `damageZombie()`, plant areas via `explodeAt()`, enemy areas via `enemyBlast()`, heroes via
   `damageHero()`, the garden statue via `damageStatue()` (difficulty, hit flash, garden alert).
